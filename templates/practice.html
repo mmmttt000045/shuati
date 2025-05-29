@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>题目练习</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f0f2f5;
+            color: #333;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            min-height: 90vh;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 800px;
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            margin-top: 20px;
+        }
+
+        h2 {
+            color: #1d2129;
+            margin-top: 0;
+            margin-bottom: 10px;
+            font-size: 22px;
+            text-align: center;
+        }
+
+        .progress-bar {
+            text-align: center;
+            margin-bottom: 20px;
+            font-size: 0.95em;
+            color: #4b5563;
+            background-color: #e9ecef;
+            padding: 8px;
+            border-radius: 4px;
+        }
+
+        .question-block {
+            margin-bottom: 25px;
+        }
+
+        .question-type {
+            font-size: 0.85em;
+            color: #6b7280;
+            margin-bottom: 8px;
+            background-color: #f3f4f6;
+            padding: 5px 10px;
+            border-radius: 12px;
+            display: inline-block;
+        }
+
+        .question-text {
+            font-size: 1.1em;
+            line-height: 1.6;
+            color: #1f2937;
+            margin-bottom: 20px;
+            white-space: pre-wrap;
+            padding: 15px;
+            border: 1px solid #e5e7eb;
+            border-radius: 6px;
+            background-color: #f9fafb;
+        }
+
+        .options {
+        }
+
+        .options label {
+            display: block;
+            margin-bottom: 12px;
+            padding: 12px 15px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background-color 0.2s, border-color 0.2s;
+            background-color: #fff;
+        }
+
+        .options label:hover {
+            background-color: #f9fafb;
+            border-color: #a5b4fc;
+        }
+
+        .options input[type="radio"] {
+            margin-right: 12px;
+            vertical-align: middle;
+            transform: scale(1.1);
+        }
+
+        .submit-button {
+            display: block;
+            width: 100%;
+            padding: 12px 20px;
+            background-color: #28a745;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 500;
+            transition: background-color 0.2s;
+            margin-bottom: 20px;
+        }
+
+        .submit-button:hover {
+            background-color: #218838;
+        }
+
+        .flash-messages {
+            list-style: none;
+            padding: 0;
+            margin-bottom: 15px;
+        }
+
+        .flash-messages li {
+            margin-bottom: 10px;
+            padding: 10px 15px;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+
+        .flash-messages .info {
+            background-color: #eff6ff;
+            color: #1d4ed8;
+            border: 1px solid #bfdbfe;
+        }
+
+        .flash-messages .warning {
+            background-color: #fffbeb;
+            color: #92400e;
+            border: 1px solid #fde68a;
+        }
+
+        .footer-credit {
+            text-align: center;
+            margin-top: 20px;
+            font-size: 0.85em;
+            color: #6b7280;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h2>在线练习</h2>
+    <div class="progress-bar">
+        第 {{ progress.round }} 轮 - 题目 {{ progress.current }} / {{ progress.total }}
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    <ul class="flash-messages">
+        {% for category, message in messages %}
+        {% if category == 'info' or category == 'warning' %}
+        <li class="{{ category }}">{{ message }}</li>
+        {% endif %}
+        {% endfor %}
+    </ul>
+    {% endif %}
+    {% endwith %}
+
+    <div class="question-block">
+        <span class="question-type">{{ question.type }}</span>
+        <div class="question-text">{{ question.question }}</div>
+    </div>
+
+    <form action="{{ url_for('submit_answer') }}" method="post">
+        <div class="options">
+            {# 修改开始 #}
+            {% if question.type == '选择题' %}
+            {% if mcq_options is not none and mcq_options %} {# 检查 mcq_options 是否存在且不为空 #}
+            {% for original_key, option_text in mcq_options %} {# 迭代打乱后的选项列表 #}
+            <label>
+                <input type="radio" name="answer" value="{{ original_key }}" required> {{ original_key }}. {{
+                option_text }}
+            </label>
+            {% endfor %}
+            {% elif mcq_options is none %} {# mcq_options 未被定义 (例如后端逻辑问题) #}
+            <p>错误：选择题选项数据未准备好。</p>
+            {% else %} {# mcq_options 是空列表 #}
+            <p>此选择题没有可显示的选项。</p>
+            {% endif %}
+            {% elif question.type == '判断题' %}
+            {% if tf_options %} {# 检查 tf_options 是否存在 #}
+            {% for val_key, text_display in tf_options.items() %} {# 判断题选项通常固定顺序 #}
+            <label>
+                <input type="radio" name="answer" value="{{ val_key }}" required> {{ text_display }}
+            </label>
+            {% endfor %}
+            {% else %}
+            <p>错误：判断题选项数据未准备好。</p>
+            {% endif %}
+            {% else %}
+            <p>错误：题目类型无法识别或无选项数据。</p>
+            {% endif %}
+            {# 修改结束 #}
+        </div>
+        <button type="submit" class="submit-button">提交答案</button>
+    </form>
+    <div class="footer-credit">Created by MingTai</div>
+</div>
+</body>
+</html>

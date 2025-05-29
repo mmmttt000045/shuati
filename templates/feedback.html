@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>答案反馈</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background-color: #f0f2f5; color: #333; display: flex; justify-content: center; align-items: flex-start; min-height: 90vh; }
+        .container { width:100%; max-width: 800px; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); margin-top:20px;}
+        h2 { color: #1d2129; margin-top:0; margin-bottom: 20px; font-size:22px; text-align:center; }
+        .feedback-icon { font-size: 2.5em; margin-right: 10px; vertical-align: middle; }
+        .feedback-correct { display: flex; align-items: center; color: #16a34a; font-weight: bold; font-size: 1.6em; margin-bottom:20px; padding:15px; background-color:#f0fdf4; border:1px solid #bbf7d0; border-radius:6px; }
+        .feedback-incorrect { display: flex; align-items: center; color: #dc2626; font-weight: bold; font-size: 1.6em; margin-bottom:20px; padding:15px; background-color:#fef2f2; border:1px solid #fecaca; border-radius:6px;}
+        .question-review { margin-top:15px; padding:20px; border:1px solid #e5e7eb; background-color:#f9fafb; border-radius:6px;}
+        .question-review p { margin: 8px 0; line-height: 1.6; }
+        .question-review strong { color: #374151; }
+        .next-button { display: block; width: 100%; text-align:center; margin-top: 25px; padding: 12px 20px; background-color: #007bff; color: white; text-decoration: none; border-radius: 6px; font-size: 16px; font-weight:500; transition: background-color 0.2s; }
+        .next-button:hover { background-color: #0056b3; }
+        .option-item { margin-left: 20px; padding: 3px 0; }
+        .option-correct { color: #16a34a; font-weight:bold; }
+        .option-user-wrong { color: #dc2626; font-weight:bold; }
+        .flash-messages { list-style: none; padding: 0; margin-bottom: 15px;}
+        .flash-messages li { margin-bottom: 10px; padding: 10px 15px; border-radius: 6px; font-size: 14px; }
+        .flash-messages .info { background-color: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>答案反馈</h2>
+         {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            <ul class="flash-messages">
+            {% for category, message in messages %}
+              {% if category == 'info' %}
+                <li class="{{ category }}">{{ message }}</li>
+              {% endif %}
+            {% endfor %}
+            </ul>
+          {% endif %}
+        {% endwith %}
+
+        {% if feedback.is_correct %}
+            <div class="feedback-correct"><span class="feedback-icon">🎉</span> 回答正确！</div>
+        {% else %}
+            <div class="feedback-incorrect"><span class="feedback-icon">❌</span> 回答错误。</div>
+        {% endif %}
+
+        <div class="question-review">
+            <p><strong>题目：</strong>{{ feedback.question_text }}</p>
+            <p><strong>你的答案：</strong>{{ feedback.user_answer }}</p>
+            <p><strong>正确答案：</strong>
+                <span class="option-correct">{{ feedback.correct_answer }}</span>
+                {% if feedback.type == '选择题' and feedback.correct_answer_option_text %}
+                    ({{ feedback.correct_answer_option_text }})
+                {% endif %}
+            </p>
+
+            {% if feedback.type == '选择题' and not feedback.is_correct and feedback.options %}
+                <p style="margin-top:15px;"><strong>题目解析 / 所有选项：</strong></p>
+                {% for key, value in feedback.options.items()|sort %}
+                    <p class="option-item">
+                        {{ key }}. {{ value }}
+                        {% if key == feedback.correct_answer %}
+                            <span class="option-correct"> &lt;-- 正确答案</span>
+                        {% elif key == feedback.user_answer.split('.')[0] %} {# 假设用户答案是 "A" 或 "A." 这种形式 #}
+                            <span class="option-user-wrong"> &lt;-- 你的选择</span>
+                        {% endif %}
+                    </p>
+                {% endfor %}
+            {% endif %}
+        </div>
+
+        <a href="{{ url_for('practice_question') }}" class="next-button">下一题 / 查看结果</a>
+    </div>
+</body>
+</html>

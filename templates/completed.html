@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>练习完成</title>
+     <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background-color: #f0f2f5; color: #333; display: flex; justify-content: center; align-items: center; min-height: 90vh; }
+        .container { width:100%; max-width: 600px; background: white; padding: 40px 30px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); text-align: center; }
+        .completion-icon { font-size: 4em; margin-bottom: 15px; color: #28a745;}
+        h1 { color: #1d2129; margin-top:0; margin-bottom: 10px; font-size:24px; }
+        p { font-size: 1.1em; color: #4b5563; line-height: 1.6; margin-bottom: 8px;}
+        .score-emphasis { font-weight: bold; color: #007bff; font-size: 1.2em; }
+        .button { display: inline-block; margin-top: 25px; padding: 12px 25px; background-color: #007bff; color: white; text-decoration: none; border-radius: 6px; font-size: 16px; font-weight: 500; transition: background-color 0.2s;}
+        .button:hover { background-color: #0056b3; }
+        .flash-messages { list-style: none; padding: 0; margin-bottom: 20px; text-align: left;}
+        .flash-messages li { margin-bottom: 10px; padding: 12px 15px; border-radius: 6px; font-size: 14px;}
+        .flash-messages .success { background-color: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="completion-icon">✨</div>
+        <h1>练习完成！</h1>
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            <ul class="flash-messages">
+            {% for category, message in messages %}
+              {% if category == 'success' %}
+                <li class="{{ category }}">{{ message }}</li>
+              {% endif %}
+            {% endfor %}
+            </ul>
+          {% endif %}
+        {% endwith %}
+
+        {% if completed_filename %}
+        <p>您已完成题库：<strong>{{ completed_filename }}</strong></p>
+        {% endif %}
+        <p>在初始 <span class="score-emphasis">{{ initial_total }}</span> 道题目中，您第一轮答对了 <span class="score-emphasis">{{ correct_first_try }}</span> 道。</p>
+        <p>第一轮正确率：<span class="score-emphasis">{{ "%.2f"|format(score_percent) }}%</span></p>
+
+        <a href="{{ url_for('index') }}" class="button">返回首页选择其他题库</a>
+    </div>
+</body>
+</html>

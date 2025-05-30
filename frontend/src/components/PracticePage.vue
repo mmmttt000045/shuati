@@ -130,7 +130,7 @@
 
               <div class="action-buttons">
                 <button
-                  :disabled="loadingSubmit || 
+                  :disabled="loadingSubmit ||
                              (displayMode === 'question' && question.type !== '判断题' && question.is_multiple_choice && selectedAnswers.size === 0) ||
                              (displayMode === 'question' && question.type !== '判断题' && !question.is_multiple_choice && !selectedAnswer) ||
                              (displayMode === 'question' && question.type === '判断题' && !selectedAnswer)"
@@ -163,7 +163,7 @@
               <span class="history-icon">📋</span>
               <span class="history-text">查看答题历史记录</span>
             </div>
-            
+
             <div
               :class="currentFeedback.is_correct ? 'feedback-correct' : 'feedback-incorrect'"
               class="feedback-banner"
@@ -175,7 +175,7 @@
             <div class="question-review-content">
               <h4>题目回顾：</h4>
               <p class="question-text-review">{{ question.question }}</p>
-              
+
               <div class="answer-comparison">
                 <!-- 选择题的选项展示 -->
                 <div v-if="question.type !== '判断题' && question.options_for_practice" class="options-review">
@@ -187,8 +187,8 @@
                       :class="{
                         'option-review': true,
                         'option-correct': question.answer.includes(key),
-                        'option-incorrect': !currentFeedback.is_correct && 
-                                         (currentFeedback.user_answer_display.startsWith(key) || 
+                        'option-incorrect': !currentFeedback.is_correct &&
+                                         (currentFeedback.user_answer_display.startsWith(key) ||
                                           currentFeedback.user_answer_display.includes(' + ' + key + '.'))
                       }"
                     >
@@ -204,7 +204,7 @@
                     <strong>你的答案：</strong>
                     <span class="user-answer-text-incorrect">{{ currentFeedback.user_answer_display }}</span>
                   </div>
-                  
+
                   <div class="answer-item">
                     <strong>正确答案：</strong>
                     <span class="correct-answer-text">{{ currentFeedback.correct_answer_display }}</span>
@@ -219,8 +219,8 @@
                 <div v-if="question.knowledge_points && question.knowledge_points.length > 0" class="answer-item">
                   <strong>知识点：</strong>
                   <div class="knowledge-points">
-                    <span v-for="(point, index) in question.knowledge_points" 
-                          :key="index" 
+                    <span v-for="(point, index) in question.knowledge_points"
+                          :key="index"
                           class="knowledge-point-tag">
                       {{ point }}
                     </span>
@@ -248,11 +248,11 @@
         <div v-if="loading && displayMode === 'question'" class="loading-indicator-fullscreen">
           <p>题目正在加载中，请稍候...</p>
         </div>
-        
+
         <div v-if="initializing" class="loading-indicator-fullscreen">
           <p>正在初始化练习会话，请稍候...</p>
         </div>
-        
+
         <div
           v-if="!loading && !initializing && !question && displayMode === 'question'"
           class="empty-state-message card"
@@ -262,7 +262,7 @@
       </div>
 
       <!-- 右侧答题卡 -->
-      <div class="answer-card-panel">
+      <div class="answer-card-panel" :class="{ 'history-mode': isViewingHistory }">
         <div class="answer-card-header">
           <div class="answer-card-title">
             <h3>答题卡</h3>
@@ -274,6 +274,13 @@
               {{ isAnswerCardExpanded ? '↑' : '↓' }}
             </button>
           </div>
+
+          <!-- 在查看历史时显示提示 -->
+          <div v-if="isViewingHistory" class="history-navigation-tip">
+            <span class="tip-icon">💡</span>
+            <span class="tip-text">点击答题卡可查看其他题目</span>
+          </div>
+
           <div class="answer-card-legend" v-if="isAnswerCardExpanded">
             <span class="legend-item">
               <span class="status-dot current"></span> 当前题目
@@ -384,21 +391,21 @@ onMounted(async () => {
     // 首先检查是否已有活跃的练习会话
     console.log('Checking existing session status...');
     const sessionStatus = await apiService.checkSessionStatus();
-    
+
     if (sessionStatus.active) {
       console.log('Found active session:', sessionStatus);
-      
+
       // 检查会话是否已完成
       if (sessionStatus.completed) {
         console.log('Session completed, redirecting to completed page');
         router.push('/completed');
         return;
       }
-      
+
       // 检查会话文件是否与当前请求的文件匹配
       if (sessionStatus.file_info && sessionStatus.file_info.key === props.fileName) {
         console.log('Resuming existing session for same file');
-        
+
         // 显示恢复会话的提示信息
         if (sessionStatus.progress) {
           messages.value.push({
@@ -406,25 +413,25 @@ onMounted(async () => {
             text: `已恢复练习进度：第${sessionStatus.progress.round}轮，第${sessionStatus.progress.current}/${sessionStatus.progress.total}题`
           });
         }
-        
+
         // 恢复答题卡状态
         if (sessionStatus.question_statuses && sessionStatus.question_statuses.length > 0) {
           questionStatuses.value = [...sessionStatus.question_statuses];
           console.log('Restored question statuses:', questionStatuses.value);
         }
-        
+
         // 直接加载当前题目，无需重新开始练习
         await loadQuestion();
         return;
       } else if (sessionStatus.file_info) {
         console.log('Active session for different file, starting new practice');
-        
+
         // 显示切换题库的提示信息
         messages.value.push({
           category: 'info',
           text: `已从《${sessionStatus.file_info.display}》切换到当前题库`
         });
-        
+
         // 当前有其他文件的会话，需要强制重新开始
         const startResponse = await apiService.startPractice(props.subject, props.fileName, true);
         if (!startResponse.success) {
@@ -442,7 +449,7 @@ onMounted(async () => {
 
     // 加载第一题或当前题目
     await loadQuestion();
-    
+
   } catch (error) {
     console.error('Error initializing practice:', error);
     messages.value.push({
@@ -480,7 +487,7 @@ const loadQuestion = async () => {
       // 确保答题卡状态数组长度与当前轮次题目数量匹配
       if (progress.value && questionStatuses.value.length !== progress.value.total) {
         console.log(`Adjusting question statuses length from ${questionStatuses.value.length} to ${progress.value.total}`);
-        
+
         if (questionStatuses.value.length < progress.value.total) {
           // 如果答题卡状态数组长度不够，用'unanswered'填充
           const additionalStatuses = new Array(progress.value.total - questionStatuses.value.length).fill('unanswered');
@@ -549,7 +556,7 @@ const submitAnswer = async () => {
     if (currentQuestionIndex.value >= 0 && currentQuestionIndex.value < questionStatuses.value.length) {
       updateQuestionStatus(currentQuestionIndex.value, feedback.is_correct);
     }
-    
+
     // 同步后端状态，确保一致性
     setTimeout(async () => {
       await syncQuestionStatuses();
@@ -569,12 +576,12 @@ const revealAnswer = async () => {
   if (!question.value || loadingReveal.value) return;
 
   loadingReveal.value = true;
-  
+
   try {
     // 先准备所有需要的数据，避免多次状态切换
     const questionId = question.value.id;
     const currentIndex = currentQuestionIndex.value;
-    
+
     // 提交查看答案的请求
     const feedback = await apiService.submitAnswer(
       '',  // 空答案
@@ -585,7 +592,7 @@ const revealAnswer = async () => {
 
     // 获取题目解析
     const analysisResponse = await apiService.getQuestionAnalysis(questionId);
-    
+
     // 准备反馈数据
     const feedbackData: Feedback = {
       is_correct: false,
@@ -610,7 +617,7 @@ const revealAnswer = async () => {
 
     // 一次性更新所有状态，避免多次重渲染
     currentFeedback.value = feedbackData;
-    
+
     // 标记当前题目为错误（用于答题卡显示）
     if (currentIndex >= 0 && currentIndex < questionStatuses.value.length) {
       updateQuestionStatus(currentIndex, false);
@@ -619,12 +626,7 @@ const revealAnswer = async () => {
     // 最后切换到反馈模式
     displayMode.value = 'feedback';
     isViewingHistory.value = true;
-    
-    // 显示提示信息
-    messages.value.push({
-      category: 'info',
-      text: `查看第${currentIndex + 1}题的答题记录`
-    });
+
   } catch (error) {
     console.error('Error revealing answer:', error);
     messages.value.push({
@@ -643,10 +645,10 @@ const handleContinueAfterReveal = async () => {
     selectedAnswers.value = new Set();
     currentFeedback.value = null;
     displayMode.value = 'question';
-    
+
     // 加载下一题
     await loadQuestion();
-    
+
     // 同步答题卡状态，确保与后端一致
     await syncQuestionStatuses();
   } catch (error) {
@@ -665,7 +667,7 @@ const backToCurrentQuestion = async () => {
     selectedAnswers.value = new Set();
     currentFeedback.value = null;
     displayMode.value = 'question';
-    
+
     // 加载当前题目
     await loadQuestion();
   } catch (error) {
@@ -698,7 +700,12 @@ const getQuestionTypeDisplay = (q: Question): string => {
 const isAnswerCardExpanded = ref(false);
 const questionStatuses = ref<Array<'unanswered' | 'correct' | 'wrong'>>([]);
 const currentQuestionIndex = computed(() => (progress.value ? progress.value.current - 1 : 0));
-const canJumpToQuestion = computed(() => displayMode.value === 'question' && !loading.value);
+const canJumpToQuestion = computed(() => {
+  // 允许在以下情况下跳转：
+  // 1. 正常的题目模式
+  // 2. 正在查看历史记录的反馈模式
+  return (displayMode.value === 'question' || isViewingHistory.value) && !loading.value;
+});
 
 const visibleQuestions = computed<QuestionStatus[]>(() => {
   if (!progress.value) return []; // Guard against progress being null
@@ -777,40 +784,39 @@ const jumpToQuestion = async (index: number) => {
   try {
     // 检查题目状态，如果已经做过，直接显示反馈
     const questionStatus = questionStatuses.value[index];
-    
+
     if (questionStatus === 'correct' || questionStatus === 'wrong') {
       // 题目已做过，获取答题历史并显示反馈
       console.log(`Question ${index} already answered, showing feedback`);
-      
+
       const historyResponse = await apiService.getQuestionHistory(index);
       if (historyResponse.success && historyResponse.question && historyResponse.feedback) {
         // 设置题目和反馈数据
         question.value = historyResponse.question;
         currentFeedback.value = historyResponse.feedback;
-        
+
         // 更新进度信息
         if (progress.value) {
           progress.value.current = index + 1;
         }
-        
+
         // 切换到反馈模式
         displayMode.value = 'feedback';
         isViewingHistory.value = true;
-        
-        // 显示提示信息
-        messages.value.push({
-          category: 'info',
-          text: `查看第${index + 1}题的答题记录`
-        });
-        
+
         return;
       } else {
         console.error('Failed to get question history:', historyResponse.message);
         // 如果获取历史失败，fallback到正常跳转
       }
     }
-    
+
     // 未做过的题目或获取历史失败，正常跳转
+    // 如果当前在查看历史，先清除查看历史状态
+    if (isViewingHistory.value) {
+      isViewingHistory.value = false;
+    }
+
     const response = await apiService.jumpToQuestion(index);
     if (response.success) {
       await loadQuestion();
@@ -1702,6 +1708,28 @@ const syncQuestionStatuses = async () => {
   font-size: 1rem;
 }
 
+.history-navigation-tip {
+  background: #f0f9ff;
+  color: #0369a1;
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
+  margin-bottom: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  border-left: 3px solid #0ea5e9;
+}
+
+.tip-icon {
+  font-size: 1rem;
+}
+
+.tip-text {
+  flex: 1;
+}
+
 /* 内容切换过渡动画 */
 .content-fade-enter-active,
 .content-fade-leave-active {
@@ -1726,5 +1754,20 @@ const syncQuestionStatuses = async () => {
 
 .practice-container {
   /* Add any additional styles specific to the practice container */
+}
+
+/* 查看历史时的答题卡样式 */
+.answer-card-panel.history-mode .question-number-btn:not(.current):not(:disabled) {
+  cursor: pointer;
+  border-color: #0ea5e9;
+  transition: all 0.2s ease;
+}
+
+.answer-card-panel.history-mode .question-number-btn:not(.current):not(:disabled):hover {
+  background: #f0f9ff;
+  border-color: #0369a1;
+  color: #0369a1;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(3, 105, 161, 0.15);
 }
 </style>

@@ -19,7 +19,8 @@ const routes: RouteRecordRaw[] = [
     component: PracticePage,
     props: (route) => ({
       subject: route.query.subject as string,
-      fileName: route.query.file as string
+      fileName: route.query.file as string,
+      order: route.query.order as string
     }),
     meta: {
       title: '在线练习'

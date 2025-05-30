@@ -396,7 +396,7 @@ def serve_vue_assets(path: str) -> Response:
 
 @app.route('/api/file_options', methods=['GET'])
 def api_file_options() -> Response:
-    """Get available question bank files."""
+    """Get available question bank files with progress information."""
     subjects_data: Dict[str, List[Dict[str, Any]]] = {}
 
     if not os.path.exists(SUBJECT_DIRECTORY) or not APP_WIDE_QUESTION_DATA:
@@ -405,6 +405,26 @@ def api_file_options() -> Response:
         return jsonify({'subjects': {}, 'message': message}), 200
 
     try:
+        # 获取当前会话的练习信息
+        current_file = get_safe_session_value(SESSION_KEYS['CURRENT_EXCEL_FILE'])
+        current_progress = None
+        if current_file:
+            current_indices = get_safe_session_value(SESSION_KEYS['QUESTION_INDICES'], [])
+            current_index = get_safe_session_value(SESSION_KEYS['CURRENT_INDEX'], 0)
+            initial_total = get_safe_session_value(SESSION_KEYS['INITIAL_TOTAL'], 0)
+            correct_first_try = get_safe_session_value(SESSION_KEYS['CORRECT_FIRST_TRY'], 0)
+            round_number = get_safe_session_value(SESSION_KEYS['ROUND_NUMBER'], 1)
+            
+            if current_indices and initial_total > 0:
+                current_progress = {
+                    'current_question': current_index + 1,
+                    'total_questions': len(current_indices),
+                    'initial_total': initial_total,
+                    'correct_first_try': correct_first_try,
+                    'round_number': round_number,
+                    'progress_percent': min(100, (current_index / len(current_indices)) * 100) if current_indices else 0
+                }
+
         for filepath, questions_list in APP_WIDE_QUESTION_DATA.items():
             try:
                 path_parts = normalize_filepath(filepath).split('/')
@@ -431,6 +451,13 @@ def api_file_options() -> Response:
                     'display': display_name,
                     'count': len(questions_list) if isinstance(questions_list, list) else 0
                 }
+
+                # 添加进度信息
+                if current_file == filepath and current_progress:
+                    file_info['progress'] = current_progress
+                else:
+                    file_info['progress'] = None
+
                 subjects_data[subject_name].append(file_info)
 
             except Exception as e:
@@ -465,9 +492,10 @@ def api_start_practice() -> Response:
         subject_name = data.get('subject')
         file_name = data.get('fileName')
         force_restart = data.get('force_restart', False)  # 添加强制重启参数
+        shuffle_questions = data.get('shuffle_questions', True)  # 添加题目打乱参数，默认为True
 
         logger.info(
-            f"Starting practice with subject: {subject_name}, file: {file_name}, force_restart: {force_restart}")
+            f"Starting practice with subject: {subject_name}, file: {file_name}, force_restart: {force_restart}, shuffle_questions: {shuffle_questions}")
 
         if not subject_name or not file_name:
             logger.error("Missing subject name or file name")
@@ -499,7 +527,13 @@ def api_start_practice() -> Response:
 
         # 开始新的练习会话
         question_indices = list(range(len(current_question_bank)))
-        random.shuffle(question_indices)
+        
+        # 根据shuffle_questions参数决定是否打乱题目顺序
+        if shuffle_questions:
+            random.shuffle(question_indices)
+            logger.info(f"Questions shuffled for random practice")
+        else:
+            logger.info(f"Questions kept in sequential order")
 
         # 清除旧的 session 数据并设置新的
         session.clear()
@@ -519,8 +553,9 @@ def api_start_practice() -> Response:
         answer_history = {}
         set_safe_session_value(SESSION_KEYS['ANSWER_HISTORY'], answer_history)
 
+        practice_mode = "乱序练习" if shuffle_questions else "顺序练习"
         return jsonify({
-            'message': 'Practice started successfully.',
+            'message': f'Practice started successfully in {practice_mode} mode.',
             'success': True,
             'resumed': False
         })

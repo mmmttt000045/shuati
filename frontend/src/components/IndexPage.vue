@@ -38,6 +38,46 @@
         </div>
 
         <h2 class="selected-subject-title">{{ selectedSubject }}</h2>
+
+        <!-- 题目顺序选择 -->
+        <div class="order-selection">
+          <div class="order-options">
+            <label class="order-option" :class="{ selected: questionOrder === 'random' }">
+              <input
+                type="radio"
+                value="random"
+                v-model="questionOrder"
+                name="questionOrder"
+                class="order-radio"
+              />
+              <div class="option-content">
+                <span class="option-icon">🎲</span>
+                <div class="option-text">
+                  <span class="option-name">乱序练习</span>
+                  <span class="option-desc">题目随机打乱，提高练习效果</span>
+                </div>
+              </div>
+            </label>
+
+            <label class="order-option" :class="{ selected: questionOrder === 'sequential' }">
+              <input
+                type="radio"
+                value="sequential"
+                v-model="questionOrder"
+                name="questionOrder"
+                class="order-radio"
+              />
+              <div class="option-content">
+                <span class="option-icon">📋</span>
+                <div class="option-text">
+                  <span class="option-name">顺序练习</span>
+                  <span class="option-desc">按照原始顺序练习题目</span>
+                </div>
+              </div>
+            </label>
+          </div>
+        </div>
+
         <div class="files-list">
           <button
             v-for="file in subjects[selectedSubject]"
@@ -46,8 +86,29 @@
             @click="startPractice(selectedSubject, file.key)"
           >
             <div class="file-info">
-              <span class="file-name">{{ file.display }}</span>
-              <span class="file-count">({{ file.count }}题)</span>
+              <div class="file-main-info">
+                <span class="file-name">{{ file.display }}</span>
+                <!-- 显示练习进度 -->
+                <div v-if="file.progress" class="progress-info">
+                  <div class="progress-text">
+                    <span class="current-progress">
+                      第{{ file.progress.round_number }}轮 - {{ file.progress.current_question }}/{{
+                        file.progress.total_questions
+                      }}题
+                    </span>
+                  </div>
+                  <div class="progress-bar">
+                    <div
+                      class="progress-bar-fill"
+                      :style="{ width: file.progress.progress_percent + '%' }"
+                    ></div>
+                  </div>
+                </div>
+                <div v-else class="no-progress">
+                  <span class="status-text">未开始</span>
+                </div>
+                <span class="file-count">({{ file.count }}题)</span>
+              </div>
             </div>
           </button>
         </div>
@@ -67,6 +128,7 @@ const subjects = ref<Record<string, SubjectFile[]>>({})
 const selectedSubject = ref<string>('')
 const messages = ref<FlashMessage[]>([])
 const loading = ref(false)
+const questionOrder = ref<'random' | 'sequential'>('random')
 
 const getTotalQuestions = (files: SubjectFile[]) => {
   return files.reduce((total, file) => total + file.count, 0)
@@ -78,48 +140,57 @@ const selectSubject = (subject: string) => {
 
 const startPractice = async (subject: string, fileName: string) => {
   loading.value = true
-  
+
   try {
     // 检查是否已有同一文件的活跃会话
     const sessionStatus = await apiService.checkSessionStatus()
-    
-    if (sessionStatus.active && 
-        sessionStatus.file_info && 
-        sessionStatus.file_info.key === fileName && 
-        !sessionStatus.completed) {
-      
+
+    if (
+      sessionStatus.active &&
+      sessionStatus.file_info &&
+      sessionStatus.file_info.key === fileName &&
+      !sessionStatus.completed
+    ) {
       // 询问用户是否要继续之前的进度还是重新开始
       const shouldContinue = confirm(
-        `检测到你之前正在练习《${sessionStatus.file_info.display}》(第${sessionStatus.progress?.current}/${sessionStatus.progress?.total}题)。\n\n点击"确定"继续之前的进度，点击"取消"重新开始。`
+        `检测到你之前正在练习《${sessionStatus.file_info.display}》(第${sessionStatus.progress?.current}/${sessionStatus.progress?.total}题)。\n\n点击"确定"继续之前的进度，点击"取消"重新开始。`,
       )
-      
+
       if (shouldContinue) {
         // 继续之前的练习
         router.push({
           name: 'practice',
-          query: { subject, file: fileName }
+          query: { subject, file: fileName },
         })
         return
       } else {
-        // 重新开始练习
-        const startResponse = await apiService.startPractice(subject, fileName, true)
+        // 重新开始练习，传递题目顺序参数
+        const startResponse = await apiService.startPractice(
+          subject,
+          fileName,
+          true,
+          questionOrder.value === 'random',
+        )
         if (!startResponse.success) {
           throw new Error(startResponse.message)
         }
       }
     }
-    
-    // 正常启动练习
+
+    // 正常启动练习，传递题目顺序参数
     router.push({
       name: 'practice',
-      query: { subject, file: fileName }
+      query: {
+        subject,
+        file: fileName,
+        order: questionOrder.value,
+      },
     })
-    
   } catch (error) {
     console.error('Error starting practice:', error)
     messages.value.push({
       category: 'error',
-      text: error instanceof Error ? error.message : '启动练习失败'
+      text: error instanceof Error ? error.message : '启动练习失败',
     })
   } finally {
     loading.value = false
@@ -373,6 +444,86 @@ onMounted(async () => {
   font-weight: 700;
 }
 
+.order-selection {
+  margin-bottom: 2.5rem;
+}
+
+.order-title {
+  font-size: 1.5rem;
+  color: #1e293b;
+  margin-bottom: 1rem;
+  font-weight: 600;
+}
+
+.order-options {
+  display: flex;
+  gap: 1rem;
+}
+
+.order-option {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  padding: 1.25rem;
+  border: 2px solid #e2e8f0;
+  border-radius: 12px;
+  transition: all 0.3s ease;
+  background-color: white;
+  position: relative;
+}
+
+.order-option:hover {
+  background-color: #f8fafc;
+  border-color: #3b82f6;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
+}
+
+.order-option.selected {
+  background-color: #eff6ff;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.order-radio {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+}
+
+.option-content {
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.option-icon {
+  font-size: 2rem;
+  margin-right: 1rem;
+  flex-shrink: 0;
+}
+
+.option-text {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+.option-name {
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: #1e293b;
+  margin-bottom: 0.5rem;
+}
+
+.option-desc {
+  font-size: 0.95rem;
+  color: #64748b;
+  line-height: 1.4;
+}
+
 .files-list {
   display: grid;
   gap: 1rem;
@@ -401,8 +552,15 @@ onMounted(async () => {
 
 .file-info {
   display: flex;
-  justify-content: space-between;
+  flex-direction: column;
+  width: 100%;
+  gap: 0.75rem;
+}
+
+.file-main-info {
+  display: flex;
   align-items: center;
+  gap: 1rem;
   width: 100%;
 }
 
@@ -410,6 +568,7 @@ onMounted(async () => {
   font-weight: 500;
   color: #334155;
   font-size: 1.1rem;
+  white-space: nowrap;
 }
 
 .file-count {
@@ -420,11 +579,67 @@ onMounted(async () => {
   padding: 0.5rem 1rem;
   border-radius: 999px;
   transition: all 0.2s ease;
+  white-space: nowrap;
 }
 
 .file-button:hover .file-count {
   background-color: #e0f2fe;
   color: #0284c7;
+}
+
+.progress-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background-color: #f8fafc;
+  border-radius: 8px;
+  border-left: 3px solid #3b82f6;
+  min-width: 200px;
+}
+
+.progress-text {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.current-progress {
+  font-size: 0.9rem;
+  color: #3b82f6;
+  font-weight: 600;
+}
+
+.progress-bar {
+  width: 100%;
+  height: 6px;
+  background-color: #e2e8f0;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #3b82f6, #60a5fa);
+  transition: width 0.3s ease;
+}
+
+.no-progress {
+  flex: 1;
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+  padding: 0.5rem 0.75rem;
+  background-color: #f8fafc;
+  border-radius: 6px;
+  min-width: 200px;
+}
+
+.status-text {
+  font-size: 0.9rem;
+  color: #64748b;
+  font-weight: 500;
 }
 
 @keyframes fadeIn {

@@ -11,7 +11,7 @@ const API_BASE = 'http://127.0.0.1:5051/api';
 
 export interface ApiService {
   getFileOptions(): Promise<SubjectsResponse>;
-  startPractice(subject: string, fileName: string, forceRestart?: boolean): Promise<{ message: string; success: boolean; resumed?: boolean }>;
+  startPractice(subject: string, fileName: string, forceRestart?: boolean, shuffleQuestions?: boolean): Promise<{ message: string; success: boolean; resumed?: boolean }>;
   getCurrentQuestion(): Promise<QuestionResponse>;
   submitAnswer(answer: string, questionId: string, isRevealed: boolean, isSkipped: boolean): Promise<Feedback>;
   jumpToQuestion(index: number): Promise<{ message: string; success: boolean }>;
@@ -135,11 +135,11 @@ class ApiServiceImpl implements ApiService {
     return this.handleResponse<SubjectsResponse>(response);
   }
 
-  async startPractice(subject: string, fileName: string, forceRestart?: boolean): Promise<{ message: string; success: boolean; resumed?: boolean }> {
+  async startPractice(subject: string, fileName: string, forceRestart?: boolean, shuffleQuestions?: boolean): Promise<{ message: string; success: boolean; resumed?: boolean }> {
     console.log('Starting practice:', { subject, fileName });
     const response = await this.fetchWithCredentials(`${API_BASE}/start_practice`, {
       method: 'POST',
-      body: JSON.stringify({ subject, fileName, force_restart: forceRestart })
+      body: JSON.stringify({ subject, fileName, force_restart: forceRestart, shuffle_questions: shuffleQuestions })
     });
     const result = await this.handleResponse<{ message: string; success: boolean; resumed?: boolean }>(response);
     console.log('Practice start result:', result);

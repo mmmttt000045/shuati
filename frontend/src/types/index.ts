@@ -17,6 +17,15 @@ export interface Progress {
   total: number;
 }
 
+export interface PracticeProgress {
+  current_question: number;
+  total_questions: number;
+  initial_total: number;
+  correct_first_try: number;
+  round_number: number;
+  progress_percent: number;
+}
+
 export interface FlashMessage {
   category: string;
   text: string;
@@ -53,6 +62,7 @@ export interface SubjectFile {
   key: string;
   display: string;
   count: number;
+  progress?: PracticeProgress | null;
 }
 
 export interface SubjectsResponse {

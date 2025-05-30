@@ -361,6 +361,7 @@ interface QuestionStatus {
 const props = defineProps<{
   subject: string;
   fileName: string;
+  order?: string;
 }>();
 
 const router = useRouter();
@@ -433,7 +434,8 @@ onMounted(async () => {
         });
 
         // 当前有其他文件的会话，需要强制重新开始
-        const startResponse = await apiService.startPractice(props.subject, props.fileName, true);
+        const shuffleQuestions = props.order !== 'sequential'; // 默认为随机，除非明确指定为顺序
+        const startResponse = await apiService.startPractice(props.subject, props.fileName, true, shuffleQuestions);
         if (!startResponse.success) {
           throw new Error(startResponse.message);
         }
@@ -441,7 +443,8 @@ onMounted(async () => {
     } else {
       console.log('No active session found, starting new practice');
       // 没有活跃会话，开始新的练习
-      const startResponse = await apiService.startPractice(props.subject, props.fileName);
+      const shuffleQuestions = props.order !== 'sequential'; // 默认为随机，除非明确指定为顺序
+      const startResponse = await apiService.startPractice(props.subject, props.fileName, false, shuffleQuestions);
       if (!startResponse.success) {
         throw new Error(startResponse.message);
       }

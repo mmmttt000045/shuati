@@ -1,5 +1,10 @@
 <template>
   <div class="container practice-container">
+    <!-- 标题区域 -->
+    <div class="practice-title">
+      <h1>{{ fileDisplayName }}</h1>
+    </div>
+
     <div class="practice-layout">
       <!-- 左侧主要内容区域 -->
       <div class="practice-main">
@@ -298,7 +303,11 @@
         </div>
         <div
           class="answer-card-grid-container"
-          :class="{ 'expanded': isAnswerCardExpanded }"
+          :class="{
+            'expanded': isAnswerCardExpanded,
+            'has-left-overflow': hasLeftOverflow,
+            'has-right-overflow': hasRightOverflow
+          }"
         >
           <div class="answer-card-grid">
             <template v-if="isAnswerCardExpanded">
@@ -349,6 +358,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, watch } from 'vue';
 import { useRouter } from 'vue-router';
+import { useToast } from 'vue-toastification';
 import type { Question, Progress, FlashMessage, Feedback } from '@/types';
 import { apiService } from '@/services/api';
 
@@ -365,7 +375,8 @@ const props = defineProps<{
 }>();
 
 const router = useRouter();
-
+const toast = useToast();
+const fileDisplayName = ref<string>('');
 const question = ref<Question | null>(null);
 const progress = ref<Progress | null>(null);
 const messages = ref<FlashMessage[]>([]);
@@ -406,12 +417,21 @@ onMounted(async () => {
       // 检查会话文件是否与当前请求的文件匹配
       if (sessionStatus.file_info && sessionStatus.file_info.key === props.fileName) {
         console.log('Resuming existing session for same file');
+        
+        // 设置文件显示名称
+        fileDisplayName.value = sessionStatus.file_info.display || props.fileName;
 
         // 显示恢复会话的提示信息
         if (sessionStatus.progress) {
+          // 使用 toast 进行即时通知
+          toast.info(`已恢复练习进度：第${sessionStatus.progress.round}轮，第${sessionStatus.progress.current}/${sessionStatus.progress.total}题`, {
+            timeout: 4000
+          });
+          
+          // 同时在页面上显示持久信息
           messages.value.push({
             category: 'info',
-            text: `已恢复练习进度：第${sessionStatus.progress.round}轮，第${sessionStatus.progress.current}/${sessionStatus.progress.total}题`
+            text: `练习进度已恢复：第${sessionStatus.progress.round}轮`
           });
         }
 
@@ -428,9 +448,8 @@ onMounted(async () => {
         console.log('Active session for different file, starting new practice');
 
         // 显示切换题库的提示信息
-        messages.value.push({
-          category: 'info',
-          text: `已从《${sessionStatus.file_info.display}》切换到当前题库`
+        toast.info(`已从《${sessionStatus.file_info.display}》切换到当前题库`, {
+          timeout: 3000
         });
 
         // 当前有其他文件的会话，需要强制重新开始
@@ -438,6 +457,10 @@ onMounted(async () => {
         const startResponse = await apiService.startPractice(props.subject, props.fileName, true, shuffleQuestions);
         if (!startResponse.success) {
           throw new Error(startResponse.message);
+        }
+        // 设置新的文件显示名称
+        if (startResponse.file_info) {
+          fileDisplayName.value = startResponse.file_info.display || props.fileName;
         }
       }
     } else {
@@ -448,6 +471,10 @@ onMounted(async () => {
       if (!startResponse.success) {
         throw new Error(startResponse.message);
       }
+      // 设置新的文件显示名称
+      if (startResponse.file_info) {
+        fileDisplayName.value = startResponse.file_info.display || props.fileName;
+      }
     }
 
     // 加载第一题或当前题目
@@ -455,9 +482,8 @@ onMounted(async () => {
 
   } catch (error) {
     console.error('Error initializing practice:', error);
-    messages.value.push({
-      category: 'error',
-      text: error instanceof Error ? error.message : 'Failed to initialize practice session'
+    toast.error(error instanceof Error ? error.message : '练习会话初始化失败', {
+      timeout: 5000
     });
     setTimeout(() => {
       router.push('/');
@@ -512,9 +538,8 @@ const loadQuestion = async () => {
     }
   } catch (error) {
     console.error('Error loading question:', error);
-    messages.value.push({
-      category: 'error',
-      text: error instanceof Error ? error.message : 'Failed to load question'
+    toast.error(error instanceof Error ? error.message : '题目加载失败', {
+      timeout: 4000
     });
   } finally {
     loading.value = false;
@@ -555,6 +580,17 @@ const submitAnswer = async () => {
     displayMode.value = 'feedback';
     isViewingHistory.value = false;  // 正常答题，不是查看历史
 
+    // 显示答题结果通知
+    if (feedback.is_correct) {
+      toast.success('回答正确！🎉', {
+        timeout: 2000
+      });
+    } else {
+      toast.warning('回答错误，查看解析学习一下吧 📚', {
+        timeout: 3000
+      });
+    }
+
     // 更新答题卡状态
     if (currentQuestionIndex.value >= 0 && currentQuestionIndex.value < questionStatuses.value.length) {
       updateQuestionStatus(currentQuestionIndex.value, feedback.is_correct);
@@ -566,9 +602,8 @@ const submitAnswer = async () => {
     }, 100); // 短暂延迟确保后端已更新
   } catch (error) {
     console.error('Error submitting answer:', error);
-    messages.value.push({
-      category: 'error',
-      text: error instanceof Error ? error.message : 'Failed to submit answer'
+    toast.error(error instanceof Error ? error.message : '答案提交失败', {
+      timeout: 4000
     });
   } finally {
     loadingSubmit.value = false;
@@ -632,9 +667,8 @@ const revealAnswer = async () => {
 
   } catch (error) {
     console.error('Error revealing answer:', error);
-    messages.value.push({
-      category: 'error',
-      text: error instanceof Error ? error.message : 'Failed to reveal answer'
+    toast.error(error instanceof Error ? error.message : '查看答案失败', {
+      timeout: 4000
     });
   } finally {
     loadingReveal.value = false;
@@ -656,9 +690,8 @@ const handleContinueAfterReveal = async () => {
     await syncQuestionStatuses();
   } catch (error) {
     console.error('Error continuing to next question:', error);
-    messages.value.push({
-      category: 'error',
-      text: error instanceof Error ? error.message : '加载下一题时发生错误'
+    toast.error(error instanceof Error ? error.message : '加载下一题时发生错误', {
+      timeout: 4000
     });
   }
 };
@@ -675,9 +708,8 @@ const backToCurrentQuestion = async () => {
     await loadQuestion();
   } catch (error) {
     console.error('Error returning to current question:', error);
-    messages.value.push({
-      category: 'error',
-      text: error instanceof Error ? error.message : '返回当前题目时发生错误'
+    toast.error(error instanceof Error ? error.message : '返回当前题目时发生错误', {
+      timeout: 4000
     });
   }
 };
@@ -824,16 +856,14 @@ const jumpToQuestion = async (index: number) => {
     if (response.success) {
       await loadQuestion();
     } else {
-      messages.value.push({
-        category: 'error',
-        text: response.message || '跳转失败'
+      toast.error(response.message || '跳转失败', {
+        timeout: 3000
       });
     }
   } catch (error) {
     console.error('Error jumping to question:', error);
-    messages.value.push({
-      category: 'error',
-      text: error instanceof Error ? error.message : '跳转时发生错误'
+    toast.error(error instanceof Error ? error.message : '跳转时发生错误', {
+      timeout: 4000
     });
   } finally {
     loading.value = false;
@@ -856,11 +886,36 @@ const syncQuestionStatuses = async () => {
   }
 };
 
+const hasLeftOverflow = computed(() => {
+  if (isAnswerCardExpanded.value || !progress.value) return false;
+  const currentIndex = currentQuestionIndex.value;
+  const displayCount = 15;
+  const halfDisplay = Math.floor(displayCount / 2);
+  const startIndex = Math.max(0, currentIndex - halfDisplay);
+  return startIndex > 0;
+});
+
+const hasRightOverflow = computed(() => {
+  if (isAnswerCardExpanded.value || !progress.value) return false;
+  const currentIndex = currentQuestionIndex.value;
+  const totalQuestions = progress.value.total;
+  const displayCount = 15;
+  const halfDisplay = Math.floor(displayCount / 2);
+  let startIndex = Math.max(0, currentIndex - halfDisplay);
+  const endIndex = Math.min(totalQuestions, startIndex + displayCount);
+
+  if (endIndex - startIndex < displayCount && totalQuestions >= displayCount) {
+    startIndex = Math.max(0, endIndex - displayCount);
+  }
+
+  return endIndex < totalQuestions;
+});
+
 </script>
 
 <style scoped>
 .practice-container {
-  max-width: 1200px;
+  max-width: 1600px;
   margin: 2rem auto;
   padding: 2rem;
   background: linear-gradient(to bottom right, #ffffff, #f8f9fa);
@@ -884,6 +939,7 @@ const syncQuestionStatuses = async () => {
   align-items: center;
   gap: 2rem;
   margin-bottom: 2rem;
+  flex-wrap: wrap;
 }
 
 .btn-navigate-back {
@@ -903,6 +959,7 @@ const syncQuestionStatuses = async () => {
 
 .progress-bar-wrapper {
   flex: 1;
+  min-width: 300px;
   background: white;
   padding: 1rem 1.5rem;
   border-radius: 12px;
@@ -1371,6 +1428,7 @@ const syncQuestionStatuses = async () => {
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
   position: sticky;
   top: 2rem;
+  flex-shrink: 0;
 }
 
 .answer-card-header {
@@ -1459,6 +1517,48 @@ const syncQuestionStatuses = async () => {
   height: auto;
   max-height: calc(100vh - 200px);
   overflow-y: auto;
+}
+
+/* 缩略模式的阴影遮罩效果 */
+.answer-card-grid-container:not(.expanded) {
+  position: relative;
+  /* 添加subtle的内阴影暗示可滚动 */
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.02);
+}
+
+.answer-card-grid-container:not(.expanded).has-left-overflow::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 20px;
+  background: linear-gradient(to right, rgba(255, 255, 255, 0.95), transparent);
+  z-index: 10;
+  pointer-events: none;
+}
+
+.answer-card-grid-container:not(.expanded).has-right-overflow::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 20px;
+  background: linear-gradient(to left, rgba(255, 255, 255, 0.95), transparent);
+  z-index: 10;
+  pointer-events: none;
+}
+
+/* 当同时有左右溢出时，加强遮罩效果 */
+.answer-card-grid-container:not(.expanded).has-left-overflow.has-right-overflow::before {
+  width: 25px;
+  background: linear-gradient(to right, rgba(255, 255, 255, 0.98), rgba(255, 255, 255, 0.6), transparent);
+}
+
+.answer-card-grid-container:not(.expanded).has-left-overflow.has-right-overflow::after {
+  width: 25px;
+  background: linear-gradient(to left, rgba(255, 255, 255, 0.98), rgba(255, 255, 255, 0.6), transparent);
 }
 
 .answer-card-grid {
@@ -1773,4 +1873,533 @@ const syncQuestionStatuses = async () => {
   transform: translateY(-1px);
   box-shadow: 0 2px 8px rgba(3, 105, 161, 0.15);
 }
+
+/* 响应式设计优化 */
+
+/* 超大屏幕 (≥1600px) */
+@media (min-width: 1600px) {
+  .practice-container {
+    max-width: 1800px;
+    padding: 3rem;
+  }
+
+  .practice-layout {
+    gap: 3rem;
+  }
+
+  .question-section,
+  .feedback-section {
+    padding: 3rem;
+  }
+
+  .question-text {
+    font-size: 1.375rem;
+    padding: 2rem;
+  }
+
+  .option-label {
+    padding: 1.25rem;
+    padding-left: 3.5rem;
+  }
+
+  .answer-card-panel {
+    width: 320px;
+    padding: 2rem;
+  }
+
+  .answer-card-grid {
+    grid-template-columns: repeat(6, 1fr);
+    gap: 0.75rem;
+  }
+
+  .question-number-btn {
+    font-size: 1rem;
+  }
+}
+
+/* 大屏幕 (1200px - 1599px) */
+@media (min-width: 1200px) and (max-width: 1599px) {
+  .practice-container {
+    max-width: 95%;
+  }
+
+  .answer-card-panel {
+    width: 300px;
+  }
+
+  .answer-card-grid {
+    grid-template-columns: repeat(6, 1fr);
+  }
+}
+
+/* 中等屏幕 (992px - 1199px) */
+@media (min-width: 992px) and (max-width: 1199px) {
+  .practice-container {
+    max-width: 95%;
+    padding: 1.5rem;
+  }
+
+  .practice-layout {
+    gap: 1.5rem;
+  }
+
+  .question-section,
+  .feedback-section {
+    padding: 1.75rem;
+  }
+
+  .answer-card-panel {
+    width: 280px;
+  }
+
+  .answer-card-grid {
+    grid-template-columns: repeat(5, 1fr);
+  }
+
+  .question-text {
+    font-size: 1.125rem;
+    padding: 1.25rem;
+  }
+}
+
+/* 平板横屏 (768px - 991px) */
+@media (min-width: 768px) and (max-width: 991px) {
+  .practice-container {
+    max-width: 95%;
+    margin: 1rem auto;
+    padding: 1.25rem;
+  }
+
+  .practice-layout {
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+
+  .answer-card-panel {
+    order: -1;
+    position: static;
+    width: 100%;
+    border-radius: 12px;
+    padding: 1rem;
+    margin-bottom: 0;
+  }
+
+  .answer-card-grid-container {
+    height: auto;
+    max-height: none;
+  }
+
+  .answer-card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(45px, 1fr));
+    gap: 0.5rem;
+    padding: 0.5rem 0;
+  }
+
+  .page-header {
+    flex-wrap: wrap;
+    gap: 1rem;
+  }
+
+  .progress-bar-wrapper {
+    min-width: 250px;
+  }
+
+  .question-text {
+    font-size: 1.125rem;
+    flex-direction: column;
+    gap: 0.75rem;
+    align-items: flex-start;
+  }
+
+  .question-type-badge {
+    margin-top: 0;
+  }
+
+  .answer-card-title h3 {
+    font-size: 1.125rem;
+  }
+
+  .answer-card-legend {
+    justify-content: center;
+    gap: 1rem;
+  }
+
+  .question-number-btn {
+    height: 45px;
+    font-size: 0.9rem;
+  }
+}
+
+/* 平板竖屏和大手机 (576px - 767px) */
+@media (min-width: 576px) and (max-width: 767px) {
+  .practice-container {
+    margin: 0.5rem auto;
+    padding: 1rem;
+    border-radius: 12px;
+  }
+
+  .practice-layout {
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .answer-card-panel {
+    order: -1;
+    position: static;
+    width: 100%;
+    border-radius: 12px;
+    padding: 1rem;
+    margin-bottom: 0;
+  }
+
+  .answer-card-grid-container {
+    height: auto;
+    max-height: none;
+  }
+
+  .answer-card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(42px, 1fr));
+    gap: 0.5rem;
+    padding: 0.5rem 0;
+  }
+
+  .page-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 1rem;
+  }
+
+  .progress-bar-wrapper {
+    min-width: unset;
+    width: 100%;
+  }
+
+  .question-section,
+  .feedback-section {
+    padding: 1.25rem;
+  }
+
+  .question-text {
+    font-size: 1.1rem;
+    padding: 1rem;
+    flex-direction: column;
+    gap: 0.75rem;
+    align-items: flex-start;
+  }
+
+  .option-label {
+    padding: 0.875rem;
+    padding-left: 2.75rem;
+  }
+
+  .action-buttons {
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .btn {
+    width: 100%;
+    padding: 0.875rem 1.25rem;
+  }
+
+  .answer-card-title h3 {
+    font-size: 1.125rem;
+  }
+
+  .answer-card-legend {
+    justify-content: center;
+    gap: 1rem;
+  }
+
+  .question-number-btn {
+    height: 42px;
+    font-size: 0.85rem;
+  }
+}
+
+/* 小手机 (≤575px) */
+@media (max-width: 575px) {
+  .practice-container {
+    margin: 0;
+    padding: 0.75rem;
+    border-radius: 8px;
+  }
+
+  .practice-layout {
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .answer-card-panel {
+    order: -1;
+    width: 100%;
+    max-height: 160px;
+    overflow-y: auto;
+    padding: 0.75rem;
+    border-radius: 8px;
+  }
+
+  .answer-card-grid {
+    grid-template-columns: repeat(auto-fill, minmax(38px, 1fr));
+    gap: 0.375rem;
+    padding: 0.375rem 0;
+  }
+
+  .question-number-btn {
+    width: 38px;
+    height: 38px;
+    font-size: 0.8rem;
+    border-radius: 6px;
+  }
+
+  .page-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+  }
+
+  .btn-navigate-back {
+    padding: 0.625rem 1rem;
+    font-size: 0.9rem;
+  }
+
+  .progress-bar-wrapper {
+    min-width: unset;
+    width: 100%;
+    padding: 0.75rem 1rem;
+  }
+
+  .progress-bar-text {
+    font-size: 1rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .question-section,
+  .feedback-section {
+    padding: 1rem;
+  }
+
+  .question-text {
+    font-size: 1rem;
+    padding: 0.875rem;
+    flex-direction: column;
+    gap: 0.625rem;
+    align-items: flex-start;
+    line-height: 1.6;
+  }
+
+  .question-type-badge {
+    padding: 0.3rem 0.6rem;
+    font-size: 0.8rem;
+  }
+
+  .option-label {
+    padding: 0.75rem;
+    padding-left: 2.5rem;
+    font-size: 0.95rem;
+  }
+
+  .checkbox-custom-display,
+  .radio-custom-display {
+    width: 1.25rem;
+    height: 1.25rem;
+    left: 0.75rem;
+  }
+
+  .option-key {
+    font-size: 0.9rem;
+    min-width: 1.5rem;
+  }
+
+  .action-buttons {
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .btn {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    font-size: 0.95rem;
+  }
+
+  .feedback-banner {
+    padding: 1rem;
+    font-size: 1rem;
+  }
+
+  .answer-comparison {
+    margin: 1rem 0;
+  }
+
+  .options-review {
+    margin: 0.75rem 0;
+    padding: 0.75rem;
+  }
+
+  .option-review {
+    padding: 0.625rem 0.75rem;
+    font-size: 0.9rem;
+  }
+
+  .option-review .option-key {
+    min-width: 20px;
+    margin-right: 0.75rem;
+  }
+
+  .session-info {
+    padding: 0.75rem;
+  }
+
+  .info-text {
+    font-size: 0.85rem;
+  }
+
+  .history-notice {
+    padding: 0.75rem 1rem;
+    margin-bottom: 1rem;
+  }
+
+  .flash-messages {
+    margin-bottom: 1rem;
+  }
+
+  .flash-messages li {
+    padding: 0.75rem 1rem;
+    font-size: 0.9rem;
+  }
+
+  .answer-card-header {
+    margin-bottom: 1rem;
+    padding-bottom: 0.75rem;
+  }
+
+  .answer-card-title {
+    margin-bottom: 0.75rem;
+  }
+
+  .answer-card-title h3 {
+    font-size: 1rem;
+  }
+
+  .btn-toggle {
+    width: 28px;
+    height: 28px;
+    font-size: 1rem;
+  }
+
+  .answer-card-legend {
+    font-size: 0.8rem;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    justify-content: space-around;
+  }
+
+  .legend-item {
+    gap: 0.375rem;
+  }
+
+  .status-dot {
+    width: 8px;
+    height: 8px;
+  }
+}
+
+/* 横屏模式特殊优化 */
+@media (max-height: 600px) and (orientation: landscape) {
+  .answer-card-panel {
+    max-height: calc(100vh - 100px);
+    overflow-y: auto;
+  }
+
+  .answer-card-grid-container.expanded {
+    max-height: 200px;
+    overflow-y: auto;
+  }
+}
+
+.practice-title {
+  margin-bottom: 2rem;
+  text-align: center;
+}
+
+.practice-title h1 {
+  font-size: 1.75rem;
+  font-weight: 600;
+  color: #1f2937;
+  line-height: 1.4;
+  padding-bottom: 1rem;
+  border-bottom: 2px solid #e5e7eb;
+}
+
+/* 响应式设计优化 */
+@media (max-width: 768px) {
+  .practice-title h1 {
+    font-size: 1.5rem;
+    padding-bottom: 0.75rem;
+  }
+}
+
+@media (max-width: 576px) {
+  .practice-title h1 {
+    font-size: 1.25rem;
+    padding-bottom: 0.5rem;
+  }
+}
+
+/* 移动端优化阴影效果 */
+@media (max-width: 768px) {
+  .answer-card-grid-container:not(.expanded).has-left-overflow::before,
+  .answer-card-grid-container:not(.expanded).has-right-overflow::after {
+    width: 15px;
+  }
+
+  .answer-card-grid-container:not(.expanded).has-left-overflow.has-right-overflow::before,
+  .answer-card-grid-container:not(.expanded).has-left-overflow.has-right-overflow::after {
+    width: 18px;
+  }
+
+  .practice-title h1 {
+    font-size: 1.5rem;
+    padding-bottom: 0.75rem;
+  }
+}
+
+@media (max-width: 576px) {
+  .answer-card-grid-container:not(.expanded).has-left-overflow::before,
+  .answer-card-grid-container:not(.expanded).has-right-overflow::after {
+    width: 12px;
+    background: linear-gradient(to right, rgba(255, 255, 255, 0.9), transparent);
+  }
+
+  .answer-card-grid-container:not(.expanded).has-right-overflow::after {
+    background: linear-gradient(to left, rgba(255, 255, 255, 0.9), transparent);
+  }
+
+  .answer-card-grid-container:not(.expanded).has-left-overflow.has-right-overflow::before {
+    width: 15px;
+    background: linear-gradient(to right, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.5), transparent);
+  }
+
+  .answer-card-grid-container:not(.expanded).has-left-overflow.has-right-overflow::after {
+    width: 15px;
+    background: linear-gradient(to left, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.5), transparent);
+  }
+
+  .practice-title h1 {
+    font-size: 1.25rem;
+    padding-bottom: 0.5rem;
+  }
+}
+
+/* 为答题卡网格添加平滑滚动提示 */
+.answer-card-grid-container:not(.expanded) {
+  position: relative;
+  /* 添加subtle的内阴影暗示可滚动 */
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.02);
+}
+
+/* 响应式设计优化 */
 </style>

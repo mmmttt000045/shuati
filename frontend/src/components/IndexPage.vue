@@ -32,7 +32,7 @@
       <!-- 题库选择列表 -->
       <div v-else class="files-container">
         <div class="back-button-container">
-          <button class="back-button" @click="selectedSubject = ''">
+          <button class="back-button" @click="goBackToSubjects">
             <span class="back-arrow">←</span> 返回科目列表
           </button>
         </div>
@@ -78,38 +78,103 @@
           </div>
         </div>
 
-        <div class="files-list">
-          <button
+        <div class="files-grid">
+          <div
             v-for="file in subjects[selectedSubject]"
             :key="file.key"
-            class="file-button"
+            class="file-card"
             @click="startPractice(selectedSubject, file.key)"
           >
-            <div class="file-info">
-              <div class="file-main-info">
-                <span class="file-name">{{ file.display }}</span>
-                <!-- 显示练习进度 -->
-                <div v-if="file.progress" class="progress-info">
+            <div class="file-card-header">
+              <h3 class="file-title">{{ file.display }}</h3>
+              <span class="file-count-badge">{{ file.count }}题</span>
+            </div>
+
+            <div class="file-card-content">
+              <!-- 显示练习进度 -->
+              <div v-if="file.progress" class="progress-section">
+                <div class="progress-details">
                   <div class="progress-text">
-                    <span class="current-progress">
-                      第{{ file.progress.round_number }}轮 - {{ file.progress.current_question }}/{{
-                        file.progress.total_questions
-                      }}题
-                    </span>
+                    <span class="round-info">第{{ file.progress.round_number }}轮</span>
+                    <span class="progress-percent-badge">{{ file.progress.progress_percent.toFixed(2).replace(/\.?0+$/, '') }}%</span>
                   </div>
-                  <div class="progress-bar">
+                  <div class="question-info">{{ file.progress.current_question }}/{{ file.progress.total_questions }}题</div>
+                </div>
+                <div class="progress-bar-container">
+                  <div class="progress-bar-card">
                     <div
-                      class="progress-bar-fill"
+                      class="progress-bar-fill-card"
                       :style="{ width: file.progress.progress_percent + '%' }"
                     ></div>
                   </div>
                 </div>
-                <div v-else class="no-progress">
-                  <span class="status-text">未开始</span>
+              </div>
+
+              <div v-else class="no-progress-section">
+                <div class="no-progress-icon">🎯</div>
+                <div class="no-progress-text">
+                  <span class="status-title">准备开始</span>
+                  <span class="status-desc">点击开始你的学习之旅</span>
                 </div>
-                <span class="file-count">({{ file.count }}题)</span>
               </div>
             </div>
+
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 自定义确认对话框 -->
+    <div v-if="showConfirmDialog" class="confirm-overlay" @click="closeConfirmDialog">
+      <div class="confirm-dialog" @click.stop>
+        <div class="confirm-header">
+          <div class="confirm-icon">📚</div>
+          <h3 class="confirm-title">发现练习进度</h3>
+        </div>
+
+        <div class="confirm-content">
+          <div class="session-info">
+            <div class="session-detail">
+              <span class="session-label">题库：</span>
+              <span class="session-value">{{ confirmData.fileName }}</span>
+            </div>
+            <div class="session-detail">
+              <span class="session-label">进度：</span>
+              <span class="session-value">第{{ confirmData.progress?.current }}/{{ confirmData.progress?.total }}题</span>
+            </div>
+            <div class="session-detail">
+              <span class="session-label">轮次：</span>
+              <span class="session-value">第{{ confirmData.progress?.round }}轮</span>
+            </div>
+          </div>
+
+          <div class="progress-visual">
+            <div class="progress-bar-large">
+              <div
+                class="progress-bar-fill-large"
+                :style="{ width: confirmData.progressPercent + '%' }"
+              ></div>
+            </div>
+            <div class="progress-text-large">{{ confirmData.progressPercent }}% 完成</div>
+          </div>
+
+          <p class="confirm-message">
+            你想要继续之前的练习进度，还是重新开始？
+          </p>
+        </div>
+
+        <div class="confirm-actions">
+          <button class="confirm-btn confirm-btn-continue" @click="handleConfirmContinue">
+            <span class="btn-icon">📖</span>
+            继续练习
+          </button>
+          <button class="confirm-btn confirm-btn-restart" @click="handleConfirmRestart">
+            <span class="btn-icon">🔄</span>
+            重新开始
+          </button>
+          <button class="confirm-btn confirm-btn-cancel" @click="closeConfirmDialog">
+            <span class="btn-icon">✖️</span>
+            取消
           </button>
         </div>
       </div>
@@ -118,17 +183,31 @@
 </template>
 
 <script lang="ts" setup>
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { useToast } from 'vue-toastification'
 import { apiService } from '@/services/api'
 import type { FlashMessage, SubjectFile } from '@/types'
 
 const router = useRouter()
+const toast = useToast()
 const subjects = ref<Record<string, SubjectFile[]>>({})
 const selectedSubject = ref<string>('')
 const messages = ref<FlashMessage[]>([])
 const loading = ref(false)
 const questionOrder = ref<'random' | 'sequential'>('random')
+const showConfirmDialog = ref(false)
+const confirmData = ref<{
+  fileName: string;
+  subject: string;
+  progress?: { current: number; total: number; round: number };
+  progressPercent: number;
+  sessionStatus?: any;
+}>({
+  fileName: '',
+  subject: '',
+  progressPercent: 0
+})
 
 const getTotalQuestions = (files: SubjectFile[]) => {
   return files.reduce((total, file) => total + file.count, 0)
@@ -136,6 +215,16 @@ const getTotalQuestions = (files: SubjectFile[]) => {
 
 const selectSubject = (subject: string) => {
   selectedSubject.value = subject
+  toast.success(`已选择科目：${subject}`, {
+    timeout: 2000
+  })
+}
+
+const goBackToSubjects = () => {
+  selectedSubject.value = ''
+  toast.success('已返回科目列表', {
+    timeout: 2000
+  })
 }
 
 const startPractice = async (subject: string, fileName: string) => {
@@ -151,50 +240,104 @@ const startPractice = async (subject: string, fileName: string) => {
       sessionStatus.file_info.key === fileName &&
       !sessionStatus.completed
     ) {
-      // 询问用户是否要继续之前的进度还是重新开始
-      const shouldContinue = confirm(
-        `检测到你之前正在练习《${sessionStatus.file_info.display}》(第${sessionStatus.progress?.current}/${sessionStatus.progress?.total}题)。\n\n点击"确定"继续之前的进度，点击"取消"重新开始。`,
-      )
-
-      if (shouldContinue) {
-        // 继续之前的练习
-        router.push({
-          name: 'practice',
-          query: { subject, file: fileName },
-        })
-        return
-      } else {
-        // 重新开始练习，传递题目顺序参数
-        const startResponse = await apiService.startPractice(
-          subject,
-          fileName,
-          true,
-          questionOrder.value === 'random',
-        )
-        if (!startResponse.success) {
-          throw new Error(startResponse.message)
-        }
+      // 显示确认对话框
+      showConfirmDialog.value = true
+      loading.value = false // 停止加载状态
+      confirmData.value = {
+        fileName: sessionStatus.file_info.display,
+        subject: subject,
+        progress: sessionStatus.progress,
+        progressPercent: Math.round((sessionStatus.progress?.current / sessionStatus.progress?.total) * 100) || 0,
+        sessionStatus: sessionStatus
       }
-    }
+      return // 等待用户选择
+    } else {
+      // 正常启动练习，传递题目顺序参数
+      const orderText = questionOrder.value === 'random' ? '乱序练习' : '顺序练习'
+      toast.success(`开始${orderText} 🎯`, {
+        timeout: 2000
+      })
 
-    // 正常启动练习，传递题目顺序参数
-    router.push({
-      name: 'practice',
-      query: {
-        subject,
-        file: fileName,
-        order: questionOrder.value,
-      },
-    })
+      router.push({
+        name: 'practice',
+        query: {
+          subject,
+          file: fileName,
+          order: questionOrder.value,
+        },
+      })
+    }
   } catch (error) {
     console.error('Error starting practice:', error)
-    messages.value.push({
-      category: 'error',
-      text: error instanceof Error ? error.message : '启动练习失败',
+    toast.error(error instanceof Error ? error.message : '启动练习失败', {
+      timeout: 4000
     })
   } finally {
     loading.value = false
   }
+}
+
+const handleConfirmContinue = async () => {
+  // 继续之前的练习
+  showConfirmDialog.value = false
+  toast.success('继续之前的练习进度 📚', {
+    timeout: 2000
+  })
+  router.push({
+    name: 'practice',
+    query: {
+      subject: confirmData.value.subject,
+      file: confirmData.value.sessionStatus.file_info.key
+    },
+  })
+}
+
+const handleConfirmRestart = async () => {
+  // 重新开始练习，传递题目顺序参数
+  showConfirmDialog.value = false
+  loading.value = true
+
+  try {
+    toast.info('重新开始练习 🔄', {
+      timeout: 2000
+    })
+    const startResponse = await apiService.startPractice(
+      confirmData.value.subject,
+      confirmData.value.sessionStatus.file_info.key,
+      true,
+      questionOrder.value === 'random',
+    )
+    if (!startResponse.success) {
+      throw new Error(startResponse.message)
+    }
+
+    // 启动成功后跳转
+    const orderText = questionOrder.value === 'random' ? '乱序练习' : '顺序练习'
+    toast.success(`开始${orderText} 🎯`, {
+      timeout: 2000
+    })
+
+    router.push({
+      name: 'practice',
+      query: {
+        subject: confirmData.value.subject,
+        file: confirmData.value.sessionStatus.file_info.key,
+        order: questionOrder.value,
+      },
+    })
+  } catch (error) {
+    console.error('Error restarting practice:', error)
+    toast.error(error instanceof Error ? error.message : '重新开始失败', {
+      timeout: 4000
+    })
+  } finally {
+    loading.value = false
+  }
+}
+
+const closeConfirmDialog = () => {
+  showConfirmDialog.value = false
+  loading.value = false
 }
 
 onMounted(async () => {
@@ -203,6 +346,11 @@ onMounted(async () => {
     const response = await apiService.getFileOptions()
     subjects.value = response.subjects
     if (response.message) {
+      // 显示欢迎或状态信息
+      toast.info(response.message, {
+        timeout: 3000
+      })
+      // 同时在页面上保留重要信息
       messages.value.push({
         category: 'info',
         text: response.message,
@@ -210,19 +358,29 @@ onMounted(async () => {
     }
   } catch (error) {
     console.error('Error fetching subjects:', error)
-    messages.value.push({
-      category: 'error',
-      text: error instanceof Error ? error.message : '获取科目列表失败',
+    toast.error(error instanceof Error ? error.message : '获取科目列表失败', {
+      timeout: 5000
     })
   } finally {
     loading.value = false
+  }
+})
+
+// 监听题目顺序变化
+watch(questionOrder, (newOrder, oldOrder) => {
+  if (oldOrder) { // 避免初始化时触发
+    const orderText = newOrder === 'random' ? '乱序练习模式' : '顺序练习模式'
+    const icon = newOrder === 'random' ? '🎲' : '📋'
+    toast.info(`已切换到${orderText} ${icon}`, {
+      timeout: 2000
+    })
   }
 })
 </script>
 
 <style scoped>
 .container {
-  max-width: 1200px;
+  max-width: 1600px;
   margin: 0 auto;
   padding: 2rem;
   min-height: 100vh;
@@ -254,7 +412,7 @@ onMounted(async () => {
 
 .messages {
   margin-bottom: 2rem;
-  max-width: 800px;
+  max-width: 1200px;
   margin-left: auto;
   margin-right: auto;
 }
@@ -317,7 +475,7 @@ onMounted(async () => {
 
 .subjects-list {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 2rem;
   width: 100%;
   padding: 1rem;
@@ -392,7 +550,7 @@ onMounted(async () => {
 
 .files-container {
   width: 100%;
-  max-width: 800px;
+  max-width: 1200px;
   margin: 0 auto;
   padding: 2rem;
   background-color: white;
@@ -524,79 +682,83 @@ onMounted(async () => {
   line-height: 1.4;
 }
 
-.files-list {
+.files-grid {
   display: grid;
-  gap: 1rem;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 2rem;
+  margin-top: 1rem;
 }
 
-.file-button {
-  width: 100%;
-  padding: 1.25rem 1.75rem;
-  background-color: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 12px;
+.file-card {
+  background-color: white;
+  border-radius: 16px;
+  padding: 2rem;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
   cursor: pointer;
-  text-align: left;
-  transition: all 0.2s ease;
+  transition: all 0.3s ease;
+  border: 2px solid transparent;
+  position: relative;
+  overflow: hidden;
+}
+
+.file-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(to right, #3b82f6, #2563eb);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.file-card:hover {
+  transform: translateY(-6px);
+  box-shadow:
+    0 20px 25px -5px rgba(0, 0, 0, 0.1),
+    0 10px 10px -5px rgba(0, 0, 0, 0.04);
+}
+
+.file-card:hover::before {
+  opacity: 1;
+}
+
+.file-card-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  margin-bottom: 1.5rem;
 }
 
-.file-button:hover {
+.file-title {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.file-count-badge {
   background-color: #f8fafc;
-  border-color: #3b82f6;
-  transform: translateY(-2px);
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-}
-
-.file-info {
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-  gap: 0.75rem;
-}
-
-.file-main-info {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  width: 100%;
-}
-
-.file-name {
-  font-weight: 500;
-  color: #334155;
-  font-size: 1.1rem;
-  white-space: nowrap;
-}
-
-.file-count {
-  color: #64748b;
-  font-size: 0.95rem;
-  font-weight: 500;
-  background-color: #f1f5f9;
   padding: 0.5rem 1rem;
   border-radius: 999px;
-  transition: all 0.2s ease;
-  white-space: nowrap;
+  color: #475569;
+  font-size: 0.9rem;
+  font-weight: 500;
 }
 
-.file-button:hover .file-count {
-  background-color: #e0f2fe;
-  color: #0284c7;
+.file-card-content {
+  margin-bottom: 1.5rem;
 }
 
-.progress-info {
-  flex: 1;
+.progress-section {
+  margin-bottom: 1.5rem;
+}
+
+.progress-details {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  padding: 0.5rem 0.75rem;
-  background-color: #f8fafc;
-  border-radius: 8px;
-  border-left: 3px solid #3b82f6;
-  min-width: 200px;
+  margin-bottom: 1rem;
 }
 
 .progress-text {
@@ -605,41 +767,113 @@ onMounted(async () => {
   align-items: center;
 }
 
-.current-progress {
+.progress-bar-container {
+  width: 100%;
+}
+
+.progress-bar-card {
+  width: 100%;
+  height: 8px;
+  background-color: #e2e8f0;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.progress-bar-fill-card {
+  height: 100%;
+  background: linear-gradient(90deg, #3b82f6, #60a5fa);
+  transition: width 0.3s ease;
+  border-radius: 4px;
+}
+
+.round-info {
   font-size: 0.9rem;
   color: #3b82f6;
   font-weight: 600;
 }
 
-.progress-bar {
-  width: 100%;
-  height: 6px;
-  background-color: #e2e8f0;
-  border-radius: 3px;
-  overflow: hidden;
+.progress-percent-badge {
+  font-size: 0.9rem;
+  color: #3b82f6;
+  font-weight: 600;
+  background-color: #eff6ff;
+  padding: 0.25rem 0.75rem;
+  border-radius: 999px;
+  border: 1px solid #bfdbfe;
 }
 
-.progress-bar-fill {
-  height: 100%;
-  background: linear-gradient(90deg, #3b82f6, #60a5fa);
-  transition: width 0.3s ease;
-}
-
-.no-progress {
-  flex: 1;
-  display: flex;
-  justify-content: flex-start;
-  align-items: center;
-  padding: 0.5rem 0.75rem;
-  background-color: #f8fafc;
-  border-radius: 6px;
-  min-width: 200px;
-}
-
-.status-text {
+.question-info {
   font-size: 0.9rem;
   color: #64748b;
   font-weight: 500;
+}
+
+.no-progress-section {
+  display: flex;
+  align-items: center;
+  padding: 1.5rem;
+  background-color: #f8fafc;
+  border-radius: 12px;
+  border: 2px dashed #cbd5e1;
+}
+
+.no-progress-icon {
+  font-size: 2rem;
+  margin-right: 1rem;
+  flex-shrink: 0;
+}
+
+.no-progress-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.status-title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #1e293b;
+  margin-bottom: 0.25rem;
+}
+
+.status-desc {
+  font-size: 0.9rem;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.file-card-footer {
+  border-top: 1px solid #f1f5f9;
+  padding-top: 1rem;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.start-hint {
+  display: flex;
+  align-items: center;
+  padding: 0.75rem 1.25rem;
+  background: linear-gradient(135deg, #f0f9ff, #e0f2fe);
+  border-radius: 999px;
+  font-weight: 500;
+  border: 1px solid #bae6fd;
+  transition: all 0.2s ease;
+}
+
+.file-card:hover .start-hint {
+  background: linear-gradient(135deg, #e0f2fe, #bae6fd);
+  transform: scale(1.05);
+}
+
+.start-icon {
+  font-size: 1.1rem;
+  margin-right: 0.5rem;
+}
+
+.start-text {
+  font-size: 0.95rem;
+  color: #0369a1;
+  font-weight: 600;
 }
 
 @keyframes fadeIn {
@@ -653,6 +887,56 @@ onMounted(async () => {
   }
 }
 
+/* 大屏幕优化 */
+@media (min-width: 1400px) {
+  .subjects-list {
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 2.5rem;
+  }
+
+  .subject-card {
+    padding: 2.5rem;
+  }
+
+  .files-container {
+    padding: 3rem;
+  }
+
+  .file-card {
+    padding: 2rem;
+  }
+}
+
+/* 中等大屏幕 */
+@media (min-width: 1200px) and (max-width: 1399px) {
+  .subjects-list {
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  }
+}
+
+/* 平板横屏 */
+@media (min-width: 769px) and (max-width: 1199px) {
+  .container {
+    max-width: 95%;
+    padding: 1.5rem;
+  }
+
+  .subjects-list {
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 1.5rem;
+  }
+
+  .files-container {
+    max-width: 100%;
+  }
+
+  .files-grid {
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 1.5rem;
+  }
+}
+
+/* 手机端 */
 @media (max-width: 768px) {
   .container {
     padding: 1rem;
@@ -673,16 +957,316 @@ onMounted(async () => {
     padding: 1.5rem;
   }
 
+  .files-grid {
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+  }
+
   .selected-subject-title {
     font-size: 1.75rem;
   }
 
-  .file-button {
-    padding: 1rem 1.25rem;
+  .file-card {
+    padding: 1.5rem;
   }
 
-  .subject-card {
+  .file-card-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+
+  .file-title {
+    font-size: 1.25rem;
+  }
+
+  .file-count-badge {
+    font-size: 0.9rem;
+  }
+
+  .progress-section,
+  .no-progress-section {
+    min-width: unset;
+    width: 100%;
+  }
+
+  .no-progress-section {
+    padding: 1rem;
+  }
+
+  .no-progress-icon {
+    font-size: 1.5rem;
+    margin-right: 0.75rem;
+  }
+
+  .start-hint {
+    padding: 0.625rem 1rem;
+  }
+
+  .order-options {
+    flex-direction: column;
+  }
+}
+
+/* 自定义确认对话框样式 */
+.confirm-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(4px);
+  animation: overlayFadeIn 0.3s ease-out;
+}
+
+@keyframes overlayFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.confirm-dialog {
+  background: white;
+  border-radius: 20px;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  max-width: 500px;
+  width: 90%;
+  max-height: 80vh;
+  overflow-y: auto;
+  animation: dialogSlideIn 0.3s ease-out;
+}
+
+@keyframes dialogSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.confirm-header {
+  text-align: center;
+  padding: 2rem 2rem 1rem;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.confirm-icon {
+  font-size: 3rem;
+  margin-bottom: 1rem;
+  animation: bounce 0.6s ease-in-out;
+}
+
+.confirm-title {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: #1e293b;
+  margin: 0;
+}
+
+.confirm-content {
+  padding: 2rem;
+}
+
+.session-info {
+  background: #f8fafc;
+  border-radius: 12px;
+  padding: 1.5rem;
+  margin-bottom: 2rem;
+  border-left: 4px solid #3b82f6;
+}
+
+.session-detail {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.session-detail:last-child {
+  margin-bottom: 0;
+}
+
+.session-label {
+  font-weight: 500;
+  color: #64748b;
+}
+
+.session-value {
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.progress-visual {
+  margin-bottom: 2rem;
+}
+
+.progress-bar-large {
+  width: 100%;
+  height: 12px;
+  background-color: #e2e8f0;
+  border-radius: 6px;
+  overflow: hidden;
+  margin-bottom: 0.75rem;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.progress-bar-fill-large {
+  height: 100%;
+  background: linear-gradient(90deg, #3b82f6, #60a5fa, #34d399);
+  transition: width 0.8s ease;
+  border-radius: 6px;
+  position: relative;
+}
+
+.progress-bar-fill-large::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+  animation: shimmer 2s infinite;
+}
+
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.progress-text-large {
+  text-align: center;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #3b82f6;
+}
+
+.confirm-message {
+  font-size: 1.1rem;
+  color: #475569;
+  text-align: center;
+  line-height: 1.6;
+  margin: 0;
+}
+
+.confirm-actions {
+  padding: 1.5rem 2rem 2rem;
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.confirm-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.875rem 1.5rem;
+  border-radius: 12px;
+  font-weight: 600;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  border: 2px solid transparent;
+  min-width: 120px;
+  justify-content: center;
+}
+
+.confirm-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.confirm-btn-continue {
+  background: linear-gradient(135deg, #10b981, #34d399);
+  color: white;
+}
+
+.confirm-btn-continue:hover {
+  background: linear-gradient(135deg, #059669, #10b981);
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+}
+
+.confirm-btn-restart {
+  background: linear-gradient(135deg, #3b82f6, #60a5fa);
+  color: white;
+}
+
+.confirm-btn-restart:hover {
+  background: linear-gradient(135deg, #2563eb, #3b82f6);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+}
+
+.confirm-btn-cancel {
+  background: #f8fafc;
+  color: #64748b;
+  border-color: #e2e8f0;
+}
+
+.confirm-btn-cancel:hover {
+  background: #f1f5f9;
+  color: #475569;
+  border-color: #cbd5e1;
+}
+
+.btn-icon {
+  font-size: 1.1rem;
+}
+
+/* 移动端对话框优化 */
+@media (max-width: 640px) {
+  .confirm-dialog {
+    width: 95%;
+    margin: 1rem;
+  }
+
+  .confirm-header {
+    padding: 1.5rem 1.5rem 1rem;
+  }
+
+  .confirm-content {
     padding: 1.5rem;
+  }
+
+  .confirm-actions {
+    padding: 1rem 1.5rem 1.5rem;
+    flex-direction: column;
+  }
+
+  .confirm-btn {
+    width: 100%;
+    min-width: unset;
+  }
+
+  .session-info {
+    padding: 1rem;
+  }
+
+  .confirm-icon {
+    font-size: 2.5rem;
+  }
+
+  .confirm-title {
+    font-size: 1.25rem;
+  }
+
+  .confirm-message {
+    font-size: 1rem;
   }
 }
 </style>

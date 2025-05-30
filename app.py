@@ -57,7 +57,9 @@ SESSION_KEYS = {
     'WRONG_INDICES': 'wrong_q_indices_this_round',
     'ROUND_NUMBER': 'round_number',
     'INITIAL_TOTAL': 'initial_total_questions',
-    'CORRECT_FIRST_TRY': 'correct_on_first_try'
+    'CORRECT_FIRST_TRY': 'correct_on_first_try',
+    'QUESTION_STATUSES': 'question_answer_statuses',  # 保存每道题的答题状态
+    'ANSWER_HISTORY': 'question_answer_history'  # 保存每道题的答题历史
 }
 
 
@@ -92,7 +94,6 @@ def get_safe_session_value(key: str, default: Any = None) -> Any:
     """Safely get a value from the session."""
     try:
         value = session.get(key, default)
-        logger.info(f"Getting session key '{key}': {value}")
         return value
     except Exception as e:
         logger.error(f"Error accessing session key '{key}': {e}")
@@ -104,7 +105,6 @@ def set_safe_session_value(key: str, value: Any) -> None:
     try:
         session[key] = value
         session.modified = True
-        logger.info(f"Set session key '{key}': {value}")
     except Exception as e:
         logger.error(f"Error setting session key '{key}': {e}")
 
@@ -237,7 +237,9 @@ app.config.update(
     SESSION_COOKIE_SAMESITE='Lax',  # Allow cross-site cookies in development
     SESSION_COOKIE_NAME='quiz_session',
     SESSION_COOKIE_DOMAIN=None,
-    PERMANENT_SESSION_LIFETIME=timedelta(minutes=30)
+    PERMANENT_SESSION_LIFETIME=timedelta(hours=2),  # 增加session过期时间到2小时
+    SESSION_COOKIE_MAX_AGE=7200,  # 2小时的秒数
+    SESSION_REFRESH_EACH_REQUEST=True  # 每次请求都刷新session过期时间
 )
 
 # 配置 CORS - 更宽松的开发环境配置
@@ -266,23 +268,9 @@ def session_management(response):
         # Force the session to be saved
         session.modified = True
 
-        # Log final session state
-        logger.info(f"Final session state: {dict(session)}")
-
     except Exception as e:
         logger.error(f"Error in session management: {e}")
     return response
-
-
-@app.before_request
-def log_request_info():
-    logger.info(f"Request Path: {request.path}")
-    logger.info(f"Request Method: {request.method}")
-    logger.info(f"Session Data: {dict(session)}")
-    logger.info(f"Request Headers: {dict(request.headers)}")
-    logger.info(f"Request Cookies: {dict(request.cookies)}")
-    logger.info(f"Origin: {request.headers.get('Origin')}")
-
 
 # --- 预加载所有题库 ---
 APP_WIDE_QUESTION_DATA = {}
@@ -476,8 +464,10 @@ def api_start_practice() -> Response:
 
         subject_name = data.get('subject')
         file_name = data.get('fileName')
+        force_restart = data.get('force_restart', False)  # 添加强制重启参数
 
-        logger.info(f"Starting practice with subject: {subject_name}, file: {file_name}")
+        logger.info(
+            f"Starting practice with subject: {subject_name}, file: {file_name}, force_restart: {force_restart}")
 
         if not subject_name or not file_name:
             logger.error("Missing subject name or file name")
@@ -495,11 +485,24 @@ def api_start_practice() -> Response:
             logger.error(f"Invalid or empty question bank: '{selected_file_path}'")
             return jsonify({'message': 'Selected question bank is empty or invalid.', 'success': False}), 400
 
+        # 检查是否已有相同文件的活跃会话
+        existing_file = get_safe_session_value(SESSION_KEYS['CURRENT_EXCEL_FILE'])
+        existing_indices = get_safe_session_value(SESSION_KEYS['QUESTION_INDICES'])
+
+        if not force_restart and existing_file == selected_file_path and existing_indices:
+            logger.info(f"Resuming existing practice session for file: {selected_file_path}")
+            return jsonify({
+                'message': 'Resumed existing practice session.',
+                'success': True,
+                'resumed': True
+            })
+
+        # 开始新的练习会话
         question_indices = list(range(len(current_question_bank)))
         random.shuffle(question_indices)
 
-        # Set session values
-        session.clear()  # 清除旧的 session 数据
+        # 清除旧的 session 数据并设置新的
+        session.clear()
         set_safe_session_value(SESSION_KEYS['CURRENT_EXCEL_FILE'], selected_file_path)
         set_safe_session_value(SESSION_KEYS['QUESTION_INDICES'], question_indices)
         set_safe_session_value(SESSION_KEYS['CURRENT_INDEX'], 0)
@@ -507,10 +510,20 @@ def api_start_practice() -> Response:
         set_safe_session_value(SESSION_KEYS['ROUND_NUMBER'], 1)
         set_safe_session_value(SESSION_KEYS['INITIAL_TOTAL'], len(question_indices))
         set_safe_session_value(SESSION_KEYS['CORRECT_FIRST_TRY'], 0)
+        
+        # 初始化题目状态数组，所有题目初始状态为'unanswered'
+        question_statuses = ['unanswered'] * len(question_indices)
+        set_safe_session_value(SESSION_KEYS['QUESTION_STATUSES'], question_statuses)
+        
+        # 初始化答题历史字典
+        answer_history = {}
+        set_safe_session_value(SESSION_KEYS['ANSWER_HISTORY'], answer_history)
 
-        logger.info(f"Session after start_practice: {dict(session)}")
-
-        return jsonify({'message': 'Practice started successfully.', 'success': True})
+        return jsonify({
+            'message': 'Practice started successfully.',
+            'success': True,
+            'resumed': False
+        })
 
     except BadRequest as e:
         logger.error(f"Bad Request in start_practice: {str(e)}")
@@ -558,6 +571,14 @@ def api_practice_question() -> Response:
             set_safe_session_value(SESSION_KEYS['CURRENT_INDEX'], 0)
             round_number = get_safe_session_value(SESSION_KEYS['ROUND_NUMBER'], 1) + 1
             set_safe_session_value(SESSION_KEYS['ROUND_NUMBER'], round_number)
+            
+            # 重置新轮次的题目状态数组
+            new_question_statuses = ['unanswered'] * len(new_round_indices)
+            set_safe_session_value(SESSION_KEYS['QUESTION_STATUSES'], new_question_statuses)
+            
+            # 重置新轮次的答题历史
+            new_answer_history = {}
+            set_safe_session_value(SESSION_KEYS['ANSWER_HISTORY'], new_answer_history)
 
             flash_messages.append({
                 'category': 'info',
@@ -666,6 +687,9 @@ def submit_answer() -> Response:
         peeked = data.get('peeked', False)  # 是否查看了答案
         is_review = data.get('is_review', False)  # 是否是复习模式
 
+        # 保存用户答案到session，供答题历史使用
+        session['last_user_answer'] = user_answer
+
         if not question_id:
             raise BadRequest("Question ID missing")
 
@@ -759,6 +783,27 @@ def update_practice_record(question, is_correct: bool, peeked: bool):
 
     actual_question_master_index = q_indices[current_idx]
 
+    # 更新题目状态
+    question_statuses = get_safe_session_value(SESSION_KEYS['QUESTION_STATUSES'], [])
+    if len(question_statuses) == len(q_indices):
+        # 确保状态数组长度正确
+        if is_correct and not peeked:
+            question_statuses[current_idx] = 'correct'
+        else:
+            question_statuses[current_idx] = 'wrong'
+        set_safe_session_value(SESSION_KEYS['QUESTION_STATUSES'], question_statuses)
+
+    # 保存答题历史
+    answer_history = get_safe_session_value(SESSION_KEYS['ANSWER_HISTORY'], {})
+    # 使用题目在当前轮次中的索引作为key
+    answer_history[str(current_idx)] = {
+        'user_answer': session.get('last_user_answer', ''),
+        'is_correct': is_correct,
+        'peeked': peeked,
+        'question_data': question
+    }
+    set_safe_session_value(SESSION_KEYS['ANSWER_HISTORY'], answer_history)
+
     # 如果是查看答案或答错，添加到错题集
     if not is_correct or peeked:
         wrong_indices = get_safe_session_value(SESSION_KEYS['WRONG_INDICES'], [])
@@ -776,7 +821,7 @@ def update_practice_record(question, is_correct: bool, peeked: bool):
 
 
 @app.route('/api/completed_summary', methods=['GET'])
-def api_completed_summary() -> Response:
+def api_completed_summary() -> tuple[Response, int] | Response:
     """Get the practice session summary."""
     try:
         initial_total = get_safe_session_value(SESSION_KEYS['INITIAL_TOTAL'], 0)
@@ -808,7 +853,7 @@ def api_completed_summary() -> Response:
 
 
 @app.route('/api/practice/jump', methods=['GET'])
-def jump_to_question() -> Response:
+def jump_to_question() -> tuple[Response, int] | Response:
     """Jump to a specific question in the practice session."""
     try:
         target_index = request.args.get('index')
@@ -837,6 +882,201 @@ def jump_to_question() -> Response:
         return jsonify({'message': 'Internal server error'}), 500
 
 
+@app.route('/api/session/status', methods=['GET'])
+def api_session_status() -> tuple[Response, int] | Response:
+    """Check current session status."""
+    try:
+        selected_file = get_safe_session_value(SESSION_KEYS['CURRENT_EXCEL_FILE'])
+        q_indices = get_safe_session_value(SESSION_KEYS['QUESTION_INDICES'])
+        current_idx = get_safe_session_value(SESSION_KEYS['CURRENT_INDEX'], 0)
+        round_number = get_safe_session_value(SESSION_KEYS['ROUND_NUMBER'], 1)
+        initial_total = get_safe_session_value(SESSION_KEYS['INITIAL_TOTAL'], 0)
+        correct_first_try = get_safe_session_value(SESSION_KEYS['CORRECT_FIRST_TRY'], 0)
+        wrong_indices = get_safe_session_value(SESSION_KEYS['WRONG_INDICES'], [])
+
+        if not selected_file or not q_indices or selected_file not in APP_WIDE_QUESTION_DATA:
+            return jsonify({
+                'active': False,
+                'message': 'No active practice session'
+            })
+
+        current_question_bank = APP_WIDE_QUESTION_DATA[selected_file]
+        if not isinstance(current_question_bank, list) or not current_question_bank:
+            return jsonify({
+                'active': False,
+                'message': 'Invalid question bank data'
+            })
+
+        # 检查是否已经完成练习
+        if current_idx >= len(q_indices) and not wrong_indices:
+            return jsonify({
+                'active': True,
+                'completed': True,
+                'message': 'Practice session completed'
+            })
+
+        # 提取文件名信息
+        path_parts = normalize_filepath(selected_file).split('/')
+        display_name = path_parts[-1].replace('.xlsx', '').replace('.xls', '')
+        subject_name = path_parts[1] if len(path_parts) > 2 and path_parts[0] == SUBJECT_DIRECTORY else "未分类"
+
+        return jsonify({
+            'active': True,
+            'completed': False,
+            'file_info': {
+                'key': selected_file,
+                'display': display_name,
+                'subject': subject_name
+            },
+            'progress': {
+                'current': current_idx + 1,
+                'total': len(q_indices),
+                'round': round_number
+            },
+            'statistics': {
+                'initial_total': initial_total,
+                'correct_first_try': correct_first_try,
+                'wrong_count': len(wrong_indices)
+            },
+            'question_statuses': get_safe_session_value(SESSION_KEYS['QUESTION_STATUSES'], [])
+        })
+
+    except Exception as e:
+        logger.error(f"Error checking session status: {e}")
+        return jsonify({
+            'active': False,
+            'message': 'Error checking session status'
+        }), 500
+
+
+@app.route('/api/questions/<question_id>/analysis', methods=['GET'])
+def api_question_analysis(question_id: str) -> tuple[Response, int] | Response:
+    """Get analysis for a specific question."""
+    try:
+        # 从question_id中提取文件路径和索引
+        if '_' not in question_id:
+            return jsonify({
+                'success': False,
+                'message': 'Invalid question ID format'
+            }), 400
+
+        # question_id格式: filepath_index
+        parts = question_id.rsplit('_', 1)
+        if len(parts) != 2:
+            return jsonify({
+                'success': False,
+                'message': 'Invalid question ID format'
+            }), 400
+
+        filepath = parts[0]
+        try:
+            question_index = int(parts[1])
+        except ValueError:
+            return jsonify({
+                'success': False,
+                'message': 'Invalid question index in ID'
+            }), 400
+
+        # 检查文件是否存在
+        if filepath not in APP_WIDE_QUESTION_DATA:
+            return jsonify({
+                'success': False,
+                'message': 'Question bank not found'
+            }), 404
+
+        current_question_bank = APP_WIDE_QUESTION_DATA[filepath]
+        if not isinstance(current_question_bank, list) or question_index >= len(current_question_bank):
+            return jsonify({
+                'success': False,
+                'message': 'Question not found'
+            }), 404
+
+        question_data = current_question_bank[question_index]
+
+        # 返回题目解析（如果有的话）
+        response_data = {
+            'success': True,
+            'question_id': question_id,
+            'analysis': question_data.get('analysis', '暂无解析'),
+            'knowledge_points': question_data.get('knowledge_points', [])
+        }
+
+        return jsonify(response_data)
+
+    except Exception as e:
+        logger.error(f"Error getting question analysis: {e}")
+        return jsonify({
+            'success': False,
+            'message': 'Internal server error'
+        }), 500
+
+
+@app.route('/api/practice/history/<int:question_index>', methods=['GET'])
+def get_question_history(question_index: int) -> tuple[Response, int] | Response:
+    """Get the answer history for a specific question."""
+    try:
+        q_indices = get_safe_session_value(SESSION_KEYS['QUESTION_INDICES'], [])
+        if question_index < 0 or question_index >= len(q_indices):
+            return jsonify({
+                'success': False,
+                'message': 'Invalid question index'
+            }), 400
+
+        answer_history = get_safe_session_value(SESSION_KEYS['ANSWER_HISTORY'], {})
+        history_key = str(question_index)
+        
+        if history_key not in answer_history:
+            return jsonify({
+                'success': False,
+                'message': 'No history found for this question'
+            }), 404
+
+        history_data = answer_history[history_key]
+        question_data = history_data['question_data']
+        
+        # 格式化答案显示
+        options = question_data.get('options_for_practice', {})
+        is_multiple_choice = question_data.get('is_multiple_choice', False)
+        correct_answer = question_data['answer'].upper()
+        user_answer = history_data['user_answer']
+        
+        if history_data['peeked']:
+            user_answer_display = '未作答（直接查看答案）'
+        else:
+            user_answer_display = format_answer_display(user_answer, options, is_multiple_choice)
+        
+        correct_answer_display = format_answer_display(correct_answer, options, is_multiple_choice)
+
+        return jsonify({
+            'success': True,
+            'question': {
+                'id': question_data['id'],
+                'type': question_data['type'],
+                'question': question_data['question'],
+                'options_for_practice': question_data.get('options_for_practice'),
+                'answer': question_data['answer'],
+                'is_multiple_choice': question_data.get('is_multiple_choice', False),
+                'analysis': question_data.get('analysis', '暂无解析'),
+                'knowledge_points': question_data.get('knowledge_points', [])
+            },
+            'feedback': {
+                'is_correct': history_data['is_correct'],
+                'user_answer_display': user_answer_display,
+                'correct_answer_display': correct_answer_display,
+                'question_id': question_data['id'],
+                'current_index': question_index,
+                'peeked': history_data['peeked']
+            }
+        })
+
+    except Exception as e:
+        logger.error(f"Error getting question history: {e}")
+        return jsonify({
+            'success': False,
+            'message': 'Internal server error'
+        }), 500
+
+
 if __name__ == '__main__':
     # Create subject directory if it doesn't exist
     if not os.path.exists(SUBJECT_DIRECTORY):
@@ -853,7 +1093,7 @@ if __name__ == '__main__':
 
     logger.info(f"Flask application starting on http://127.0.0.1:5051")
     try:
-        httpd = make_server('localhost', 5051, app)
+        httpd = make_server('127.0.0.1', 5051, app)
         httpd.serve_forever()
     except KeyboardInterrupt:
         logger.info("Received shutdown signal, closing server...")

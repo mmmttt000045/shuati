@@ -26,217 +26,235 @@
           </li>
         </ul>
 
-        <!-- Question Display Mode -->
-        <div v-if="displayMode === 'question' && question" class="question-section card">
-          <div class="question-header">
-            <div class="question-content">
-              <div class="question-text">
-                <span
-                  class="question-type-badge"
-                  :class="{
-                    'multiple-choice-badge': question.type === '多选题',
-                    'single-choice-badge': question.type === '单选题',
-                    'true-false-badge': question.type === '判断题'
-                  }"
-                >
-                  {{ getQuestionTypeDisplay(question) }}
-                </span>
-                <span class="question-text-content">{{ question.question }}</span>
-              </div>
-            </div>
+        <!-- 友好提示 -->
+        <div v-if="!initializing && displayMode === 'question'" class="session-info">
+          <div class="session-info-content">
+            <span class="info-icon">💡</span>
+            <span class="info-text">提示：刷新页面后练习进度会自动保存和恢复</span>
           </div>
-
-          <div class="question-content">
-            <div v-if="isAnswerRevealed && question.answer" class="revealed-answer-notice">
-              <p>
-                <strong>正确答案是：</strong>
-                <span class="answer-display">
-                  {{ formatAnswerWithOptions(question.answer, question.options_for_practice, question.is_multiple_choice) }}
-                </span>
-              </p>
-            </div>
-          </div>
-
-          <form
-            class="answer-form"
-            @submit.prevent="isAnswerRevealed ? handleContinueAfterReveal() : submitAnswer()"
-          >
-            <div class="options-grid">
-              <!-- 选择题 (单选/多选) -->
-              <template v-if="question.type !== '判断题' && question.options_for_practice && Object.keys(shuffledMcqOptions).length > 0">
-                <label
-                  v-for="(option_text, original_key) in shuffledMcqOptions"
-                  :key="original_key"
-                  :class="{
-                    'option-label': true,
-                    'correct-answer-highlight': isAnswerRevealed && question.answer.includes(original_key),
-                    'selected': question.is_multiple_choice
-                      ? selectedAnswers.has(original_key)
-                      : selectedAnswer === original_key,
-                    'multiple-choice-option': question.is_multiple_choice
-                  }"
-                  class="card-hover"
-                >
-                  <input
-                    :checked="question.is_multiple_choice ? selectedAnswers.has(original_key) : selectedAnswer === original_key"
-                    :disabled="isAnswerRevealed"
-                    :name="question.is_multiple_choice ? `answer_mcq_${original_key}` : 'answer_scq'"
-                    :type="question.is_multiple_choice ? 'checkbox' : 'radio'"
-                    :value="original_key"
-                    @change="handleOptionSelect(original_key)"
-                    class="option-input"
-                  />
-                  <span v-if="question.is_multiple_choice" class="checkbox-custom-display" :class="{'checked': selectedAnswers.has(original_key)}"></span>
-                  <span v-else class="radio-custom-display" :class="{'checked': selectedAnswer === original_key}"></span>
-                  <span class="option-key">{{ original_key }}</span>
-                  <span class="option-text">{{ option_text }}</span>
-                </label>
-              </template>
-              <p v-else-if="question.type !== '判断题' && (!question.options_for_practice || Object.keys(shuffledMcqOptions).length === 0)" class="empty-state-message">
-                此选择题没有可显示的选项。
-              </p>
-
-              <!-- 判断题 -->
-              <template v-else-if="question.type === '判断题'">
-                <label
-                  v-for="(option, key) in tfOptions"
-                  :key="key"
-                  :class="{
-                    'option-label': true,
-                    'correct-answer-highlight': isAnswerRevealed && key === question.answer,
-                    'selected': selectedAnswer === key
-                  }"
-                  class="card-hover"
-                >
-                  <input
-                    :checked="selectedAnswer === key"
-                    :disabled="isAnswerRevealed"
-                    name="answer_tf"
-                    type="radio"
-                    :value="key"
-                    @change="handleOptionSelect(key)"
-                    class="option-input"
-                    required
-                  />
-                  <span class="radio-custom-display" :class="{'checked': selectedAnswer === key}"></span>
-                  <span class="option-text">{{ option.text }}</span>
-                </label>
-              </template>
-              <p v-else class="empty-state-message">
-                 题目数据不完整或类型无法识别。
-              </p>
-            </div>
-
-            <div class="action-buttons">
-              <button
-                :disabled="loadingSubmit || 
-                           (!isAnswerRevealed && question.type !== '判断题' && question.is_multiple_choice && selectedAnswers.size === 0) ||
-                           (!isAnswerRevealed && question.type !== '判断题' && !question.is_multiple_choice && !selectedAnswer) ||
-                           (!isAnswerRevealed && question.type === '判断题' && !selectedAnswer)"
-                class="btn btn-submit"
-                type="submit"
-              >
-                {{ isAnswerRevealed ? '继续练习' : '提交答案' }}
-              </button>
-              <button
-                :disabled="loadingSubmit || isAnswerRevealed"
-                class="btn btn-reveal"
-                type="button"
-                @click="revealAnswer"
-              >
-                {{ isAnswerRevealed ? '答案已显示' : '查看答案' }}
-              </button>
-            </div>
-          </form>
         </div>
 
-        <!-- Feedback Display Mode -->
-        <div
-          v-if="displayMode === 'feedback' && currentFeedback && question"
-          class="feedback-section card"
-        >
-          <div
-            :class="currentFeedback.is_correct ? 'feedback-correct' : 'feedback-incorrect'"
-            class="feedback-banner"
-          >
-            <span class="feedback-icon">{{ currentFeedback.is_correct ? '🎉' : '❌' }}</span>
-            {{ currentFeedback.is_correct ? '回答正确！' : '回答错误。' }}
-          </div>
-
-          <div class="question-review-content">
-            <h4>题目回顾：</h4>
-            <p class="question-text-review">{{ question.question }}</p>
-            
-            <div class="answer-comparison">
-              <!-- 选择题的选项展示 -->
-              <div v-if="question.type !== '判断题' && question.options_for_practice" class="options-review">
-                <strong>所有选项：</strong>
-                <div class="options-grid review-mode">
-                  <div
-                    v-for="(option_text, key) in question.options_for_practice"
-                    :key="key"
+        <!-- 题目和反馈区域的过渡容器 -->
+        <transition name="content-fade" mode="out-in">
+          <!-- Question Display Mode -->
+          <div v-if="displayMode === 'question' && question" key="question" class="question-section card">
+            <div class="question-header">
+              <div class="question-content">
+                <div class="question-text">
+                  <span
+                    class="question-type-badge"
                     :class="{
-                      'option-review': true,
-                      'option-correct': question.answer.includes(key),
-                      'option-incorrect': !currentFeedback.is_correct && 
-                                       (currentFeedback.user_answer_display.startsWith(key) || 
-                                        currentFeedback.user_answer_display.includes(' + ' + key + '.'))
+                      'multiple-choice-badge': question.type === '多选题',
+                      'single-choice-badge': question.type === '单选题',
+                      'true-false-badge': question.type === '判断题'
                     }"
                   >
-                    <span class="option-key">{{ key }}</span>
-                    <span class="option-text">{{ option_text }}</span>
-                  </div>
-                </div>
-              </div>
-
-              <!-- 只在答错时显示答案比较 -->
-              <template v-if="!currentFeedback.is_correct">
-                <div class="answer-item">
-                  <strong>你的答案：</strong>
-                  <span class="user-answer-text-incorrect">{{ currentFeedback.user_answer_display }}</span>
-                </div>
-                
-                <div class="answer-item">
-                  <strong>正确答案：</strong>
-                  <span class="correct-answer-text">{{ currentFeedback.correct_answer_display }}</span>
-                </div>
-              </template>
-
-              <div v-if="question.analysis" class="answer-item">
-                <strong>题目分析：</strong>
-                <p>{{ question.analysis }}</p>
-              </div>
-
-              <div v-if="question.knowledge_points && question.knowledge_points.length > 0" class="answer-item">
-                <strong>知识点：</strong>
-                <div class="knowledge-points">
-                  <span v-for="(point, index) in question.knowledge_points" 
-                        :key="index" 
-                        class="knowledge-point-tag">
-                    {{ point }}
+                    {{ getQuestionTypeDisplay(question) }}
                   </span>
+                  <span class="question-text-content">{{ question.question }}</span>
                 </div>
-              </div>
-
-              <div v-if="currentFeedback.explanation" class="answer-item">
-                <strong>解释：</strong>
-                <p>{{ currentFeedback.explanation }}</p>
               </div>
             </div>
+
+            <div class="question-content">
+              <!-- 移除了原来的revealed-answer-notice，因为现在直接切换到feedback模式 -->
+            </div>
+
+            <form
+              class="answer-form"
+              @submit.prevent="submitAnswer()"
+            >
+              <div class="options-grid">
+                <!-- 选择题 (单选/多选) -->
+                <template v-if="question.type !== '判断题' && question.options_for_practice && Object.keys(shuffledMcqOptions).length > 0">
+                  <label
+                    v-for="(option_text, original_key) in shuffledMcqOptions"
+                    :key="original_key"
+                    :class="{
+                      'option-label': true,
+                      'selected': question.is_multiple_choice
+                        ? selectedAnswers.has(original_key)
+                        : selectedAnswer === original_key,
+                      'multiple-choice-option': question.is_multiple_choice
+                    }"
+                    class="card-hover"
+                  >
+                    <input
+                      :checked="question.is_multiple_choice ? selectedAnswers.has(original_key) : selectedAnswer === original_key"
+                      :disabled="displayMode === 'feedback'"
+                      :name="question.is_multiple_choice ? `answer_mcq_${original_key}` : 'answer_scq'"
+                      :type="question.is_multiple_choice ? 'checkbox' : 'radio'"
+                      :value="original_key"
+                      @change="handleOptionSelect(original_key)"
+                      class="option-input"
+                    />
+                    <span v-if="question.is_multiple_choice" class="checkbox-custom-display" :class="{'checked': selectedAnswers.has(original_key)}"></span>
+                    <span v-else class="radio-custom-display" :class="{'checked': selectedAnswer === original_key}"></span>
+                    <span class="option-key">{{ original_key }}</span>
+                    <span class="option-text">{{ option_text }}</span>
+                  </label>
+                </template>
+                <p v-else-if="question.type !== '判断题' && (!question.options_for_practice || Object.keys(shuffledMcqOptions).length === 0)" class="empty-state-message">
+                  此选择题没有可显示的选项。
+                </p>
+
+                <!-- 判断题 -->
+                <template v-else-if="question.type === '判断题'">
+                  <label
+                    v-for="(option, key) in tfOptions"
+                    :key="key"
+                    :class="{
+                      'option-label': true,
+                      'selected': selectedAnswer === key
+                    }"
+                    class="card-hover"
+                  >
+                    <input
+                      :checked="selectedAnswer === key"
+                      :disabled="displayMode === 'feedback'"
+                      name="answer_tf"
+                      type="radio"
+                      :value="key"
+                      @change="handleOptionSelect(key)"
+                      class="option-input"
+                      required
+                    />
+                    <span class="radio-custom-display" :class="{'checked': selectedAnswer === key}"></span>
+                    <span class="option-text">{{ option.text }}</span>
+                  </label>
+                </template>
+                <p v-else class="empty-state-message">
+                   题目数据不完整或类型无法识别。
+                </p>
+              </div>
+
+              <div class="action-buttons">
+                <button
+                  :disabled="loadingSubmit || 
+                             (displayMode === 'question' && question.type !== '判断题' && question.is_multiple_choice && selectedAnswers.size === 0) ||
+                             (displayMode === 'question' && question.type !== '判断题' && !question.is_multiple_choice && !selectedAnswer) ||
+                             (displayMode === 'question' && question.type === '判断题' && !selectedAnswer)"
+                  class="btn btn-submit"
+                  type="submit"
+                >
+                  提交答案
+                </button>
+                <button
+                  :disabled="loadingSubmit || loadingReveal || displayMode === 'feedback'"
+                  :class="['btn', 'btn-reveal', { 'loading': loadingReveal }]"
+                  type="button"
+                  @click="revealAnswer"
+                >
+                  <span v-if="!loadingReveal">查看答案</span>
+                  <span v-else>正在加载</span>
+                </button>
+              </div>
+            </form>
           </div>
 
-          <div class="feedback-actions">
-            <button class="btn-continue" @click="handleContinueAfterReveal">
-              继续练习
-            </button>
+          <!-- Feedback Display Mode -->
+          <div
+            v-else-if="displayMode === 'feedback' && currentFeedback && question"
+            key="feedback"
+            class="feedback-section card"
+          >
+            <!-- 查看历史记录的标识 -->
+            <div v-if="isViewingHistory" class="history-notice">
+              <span class="history-icon">📋</span>
+              <span class="history-text">查看答题历史记录</span>
+            </div>
+            
+            <div
+              :class="currentFeedback.is_correct ? 'feedback-correct' : 'feedback-incorrect'"
+              class="feedback-banner"
+            >
+              <span class="feedback-icon">{{ currentFeedback.is_correct ? '🎉' : '❌' }}</span>
+              {{ currentFeedback.is_correct ? '回答正确！' : '回答错误。' }}
+            </div>
+
+            <div class="question-review-content">
+              <h4>题目回顾：</h4>
+              <p class="question-text-review">{{ question.question }}</p>
+              
+              <div class="answer-comparison">
+                <!-- 选择题的选项展示 -->
+                <div v-if="question.type !== '判断题' && question.options_for_practice" class="options-review">
+                  <strong>所有选项：</strong>
+                  <div class="options-grid review-mode">
+                    <div
+                      v-for="(option_text, key) in question.options_for_practice"
+                      :key="key"
+                      :class="{
+                        'option-review': true,
+                        'option-correct': question.answer.includes(key),
+                        'option-incorrect': !currentFeedback.is_correct && 
+                                         (currentFeedback.user_answer_display.startsWith(key) || 
+                                          currentFeedback.user_answer_display.includes(' + ' + key + '.'))
+                      }"
+                    >
+                      <span class="option-key">{{ key }}</span>
+                      <span class="option-text">{{ option_text }}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 只在答错时显示答案比较 -->
+                <template v-if="!currentFeedback.is_correct">
+                  <div class="answer-item">
+                    <strong>你的答案：</strong>
+                    <span class="user-answer-text-incorrect">{{ currentFeedback.user_answer_display }}</span>
+                  </div>
+                  
+                  <div class="answer-item">
+                    <strong>正确答案：</strong>
+                    <span class="correct-answer-text">{{ currentFeedback.correct_answer_display }}</span>
+                  </div>
+                </template>
+
+                <div v-if="question.analysis" class="answer-item">
+                  <strong>题目分析：</strong>
+                  <p>{{ question.analysis }}</p>
+                </div>
+
+                <div v-if="question.knowledge_points && question.knowledge_points.length > 0" class="answer-item">
+                  <strong>知识点：</strong>
+                  <div class="knowledge-points">
+                    <span v-for="(point, index) in question.knowledge_points" 
+                          :key="index" 
+                          class="knowledge-point-tag">
+                      {{ point }}
+                    </span>
+                  </div>
+                </div>
+
+                <div v-if="currentFeedback.explanation" class="answer-item">
+                  <strong>解释：</strong>
+                  <p>{{ currentFeedback.explanation }}</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="feedback-actions">
+              <button v-if="!isViewingHistory" class="btn-continue" @click="handleContinueAfterReveal">
+                继续练习
+              </button>
+              <button v-else class="btn-continue" @click="backToCurrentQuestion">
+                返回当前题目
+              </button>
+            </div>
           </div>
-        </div>
+        </transition>
 
         <div v-if="loading && displayMode === 'question'" class="loading-indicator-fullscreen">
           <p>题目正在加载中，请稍候...</p>
         </div>
+        
+        <div v-if="initializing" class="loading-indicator-fullscreen">
+          <p>正在初始化练习会话，请稍候...</p>
+        </div>
+        
         <div
-          v-if="!loading && !question && displayMode === 'question'"
+          v-if="!loading && !initializing && !question && displayMode === 'question'"
           class="empty-state-message card"
         >
           <p>当前没有题目可以练习，或题目加载失败。</p>
@@ -347,7 +365,8 @@ const displayMode = ref<'question' | 'feedback'>('question');
 const currentFeedback = ref<Feedback | null>(null);
 const loadingSubmit = ref(false);
 const loading = ref(false);
-const isAnswerRevealed = ref(false);
+const initializing = ref(true);
+const loadingReveal = ref(false);
 const selectedAnswer = ref<string>('');
 const selectedAnswers = ref<Set<string>>(new Set());
 const shuffledMcqOptions = ref<Record<string, string>>({});
@@ -357,25 +376,84 @@ const tfOptions = {
   'F': { text: '错误' }
 };
 
+// 添加是否为查看历史的状态
+const isViewingHistory = ref(false);
+
 onMounted(async () => {
   try {
-    // Start practice session
-    const startResponse = await apiService.startPractice(props.subject, props.fileName);
-    if (!startResponse.success) {
-      throw new Error(startResponse.message);
+    // 首先检查是否已有活跃的练习会话
+    console.log('Checking existing session status...');
+    const sessionStatus = await apiService.checkSessionStatus();
+    
+    if (sessionStatus.active) {
+      console.log('Found active session:', sessionStatus);
+      
+      // 检查会话是否已完成
+      if (sessionStatus.completed) {
+        console.log('Session completed, redirecting to completed page');
+        router.push('/completed');
+        return;
+      }
+      
+      // 检查会话文件是否与当前请求的文件匹配
+      if (sessionStatus.file_info && sessionStatus.file_info.key === props.fileName) {
+        console.log('Resuming existing session for same file');
+        
+        // 显示恢复会话的提示信息
+        if (sessionStatus.progress) {
+          messages.value.push({
+            category: 'info',
+            text: `已恢复练习进度：第${sessionStatus.progress.round}轮，第${sessionStatus.progress.current}/${sessionStatus.progress.total}题`
+          });
+        }
+        
+        // 恢复答题卡状态
+        if (sessionStatus.question_statuses && sessionStatus.question_statuses.length > 0) {
+          questionStatuses.value = [...sessionStatus.question_statuses];
+          console.log('Restored question statuses:', questionStatuses.value);
+        }
+        
+        // 直接加载当前题目，无需重新开始练习
+        await loadQuestion();
+        return;
+      } else if (sessionStatus.file_info) {
+        console.log('Active session for different file, starting new practice');
+        
+        // 显示切换题库的提示信息
+        messages.value.push({
+          category: 'info',
+          text: `已从《${sessionStatus.file_info.display}》切换到当前题库`
+        });
+        
+        // 当前有其他文件的会话，需要强制重新开始
+        const startResponse = await apiService.startPractice(props.subject, props.fileName, true);
+        if (!startResponse.success) {
+          throw new Error(startResponse.message);
+        }
+      }
+    } else {
+      console.log('No active session found, starting new practice');
+      // 没有活跃会话，开始新的练习
+      const startResponse = await apiService.startPractice(props.subject, props.fileName);
+      if (!startResponse.success) {
+        throw new Error(startResponse.message);
+      }
     }
 
-    // Load first question
+    // 加载第一题或当前题目
     await loadQuestion();
+    
   } catch (error) {
-    console.error('Error starting practice:', error);
+    console.error('Error initializing practice:', error);
     messages.value.push({
       category: 'error',
-      text: error instanceof Error ? error.message : 'Failed to start practice session'
+      text: error instanceof Error ? error.message : 'Failed to initialize practice session'
     });
     setTimeout(() => {
       router.push('/');
     }, 3000);
+  } finally {
+    initializing.value = false;  // 初始化完成
   }
 });
 
@@ -394,10 +472,24 @@ const loadQuestion = async () => {
       progress.value = response.progress;
       messages.value = response.flash_messages || [];
       displayMode.value = 'question';
-      isAnswerRevealed.value = false;
+      isViewingHistory.value = false;  // 重置查看历史状态
       selectedAnswer.value = '';
       selectedAnswers.value = new Set();
       currentFeedback.value = null;
+
+      // 确保答题卡状态数组长度与当前轮次题目数量匹配
+      if (progress.value && questionStatuses.value.length !== progress.value.total) {
+        console.log(`Adjusting question statuses length from ${questionStatuses.value.length} to ${progress.value.total}`);
+        
+        if (questionStatuses.value.length < progress.value.total) {
+          // 如果答题卡状态数组长度不够，用'unanswered'填充
+          const additionalStatuses = new Array(progress.value.total - questionStatuses.value.length).fill('unanswered');
+          questionStatuses.value = [...questionStatuses.value, ...additionalStatuses];
+        } else {
+          // 如果答题卡状态数组过长，截取到正确长度
+          questionStatuses.value = questionStatuses.value.slice(0, progress.value.total);
+        }
+      }
 
       // 重置选项
       if (question.value.options_for_practice) {
@@ -451,11 +543,17 @@ const submitAnswer = async () => {
 
     currentFeedback.value = feedback;
     displayMode.value = 'feedback';
+    isViewingHistory.value = false;  // 正常答题，不是查看历史
 
     // 更新答题卡状态
     if (currentQuestionIndex.value >= 0 && currentQuestionIndex.value < questionStatuses.value.length) {
       updateQuestionStatus(currentQuestionIndex.value, feedback.is_correct);
     }
+    
+    // 同步后端状态，确保一致性
+    setTimeout(async () => {
+      await syncQuestionStatuses();
+    }, 100); // 短暂延迟确保后端已更新
   } catch (error) {
     console.error('Error submitting answer:', error);
     messages.value.push({
@@ -468,62 +566,79 @@ const submitAnswer = async () => {
 };
 
 const revealAnswer = async () => {
-  if (question.value) {
-    isAnswerRevealed.value = true;
+  if (!question.value || loadingReveal.value) return;
+
+  loadingReveal.value = true;
+  
+  try {
+    // 先准备所有需要的数据，避免多次状态切换
+    const questionId = question.value.id;
+    const currentIndex = currentQuestionIndex.value;
     
-    try {
-      // 提交一个空答案，标记为已查看答案
-      const feedback = await apiService.submitAnswer(
-        '',  // 空答案
-        question.value.id,
-        true, // 标记为已查看答案
-        false // 不是复习模式
-      );
+    // 提交查看答案的请求
+    const feedback = await apiService.submitAnswer(
+      '',  // 空答案
+      questionId,
+      true, // 标记为已查看答案
+      false // 不是复习模式
+    );
 
-      // 更新反馈对象
-      currentFeedback.value = {
-        is_correct: false,
-        user_answer_display: '未作答（直接查看答案）',
-        correct_answer_display: formatAnswerWithOptions(
-          question.value.answer,
-          question.value.options_for_practice,
-          question.value.is_multiple_choice
-        ),
-        question_id: question.value.id,
-        current_index: currentQuestionIndex.value
+    // 获取题目解析
+    const analysisResponse = await apiService.getQuestionAnalysis(questionId);
+    
+    // 准备反馈数据
+    const feedbackData: Feedback = {
+      is_correct: false,
+      user_answer_display: '未作答（直接查看答案）',
+      correct_answer_display: formatAnswerWithOptions(
+        question.value.answer,
+        question.value.options_for_practice,
+        question.value.is_multiple_choice
+      ),
+      question_id: questionId,
+      current_index: currentIndex
+    };
+
+    // 如果获取到解析，更新题目数据
+    if (analysisResponse.success) {
+      question.value = {
+        ...question.value,
+        analysis: analysisResponse.analysis,
+        knowledge_points: analysisResponse.knowledge_points
       };
-
-      // 标记当前题目为错误
-      if (currentQuestionIndex.value >= 0 && currentQuestionIndex.value < questionStatuses.value.length) {
-        updateQuestionStatus(currentQuestionIndex.value, false);
-      }
-
-      // 获取题目解析
-      const response = await apiService.getQuestionAnalysis(question.value.id);
-      if (response.success) {
-        question.value = {
-          ...question.value,
-          analysis: response.analysis,
-          knowledge_points: response.knowledge_points
-        };
-      }
-
-      // 切换到反馈模式
-      displayMode.value = 'feedback';
-    } catch (error) {
-      console.error('Error revealing answer:', error);
-      messages.value.push({
-        category: 'error',
-        text: error instanceof Error ? error.message : 'Failed to reveal answer'
-      });
     }
+
+    // 一次性更新所有状态，避免多次重渲染
+    currentFeedback.value = feedbackData;
+    
+    // 标记当前题目为错误（用于答题卡显示）
+    if (currentIndex >= 0 && currentIndex < questionStatuses.value.length) {
+      updateQuestionStatus(currentIndex, false);
+    }
+
+    // 最后切换到反馈模式
+    displayMode.value = 'feedback';
+    isViewingHistory.value = true;
+    
+    // 显示提示信息
+    messages.value.push({
+      category: 'info',
+      text: `查看第${currentIndex + 1}题的答题记录`
+    });
+  } catch (error) {
+    console.error('Error revealing answer:', error);
+    messages.value.push({
+      category: 'error',
+      text: error instanceof Error ? error.message : 'Failed to reveal answer'
+    });
+  } finally {
+    loadingReveal.value = false;
   }
 };
 
 const handleContinueAfterReveal = async () => {
   try {
     // 重置状态
-    isAnswerRevealed.value = false;
     selectedAnswer.value = '';
     selectedAnswers.value = new Set();
     currentFeedback.value = null;
@@ -531,11 +646,33 @@ const handleContinueAfterReveal = async () => {
     
     // 加载下一题
     await loadQuestion();
+    
+    // 同步答题卡状态，确保与后端一致
+    await syncQuestionStatuses();
   } catch (error) {
     console.error('Error continuing to next question:', error);
     messages.value.push({
       category: 'error',
       text: error instanceof Error ? error.message : '加载下一题时发生错误'
+    });
+  }
+};
+
+const backToCurrentQuestion = async () => {
+  try {
+    // 重置状态
+    selectedAnswer.value = '';
+    selectedAnswers.value = new Set();
+    currentFeedback.value = null;
+    displayMode.value = 'question';
+    
+    // 加载当前题目
+    await loadQuestion();
+  } catch (error) {
+    console.error('Error returning to current question:', error);
+    messages.value.push({
+      category: 'error',
+      text: error instanceof Error ? error.message : '返回当前题目时发生错误'
     });
   }
 };
@@ -561,7 +698,7 @@ const getQuestionTypeDisplay = (q: Question): string => {
 const isAnswerCardExpanded = ref(false);
 const questionStatuses = ref<Array<'unanswered' | 'correct' | 'wrong'>>([]);
 const currentQuestionIndex = computed(() => (progress.value ? progress.value.current - 1 : 0));
-const canJumpToQuestion = computed(() => displayMode.value === 'question' && !isAnswerRevealed.value && !loading.value);
+const canJumpToQuestion = computed(() => displayMode.value === 'question' && !loading.value);
 
 const visibleQuestions = computed<QuestionStatus[]>(() => {
   if (!progress.value) return []; // Guard against progress being null
@@ -638,6 +775,42 @@ const jumpToQuestion = async (index: number) => {
 
   loading.value = true;
   try {
+    // 检查题目状态，如果已经做过，直接显示反馈
+    const questionStatus = questionStatuses.value[index];
+    
+    if (questionStatus === 'correct' || questionStatus === 'wrong') {
+      // 题目已做过，获取答题历史并显示反馈
+      console.log(`Question ${index} already answered, showing feedback`);
+      
+      const historyResponse = await apiService.getQuestionHistory(index);
+      if (historyResponse.success && historyResponse.question && historyResponse.feedback) {
+        // 设置题目和反馈数据
+        question.value = historyResponse.question;
+        currentFeedback.value = historyResponse.feedback;
+        
+        // 更新进度信息
+        if (progress.value) {
+          progress.value.current = index + 1;
+        }
+        
+        // 切换到反馈模式
+        displayMode.value = 'feedback';
+        isViewingHistory.value = true;
+        
+        // 显示提示信息
+        messages.value.push({
+          category: 'info',
+          text: `查看第${index + 1}题的答题记录`
+        });
+        
+        return;
+      } else {
+        console.error('Failed to get question history:', historyResponse.message);
+        // 如果获取历史失败，fallback到正常跳转
+      }
+    }
+    
+    // 未做过的题目或获取历史失败，正常跳转
     const response = await apiService.jumpToQuestion(index);
     if (response.success) {
       await loadQuestion();
@@ -655,6 +828,22 @@ const jumpToQuestion = async (index: number) => {
     });
   } finally {
     loading.value = false;
+  }
+};
+
+// 同步答题卡状态
+const syncQuestionStatuses = async () => {
+  try {
+    const statusResponse = await apiService.getQuestionStatuses();
+    if (statusResponse.success && statusResponse.statuses.length > 0) {
+      // 只有当状态不同时才更新，避免不必要的重渲染
+      if (JSON.stringify(questionStatuses.value) !== JSON.stringify(statusResponse.statuses)) {
+        questionStatuses.value = [...statusResponse.statuses];
+        console.log('Synced question statuses from backend:', questionStatuses.value);
+      }
+    }
+  } catch (error) {
+    console.error('Error syncing question statuses:', error);
   }
 };
 
@@ -977,11 +1166,46 @@ const jumpToQuestion = async (index: number) => {
   background-color: transparent;
   color: #4b5563;
   border: 2px solid #e5e7eb;
+  position: relative;
+  overflow: hidden;
 }
 
 .btn-reveal:hover:not(:disabled) {
   border-color: #3b82f6;
   color: #3b82f6;
+}
+
+.btn-reveal:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-reveal.loading {
+  color: #3b82f6;
+  border-color: #3b82f6;
+}
+
+.btn-reveal.loading::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 16px;
+  height: 16px;
+  margin: -8px 0 0 -8px;
+  border: 2px solid transparent;
+  border-top: 2px solid currentColor;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .feedback-section {
@@ -1128,29 +1352,6 @@ const jumpToQuestion = async (index: number) => {
 .btn-continue:hover {
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(59, 130, 246, 0.25);
-}
-
-.revealed-answer-notice {
-  background: #fffbeb;
-  border: 2px solid #fbbf24;
-  border-radius: 8px;
-  padding: 1rem 1.5rem;
-  margin: 1rem 0;
-  color: #92400e;
-}
-
-.revealed-answer-notice p {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.revealed-answer-notice .answer-display {
-  color: #059669;
-  font-weight: 600;
-  background: #ecfdf5;
-  padding: 0.25rem 0.75rem;
-  border-radius: 4px;
 }
 
 .answer-card-panel {
@@ -1456,5 +1657,74 @@ const jumpToQuestion = async (index: number) => {
 
 .option-review .option-text {
   flex: 1;
+}
+
+.session-info {
+  background-color: #f8fafc;
+  border-radius: 8px;
+  padding: 1rem;
+  margin-top: 1rem;
+}
+
+.session-info-content {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.info-icon {
+  font-size: 1.25rem;
+}
+
+.info-text {
+  font-size: 0.9rem;
+  color: #6b7280;
+}
+
+.history-notice {
+  background: linear-gradient(135deg, #fef3c7, #fbbf24);
+  color: #92400e;
+  padding: 1rem 1.5rem;
+  border-radius: 8px;
+  margin-bottom: 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-weight: 500;
+  box-shadow: 0 2px 8px rgba(251, 191, 36, 0.15);
+}
+
+.history-icon {
+  font-size: 1.25rem;
+}
+
+.history-text {
+  font-size: 1rem;
+}
+
+/* 内容切换过渡动画 */
+.content-fade-enter-active,
+.content-fade-leave-active {
+  transition: all 0.3s ease-in-out;
+}
+
+.content-fade-enter-from {
+  opacity: 0;
+  transform: translateY(20px);
+}
+
+.content-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-20px);
+}
+
+.content-fade-enter-to,
+.content-fade-leave-from {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.practice-container {
+  /* Add any additional styles specific to the practice container */
 }
 </style>

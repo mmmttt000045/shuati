@@ -2,15 +2,16 @@ import type {
   ApiError,
   CompletedResponse,
   Feedback,
+  Question,
   QuestionResponse,
   SubjectsResponse
 } from '@/types';
 
-const API_BASE = 'http://14.103.133.62:5051/api';
+const API_BASE = 'http://127.0.0.1:5051/api';
 
 export interface ApiService {
   getFileOptions(): Promise<SubjectsResponse>;
-  startPractice(subject: string, fileName: string): Promise<{ message: string; success: boolean }>;
+  startPractice(subject: string, fileName: string, forceRestart?: boolean): Promise<{ message: string; success: boolean; resumed?: boolean }>;
   getCurrentQuestion(): Promise<QuestionResponse>;
   submitAnswer(answer: string, questionId: string, isRevealed: boolean, isSkipped: boolean): Promise<Feedback>;
   jumpToQuestion(index: number): Promise<{ message: string; success: boolean }>;
@@ -20,6 +21,37 @@ export interface ApiService {
     analysis?: string;
     knowledge_points?: string[];
     message?: string;
+  }>;
+  getQuestionHistory(questionIndex: number): Promise<{
+    success: boolean;
+    question?: Question;
+    feedback?: Feedback;
+    message?: string;
+  }>;
+  checkSessionStatus(): Promise<{
+    active: boolean;
+    completed?: boolean;
+    message?: string;
+    file_info?: {
+      key: string;
+      display: string;
+      subject: string;
+    };
+    progress?: {
+      current: number;
+      total: number;
+      round: number;
+    };
+    statistics?: {
+      initial_total: number;
+      correct_first_try: number;
+      wrong_count: number;
+    };
+    question_statuses?: Array<'unanswered' | 'correct' | 'wrong'>;
+  }>;
+  getQuestionStatuses(): Promise<{
+    statuses: Array<'unanswered' | 'correct' | 'wrong'>;
+    success: boolean;
   }>;
 }
 
@@ -103,13 +135,13 @@ class ApiServiceImpl implements ApiService {
     return this.handleResponse<SubjectsResponse>(response);
   }
 
-  async startPractice(subject: string, fileName: string): Promise<{ message: string; success: boolean }> {
+  async startPractice(subject: string, fileName: string, forceRestart?: boolean): Promise<{ message: string; success: boolean; resumed?: boolean }> {
     console.log('Starting practice:', { subject, fileName });
     const response = await this.fetchWithCredentials(`${API_BASE}/start_practice`, {
       method: 'POST',
-      body: JSON.stringify({ subject, fileName })
+      body: JSON.stringify({ subject, fileName, force_restart: forceRestart })
     });
-    const result = await this.handleResponse<{ message: string; success: boolean }>(response);
+    const result = await this.handleResponse<{ message: string; success: boolean; resumed?: boolean }>(response);
     console.log('Practice start result:', result);
     return result;
   }
@@ -154,6 +186,85 @@ class ApiServiceImpl implements ApiService {
       return {
         success: false,
         message: 'Failed to fetch question analysis'
+      };
+    }
+  }
+
+  async getQuestionHistory(questionIndex: number): Promise<{
+    success: boolean;
+    question?: Question;
+    feedback?: Feedback;
+    message?: string;
+  }> {
+    const response = await this.fetchWithCredentials(`${API_BASE}/practice/history/${questionIndex}`);
+    return this.handleResponse<{
+      success: boolean;
+      question?: Question;
+      feedback?: Feedback;
+      message?: string;
+    }>(response);
+  }
+
+  async checkSessionStatus(): Promise<{
+    active: boolean;
+    completed?: boolean;
+    message?: string;
+    file_info?: {
+      key: string;
+      display: string;
+      subject: string;
+    };
+    progress?: {
+      current: number;
+      total: number;
+      round: number;
+    };
+    statistics?: {
+      initial_total: number;
+      correct_first_try: number;
+      wrong_count: number;
+    };
+    question_statuses?: Array<'unanswered' | 'correct' | 'wrong'>;
+  }> {
+    const response = await this.fetchWithCredentials(`${API_BASE}/session/status`);
+    return this.handleResponse<{
+      active: boolean;
+      completed?: boolean;
+      message?: string;
+      file_info?: {
+        key: string;
+        display: string;
+        subject: string;
+      };
+      progress?: {
+        current: number;
+        total: number;
+        round: number;
+      };
+      statistics?: {
+        initial_total: number;
+        correct_first_try: number;
+        wrong_count: number;
+      };
+      question_statuses?: Array<'unanswered' | 'correct' | 'wrong'>;
+    }>(response);
+  }
+
+  async getQuestionStatuses(): Promise<{
+    statuses: Array<'unanswered' | 'correct' | 'wrong'>;
+    success: boolean;
+  }> {
+    try {
+      const sessionStatus = await this.checkSessionStatus();
+      return {
+        statuses: sessionStatus.question_statuses || [],
+        success: sessionStatus.active
+      };
+    } catch (error) {
+      console.error('Error getting question statuses:', error);
+      return {
+        statuses: [],
+        success: false
       };
     }
   }

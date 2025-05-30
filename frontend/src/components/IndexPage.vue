@@ -78,13 +78,52 @@ const selectSubject = (subject: string) => {
 
 const startPractice = async (subject: string, fileName: string) => {
   loading.value = true
-  router.push({
-    name: 'practice',
-    query: {
-      subject,
-      file: fileName,
-    },
-  })
+  
+  try {
+    // 检查是否已有同一文件的活跃会话
+    const sessionStatus = await apiService.checkSessionStatus()
+    
+    if (sessionStatus.active && 
+        sessionStatus.file_info && 
+        sessionStatus.file_info.key === fileName && 
+        !sessionStatus.completed) {
+      
+      // 询问用户是否要继续之前的进度还是重新开始
+      const shouldContinue = confirm(
+        `检测到你之前正在练习《${sessionStatus.file_info.display}》(第${sessionStatus.progress?.current}/${sessionStatus.progress?.total}题)。\n\n点击"确定"继续之前的进度，点击"取消"重新开始。`
+      )
+      
+      if (shouldContinue) {
+        // 继续之前的练习
+        router.push({
+          name: 'practice',
+          query: { subject, file: fileName }
+        })
+        return
+      } else {
+        // 重新开始练习
+        const startResponse = await apiService.startPractice(subject, fileName, true)
+        if (!startResponse.success) {
+          throw new Error(startResponse.message)
+        }
+      }
+    }
+    
+    // 正常启动练习
+    router.push({
+      name: 'practice',
+      query: { subject, file: fileName }
+    })
+    
+  } catch (error) {
+    console.error('Error starting practice:', error)
+    messages.value.push({
+      category: 'error',
+      text: error instanceof Error ? error.message : '启动练习失败'
+    })
+  } finally {
+    loading.value = false
+  }
 }
 
 onMounted(async () => {

@@ -95,7 +95,7 @@
               <div v-if="file.progress" class="progress-section">
                 <div class="progress-details">
                   <div class="progress-text">
-                    <span class="round-info">第{{ file.progress.round_number }}轮</span>
+                    <span class="round-info">历史进度：第{{ file.progress.round_number }}轮</span>
                     <span class="progress-percent-badge">{{ file.progress.progress_percent.toFixed(2).replace(/\.?0+$/, '') }}%</span>
                   </div>
                   <div class="question-info">{{ file.progress.current_question }}/{{ file.progress.total_questions }}题</div>

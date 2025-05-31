@@ -7,7 +7,6 @@ import time  # 用于定期任务
 import traceback  # 用于更详细的错误打印
 from datetime import timedelta
 from typing import List, Dict, Optional, Union, Any
-from wsgiref.simple_server import make_server
 
 import pandas as pd
 from flask import Flask, request, session, jsonify, send_from_directory, Response
@@ -122,7 +121,6 @@ def load_questions_from_excel(filepath: str, sheetname: Union[str, int]) -> Opti
     """
     questions_data = []
     try:
-        logger.info(f"Loading question bank from: {filepath}, sheet: {sheetname}")
         if not os.path.exists(filepath):
             logger.error(f"Question bank file '{filepath}' not found.")
             return None
@@ -217,8 +215,7 @@ def load_questions_from_excel(filepath: str, sheetname: Union[str, int]) -> Opti
 
         if not questions_data:
             logger.warning(f"No valid questions loaded from '{filepath}' (sheet: '{sheetname}')")
-        else:
-            logger.info(f"Successfully loaded {len(questions_data)} questions from '{filepath}'")
+
         return questions_data
     except Exception as e:
         logger.error(f"Critical error loading questions from '{filepath}': {e}")
@@ -1126,10 +1123,61 @@ if __name__ == '__main__':
     activity_thread = threading.Thread(target=print_activity_periodically, daemon=True)
     activity_thread.start()
 
-    logger.info(f"Flask application starting on http://127.0.0.1:5051")
+    HOST = '127.0.0.1'
+    PORT = 5051
+    
+    logger.info(f"Flask application starting on http://{HOST}:{PORT}")
+    
     try:
-        httpd = make_server('127.0.0.1', 5051, app)
-        httpd.serve_forever()
+        # 方案1: 使用 Gunicorn (推荐，需要安装: pip install gunicorn)
+        try:
+            import gunicorn.app.base
+            
+            class StandaloneApplication(gunicorn.app.base.BaseApplication):
+                def __init__(self, app, options=None):
+                    self.options = options or {}
+                    self.application = app
+                    super().__init__()
+
+                def load_config(self):
+                    config = {key: value for key, value in self.options.items()
+                              if key in self.cfg.settings and value is not None}
+                    for key, value in config.items():
+                        self.cfg.set(key.lower(), value)
+
+                def load(self):
+                    return self.application
+
+            options = {
+                'bind': f'{HOST}:{PORT}',
+                'workers': 4,  # 根据CPU核心数调整
+                'worker_class': 'sync',  # 可选: gevent, eventlet
+                'worker_connections': 1000,
+                'timeout': 30,
+                'keepalive': 2,
+                'max_requests': 1000,
+                'max_requests_jitter': 100,
+                'preload_app': True,
+                'accesslog': '-',
+                'errorlog': '-',
+                'loglevel': 'info'
+            }
+            
+            logger.info("Using Gunicorn server for high performance")
+            StandaloneApplication(app, options).run()
+            
+        except ImportError:
+            # 方案2: 使用 Waitress (纯Python，需要安装: pip install waitress)
+            try:
+                from waitress import serve
+                logger.info("Gunicorn not available！！, using Waitress server")
+                serve(app, host=HOST, port=PORT, threads=6)
+                
+            except ImportError:
+                # 方案3: 使用 Flask 开发服务器（多线程模式）
+                logger.warning("High-performance servers not available, using Flask dev server with threading")
+                app.run(host=HOST, port=PORT, debug=False, threaded=True, processes=1)
+                
     except KeyboardInterrupt:
         logger.info("Received shutdown signal, closing server...")
     finally:

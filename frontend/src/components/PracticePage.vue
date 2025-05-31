@@ -3,13 +3,14 @@
     <div class="container">
       <div class="practice-container">
         <!-- 标题区域 -->
-        <div class="practice-title">
+        <header class="practice-title">
           <h1>{{ fileDisplayName }}</h1>
-        </div>
+        </header>
 
         <div class="practice-layout">
           <!-- 左侧主要内容区域 -->
-          <div class="practice-main">
+          <main class="practice-main">
+            <!-- 页面头部 -->
             <div class="page-header">
               <button class="btn btn-navigate-back" @click="goBackToIndexPage">
                 <span class="arrow">←</span> 返回首页
@@ -20,135 +21,75 @@
                 </div>
                 <div class="progress-bar-visual">
                   <div
-                    :style="{ width: (progress.current / progress.total) * 100 + '%' }"
+                    :style="{ width: progressPercentage + '%' }"
                     class="progress-bar-inner"
                   ></div>
                 </div>
               </div>
             </div>
 
-            <ul v-if="messages.length > 0" class="flash-messages">
+            <!-- 提示消息 -->
+            <ul v-if="messages.length" class="flash-messages">
               <li v-for="(message, index) in messages" :key="index" :class="message.category">
                 {{ message.text }}
               </li>
             </ul>
 
             <!-- 友好提示 -->
-            <div v-if="!initializing && displayMode === 'question'" class="session-info">
-              <div class="session-info-content">
-                <span class="info-icon">💡</span>
-                <span class="info-text">提示：刷新页面后练习进度会自动保存和恢复</span>
-              </div>
+            <div v-if="showSessionInfo" class="session-info">
+              <span class="info-icon">💡</span>
+              <span class="info-text">提示：刷新页面后练习进度会自动保存和恢复</span>
             </div>
 
-            <!-- 题目和反馈区域的过渡容器 -->
+            <!-- 主要内容区域 -->
             <transition name="content-fade" mode="out-in">
-              <!-- Question Display Mode -->
-              <div
-                v-if="displayMode === 'question' && question"
-                key="question"
-                class="question-section card"
-              >
-                <div class="question-header">
-                  <div class="question-content">
-                    <div class="question-text">
-                      <span
-                        class="question-type-badge"
-                        :class="{
-                          'multiple-choice-badge': question.type === '多选题',
-                          'single-choice-badge': question.type === '单选题',
-                          'true-false-badge': question.type === '判断题',
-                        }"
-                      >
-                        {{ getQuestionTypeDisplay(question) }}
-                      </span>
-                      <span class="question-text-content">{{ question.question }}</span>
-                    </div>
+              <!-- 题目显示模式 -->
+              <div v-if="isQuestionMode" key="question" class="question-section card">
+                <div class="question-content">
+                  <div class="question-text">
+                    <span class="question-type-badge" :class="questionTypeBadgeClass">
+                      {{ question?.type }}
+                    </span>
+                    <span class="question-text-content">{{ question?.question }}</span>
                   </div>
                 </div>
 
-                <div class="question-content">
-                  <!-- 移除了原来的revealed-answer-notice，因为现在直接切换到feedback模式 -->
-                </div>
-
-                <form class="answer-form" @submit.prevent="submitAnswer()">
+                <form class="answer-form" @submit.prevent="submitAnswer">
                   <div class="options-grid">
-                    <!-- 选择题 (单选/多选) -->
-                    <template
-                      v-if="
-                        question.type !== '判断题' &&
-                        question.options_for_practice &&
-                        Object.keys(shuffledMcqOptions).length > 0
-                      "
-                    >
+                    <!-- 选择题选项 -->
+                    <template v-if="isChoiceQuestion">
                       <label
-                        v-for="(option_text, original_key) in shuffledMcqOptions"
-                        :key="original_key"
-                        :class="{
-                          'option-label': true,
-                          selected: question.is_multiple_choice
-                            ? selectedAnswers.has(original_key)
-                            : selectedAnswer === original_key,
-                          'multiple-choice-option': question.is_multiple_choice,
-                        }"
+                        v-for="(optionText, key) in shuffledMcqOptions"
+                        :key="key"
+                        :class="getOptionLabelClass(key)"
                         class="card-hover"
                       >
                         <input
-                          :checked="
-                            question.is_multiple_choice
-                              ? selectedAnswers.has(original_key)
-                              : selectedAnswer === original_key
-                          "
-                          :disabled="displayMode !== 'question'"
-                          :name="
-                            question.is_multiple_choice
-                              ? `answer_mcq_${original_key}`
-                              : 'answer_scq'
-                          "
-                          :type="question.is_multiple_choice ? 'checkbox' : 'radio'"
-                          :value="original_key"
-                          @change="handleOptionSelect(original_key)"
+                          :checked="isOptionSelected(key)"
+                          :disabled="!isQuestionMode"
+                          :name="getInputName(key)"
+                          :type="question?.is_multiple_choice ? 'checkbox' : 'radio'"
+                          :value="key"
+                          @change="handleOptionSelect(key)"
                           class="option-input"
                         />
-                        <span
-                          v-if="question.is_multiple_choice"
-                          class="checkbox-custom-display"
-                          :class="{ checked: selectedAnswers.has(original_key) }"
-                        ></span>
-                        <span
-                          v-else
-                          class="radio-custom-display"
-                          :class="{ checked: selectedAnswer === original_key }"
-                        ></span>
-                        <span class="option-key">{{ original_key }}</span>
-                        <span class="option-text">{{ option_text }}</span>
+                        <span :class="getCustomDisplayClass(key)"></span>
+                        <span class="option-key">{{ key }}</span>
+                        <span class="option-text">{{ optionText }}</span>
                       </label>
                     </template>
-                    <p
-                      v-else-if="
-                        question.type !== '判断题' &&
-                        (!question.options_for_practice ||
-                          Object.keys(shuffledMcqOptions).length === 0)
-                      "
-                      class="empty-state-message"
-                    >
-                      此选择题没有可显示的选项。
-                    </p>
 
-                    <!-- 判断题 -->
-                    <template v-else-if="question.type === '判断题'">
+                    <!-- 判断题选项 -->
+                    <template v-else-if="isTrueFalseQuestion">
                       <label
                         v-for="(option, key) in tfOptions"
                         :key="key"
-                        :class="{
-                          'option-label': true,
-                          selected: selectedAnswer === key,
-                        }"
+                        :class="{ 'option-label': true, selected: selectedAnswer === key }"
                         class="card-hover"
                       >
                         <input
                           :checked="selectedAnswer === key"
-                          :disabled="displayMode !== 'question'"
+                          :disabled="!isQuestionMode"
                           name="answer_tf"
                           type="radio"
                           :value="key"
@@ -163,133 +104,70 @@
                         <span class="option-text">{{ option.text }}</span>
                       </label>
                     </template>
+
+                    <!-- 无效题目 -->
                     <p v-else class="empty-state-message">题目数据不完整或类型无法识别。</p>
                   </div>
 
                   <div class="action-buttons">
-                    <button
-                      :disabled="
-                        loadingSubmit ||
-                        (displayMode === 'question' &&
-                          question.type !== '判断题' &&
-                          question.is_multiple_choice &&
-                          selectedAnswers.size === 0) ||
-                        (displayMode === 'question' &&
-                          question.type !== '判断题' &&
-                          !question.is_multiple_choice &&
-                          !selectedAnswer) ||
-                        (displayMode === 'question' &&
-                          question.type === '判断题' &&
-                          !selectedAnswer)
-                      "
-                      class="btn btn-submit"
-                      type="submit"
-                    >
+                    <button :disabled="!canSubmitAnswer" class="btn btn-submit" type="submit">
                       提交答案
                     </button>
                     <button
-                      :disabled="loadingSubmit || loadingReveal || displayMode !== 'question'"
+                      :disabled="!canRevealAnswer"
                       :class="['btn', 'btn-reveal', { loading: loadingReveal }]"
                       type="button"
                       @click="revealAnswer"
                     >
-                      <span v-if="!loadingReveal">查看答案</span>
-                      <span v-else>正在加载</span>
+                      {{ loadingReveal ? '正在加载' : '查看答案' }}
                     </button>
                   </div>
                 </form>
               </div>
 
-              <!-- Feedback Display Mode -->
-              <div
-                v-else-if="displayMode === 'feedback' && currentFeedback && question"
-                key="feedback"
-                class="feedback-section card"
-              >
-                <!-- 查看历史记录的标识 -->
+              <!-- 反馈显示模式 -->
+              <div v-else-if="isFeedbackMode" key="feedback" class="feedback-section card">
+                <!-- 历史查看提示 -->
                 <div v-if="isViewingHistory" class="history-notice">
                   <span class="history-icon">📋</span>
                   <span class="history-text">查看答题历史记录</span>
                 </div>
 
-                <!--                <div-->
-                <!--                  :class="currentFeedback.is_correct ? 'feedback-correct' : 'feedback-incorrect'"-->
-                <!--                  class="feedback-banner"-->
-                <!--                >-->
-                <!--                  <span class="feedback-icon">{{ currentFeedback.is_correct ? '🎉' : '❌' }}</span>-->
-                <!--                  {{ currentFeedback.is_correct ? '回答正确！' : '回答错误。' }}-->
-                <!--                </div>-->
-
                 <!-- 自动跳转提示 -->
                 <div v-if="showAutoNextHint && !isViewingHistory" class="auto-next-hint">
                   <span class="hint-icon">⏱️</span>
-                  <span class="hint-text"
-                    >{{ Math.ceil(autoNextCountdown) }}秒后自动进入下一题</span
-                  >
+                  <span class="hint-text">{{ autoNextCountdownText }}</span>
                   <button class="btn-cancel-auto" @click="clearAutoNextTimer">取消</button>
                 </div>
 
                 <div class="question-review-content">
                   <h4>题目回顾：</h4>
-                  <p class="question-text-review">{{ question.question }}</p>
+                  <p class="question-text-review">{{ question?.question }}</p>
 
                   <div class="answer-comparison">
-                    <!-- 选择题的选项展示 -->
-                    <div
-                      v-if="question.type !== '判断题' && question.options_for_practice"
-                      class="options-review"
-                    >
-                      <strong>所有选项：</strong>
+                    <!-- 选项展示 -->
+                    <div v-if="hasOptionsToReview" class="options-review">
+                      <strong>{{ optionsReviewTitle }}：</strong>
                       <div class="options-grid review-mode">
                         <div
-                          v-for="(option_text, key) in question.options_for_practice"
+                          v-for="(option, key) in optionsForReview"
                           :key="key"
-                          :class="{
-                            'option-review': true,
-                            'option-correct': question.answer.includes(key),
-                            'option-incorrect':
-                              !currentFeedback.is_correct &&
-                              (currentFeedback.user_answer_display.startsWith(key) ||
-                                currentFeedback.user_answer_display.includes(' + ' + key + '.')),
-                          }"
+                          :class="getReviewOptionClass(key)"
                         >
                           <span class="option-key">{{ key }}</span>
-                          <span class="option-text">{{ option_text }}</span>
+                          <span class="option-text">{{ getOptionText(option) }}</span>
                         </div>
                       </div>
                     </div>
 
-                    <!-- 判断题的选项展示 -->
-                    <div v-else-if="question.type === '判断题'" class="options-review">
-                      <strong>判断选项：</strong>
-                      <div class="options-grid review-mode">
-                        <div
-                          v-for="(option, key) in tfOptions"
-                          :key="key"
-                          :class="{
-                            'option-review': true,
-                            'option-correct': question.answer === key,
-                            'option-incorrect':
-                              !currentFeedback.is_correct &&
-                              getUserAnswerFromTFDisplay(currentFeedback.user_answer_display) ===
-                                key,
-                          }"
-                        >
-                          <span class="option-key">{{ key }}</span>
-                          <span class="option-text">{{ option.text }}</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <!-- 只在答错时显示答案比较 -->
-                    <template v-if="!currentFeedback.is_correct">
+                    <!-- 答错时的答案对比 -->
+                    <template v-if="currentFeedback && !currentFeedback.is_correct">
                       <div class="answer-item">
                         <strong>你的答案：</strong>
                         <span class="user-answer-text-incorrect">{{
                           currentFeedback.user_answer_display
                         }}</span>
                       </div>
-
                       <div class="answer-item">
                         <strong>正确答案：</strong>
                         <span class="correct-answer-text">{{
@@ -298,19 +176,17 @@
                       </div>
                     </template>
 
-                    <div v-if="question.analysis" class="answer-item">
+                    <!-- 分析和知识点 -->
+                    <div v-if="question?.analysis" class="answer-item">
                       <strong>题目分析：</strong>
                       <p>{{ question.analysis }}</p>
                     </div>
 
-                    <div
-                      v-if="question.knowledge_points && question.knowledge_points.length > 0"
-                      class="answer-item"
-                    >
+                    <div v-if="hasKnowledgePoints" class="answer-item">
                       <strong>知识点：</strong>
                       <div class="knowledge-points">
                         <span
-                          v-for="(point, index) in question.knowledge_points"
+                          v-for="(point, index) in question?.knowledge_points"
                           :key="index"
                           class="knowledge-point-tag"
                         >
@@ -319,7 +195,7 @@
                       </div>
                     </div>
 
-                    <div v-if="currentFeedback.explanation" class="answer-item">
+                    <div v-if="currentFeedback?.explanation" class="answer-item">
                       <strong>解释：</strong>
                       <p>{{ currentFeedback.explanation }}</p>
                     </div>
@@ -327,84 +203,58 @@
                 </div>
 
                 <div class="feedback-actions">
-                  <button
-                    v-if="!isViewingHistory"
-                    class="btn-continue"
-                    @click="handleContinueAfterReveal"
-                  >
-                    继续练习
-                  </button>
-                  <button v-else class="btn-continue" @click="backToCurrentQuestion">
-                    返回当前题目
+                  <button class="btn-continue" @click="handleFeedbackAction">
+                    {{ feedbackButtonText }}
                   </button>
                 </div>
               </div>
             </transition>
 
-            <div v-if="loading && displayMode === 'question'" class="loading-indicator-fullscreen">
-              <p>题目正在加载中，请稍候...</p>
+            <!-- 加载状态 -->
+            <div v-if="showLoadingIndicator" class="loading-indicator-fullscreen">
+              <p>{{ loadingText }}</p>
             </div>
 
-            <div v-if="initializing" class="loading-indicator-fullscreen">
-              <p>正在初始化练习会话，请稍候...</p>
-            </div>
-
-            <div
-              v-if="!loading && !initializing && !question && displayMode === 'question'"
-              class="empty-state-message card"
-            >
+            <!-- 空状态 -->
+            <div v-if="showEmptyState" class="empty-state-message card">
               <p>当前没有题目可以练习，或题目加载失败。</p>
             </div>
-          </div>
+          </main>
 
           <!-- 右侧答题卡 -->
-          <div class="answer-card-panel" :class="{ 'history-mode': isViewingHistory }">
+          <aside class="answer-card-panel" :class="{ 'history-mode': isViewingHistory }">
             <div class="answer-card-header">
               <div class="answer-card-title">
                 <h3>答题卡</h3>
                 <button
                   class="btn-toggle"
-                  @click="isAnswerCardExpanded = !isAnswerCardExpanded"
+                  @click="toggleAnswerCard"
                   :title="isAnswerCardExpanded ? '收起答题卡' : '展开答题卡'"
                 >
                   {{ isAnswerCardExpanded ? '↑' : '↓' }}
                 </button>
               </div>
 
-              <!-- 在查看历史时显示提示 -->
               <div v-if="isViewingHistory" class="history-navigation-tip">
                 <span class="tip-icon">💡</span>
                 <span class="tip-text">点击答题卡可查看其他题目</span>
               </div>
 
-              <div class="answer-card-legend" v-if="isAnswerCardExpanded">
+              <div v-if="isAnswerCardExpanded" class="answer-card-legend">
                 <span class="legend-item"> <span class="status-dot current"></span> 当前题目 </span>
                 <span class="legend-item"> <span class="status-dot correct"></span> 已答对 </span>
                 <span class="legend-item"> <span class="status-dot wrong"></span> 已答错 </span>
                 <span class="legend-item"> <span class="status-dot"></span> 未作答 </span>
               </div>
             </div>
-            <div
-              class="answer-card-grid-container"
-              :class="{
-                expanded: isAnswerCardExpanded,
-                'has-left-overflow': hasLeftOverflow,
-                'has-right-overflow': hasRightOverflow,
-              }"
-            >
+
+            <div class="answer-card-grid-container" :class="answerCardGridClass">
               <div class="answer-card-grid">
                 <template v-if="isAnswerCardExpanded">
-                  <!-- 展开状态：显示所有题目 -->
                   <button
                     v-for="(status, index) in questionStatuses"
                     :key="index"
-                    class="question-number-btn"
-                    :class="{
-                      current: index === currentQuestionIndex,
-                      correct: isCorrectStatus(status),
-                      wrong: isWrongStatus(status),
-                      unanswered: isUnansweredStatus(status),
-                    }"
+                    :class="getQuestionNumberBtnClass(status, index)"
                     @click="jumpToQuestion(index)"
                     :disabled="!canJumpToQuestion || loadingSubmit"
                   >
@@ -412,17 +262,10 @@
                   </button>
                 </template>
                 <template v-else>
-                  <!-- 折叠状态：只显示部分题目 -->
                   <button
                     v-for="item in visibleQuestions"
                     :key="item.number"
-                    :class="{
-                      'question-number-btn': true,
-                      current: item.isCurrent,
-                      correct: isCorrectStatus(item.status),
-                      wrong: isWrongStatus(item.status),
-                      unanswered: isUnansweredStatus(item.status),
-                    }"
+                    :class="getQuestionNumberBtnClass(item.status, item.number - 1, item.isCurrent)"
                     @click="jumpToQuestion(item.number - 1)"
                     :disabled="!canJumpToQuestion || loadingSubmit"
                   >
@@ -432,57 +275,50 @@
               </div>
             </div>
 
-            <!-- 答题卡操作按钮区域 -->
+            <!-- 答题卡操作按钮 -->
             <div class="answer-card-actions">
-              <template v-if="!isViewingHistory && progress">
-                <!-- 正常练习模式：显示上一题和下一题 -->
-                <div class="navigation-buttons">
-                  <button
-                    class="btn-answer-card-action btn-navigation"
-                    @click="goToPreviousQuestion"
-                    :disabled="loadingSubmit || currentQuestionIndex <= 0"
-                    :title="currentQuestionIndex <= 0 ? '已是第一题' : '跳转到上一题'"
-                  >
-                    <span class="action-icon">←</span>
-                    上一题
-                  </button>
-                  <button
-                    class="btn-answer-card-action btn-navigation"
-                    @click="goToNextQuestion"
-                    :disabled="loadingSubmit || currentQuestionIndex >= progress.total - 1"
-                    :title="
-                      currentQuestionIndex >= progress.total - 1 ? '已是最后一题' : '跳转到下一题'
-                    "
-                  >
-                    <span class="action-icon">→</span>
-                    下一题
-                  </button>
-                </div>
-              </template>
-              <template v-else-if="isViewingHistory">
-                <!-- 历史查看模式：显示返回当前题 -->
+              <div v-if="!isViewingHistory && progress" class="navigation-buttons">
                 <button
-                  class="btn-answer-card-action btn-return"
-                  @click="backToCurrentQuestion"
-                  :disabled="loadingSubmit"
-                  title="返回到当前正在练习的题目"
+                  class="btn-answer-card-action btn-navigation"
+                  @click="goToPreviousQuestion"
+                  :disabled="!canGoPrevious"
+                  title="跳转到上一题"
                 >
-                  <span class="action-icon">↩</span>
-                  返回当前题
+                  <span class="action-icon">←</span>
+                  上一题
                 </button>
-              </template>
+                <button
+                  class="btn-answer-card-action btn-navigation"
+                  @click="goToNextQuestion"
+                  :disabled="!canGoNext"
+                  title="跳转到下一题"
+                >
+                  <span class="action-icon">→</span>
+                  下一题
+                </button>
+              </div>
+              <button
+                v-else-if="isViewingHistory"
+                class="btn-answer-card-action btn-return"
+                @click="backToCurrentQuestion"
+                :disabled="loadingSubmit"
+                title="返回到当前正在练习的题目"
+              >
+                <span class="action-icon">↩</span>
+                返回当前题
+              </button>
             </div>
-          </div>
+          </aside>
         </div>
 
-        <div class="footer-credit">Created by MingTai</div>
+        <footer class="footer-credit">Created by MingTai</footer>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed, watch, reactive, toRefs, onBeforeUnmount } from 'vue'
+import { ref, onMounted, computed, watch, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { useToast } from 'vue-toastification'
 import type {
@@ -492,18 +328,12 @@ import type {
   Feedback,
   QuestionStatus as QuestionStatusType,
 } from '@/types'
-import {
-  QUESTION_STATUS,
-  getStatusName,
-  isCorrectStatus,
-  isWrongStatus,
-  isUnansweredStatus,
-} from '@/types'
+import { QUESTION_STATUS, isCorrectStatus, isWrongStatus, isUnansweredStatus } from '@/types'
 import { apiService } from '@/services/api'
 import { useAuthStore } from '@/stores/auth'
 
 interface QuestionStatus {
-  status: QuestionStatusType // 使用新的数字状态类型
+  status: QuestionStatusType
   number: number
   isCurrent: boolean
 }
@@ -516,56 +346,459 @@ const props = defineProps<{
 
 const router = useRouter()
 const toast = useToast()
+const authStore = useAuthStore()
+
+// 响应式状态
 const fileDisplayName = ref<string>('')
 const question = ref<Question | null>(null)
 const progress = ref<Progress | null>(null)
 const messages = ref<FlashMessage[]>([])
 const displayMode = ref<'question' | 'feedback'>('question')
 const currentFeedback = ref<Feedback | null>(null)
-const loadingSubmit = ref(false)
 const loading = ref(false)
 const initializing = ref(true)
-const loadingReveal = ref(false)
 const selectedAnswer = ref<string>('')
 const selectedAnswers = ref<Set<string>>(new Set())
 const shuffledMcqOptions = ref<Record<string, string>>({})
+const isViewingHistory = ref(false)
+const questionStatuses = ref<Array<QuestionStatusType>>([])
+const isAnswerCardExpanded = ref(false)
 
-// 添加自动跳转相关状态
+// 加载状态
+const loadingSubmit = ref(false)
+const loadingReveal = ref(false)
+
+// 自动跳转相关状态
 const autoNextTimer = ref<number | null>(null)
 const autoNextCountdown = ref(0)
 const showAutoNextHint = ref(false)
 
+// 题目类型选项
 const tfOptions = {
   T: { text: '正确' },
   F: { text: '错误' },
 }
 
-// 添加是否为查看历史的状态
-const isViewingHistory = ref(false)
+// 计算属性
+const progressPercentage = computed(() => {
+  if (!progress.value) return 0
+  return (progress.value.current / progress.value.total) * 100
+})
 
-const authStore = useAuthStore()
+const currentQuestionIndex = computed(() => (progress.value ? progress.value.current - 1 : 0))
 
-// 将文件路径转换为显示名称的工具函数
+const showSessionInfo = computed(() => !initializing.value && displayMode.value === 'question')
+
+const isQuestionMode = computed(() => displayMode.value === 'question' && question.value)
+
+const isFeedbackMode = computed(
+  () => displayMode.value === 'feedback' && currentFeedback.value && question.value,
+)
+
+const isChoiceQuestion = computed(
+  () =>
+    question.value?.type !== '判断题' &&
+    question.value?.options_for_practice &&
+    Object.keys(shuffledMcqOptions.value).length > 0,
+)
+
+const isTrueFalseQuestion = computed(() => question.value?.type === '判断题')
+
+const questionTypeBadgeClass = computed(() => {
+  if (!question.value) return ''
+  return {
+    'multiple-choice-badge': question.value.type === '多选题',
+    'single-choice-badge': question.value.type === '单选题',
+    'true-false-badge': question.value.type === '判断题',
+  }
+})
+
+const canSubmitAnswer = computed(() => {
+  if (loadingSubmit.value || !isQuestionMode.value || !question.value) return false
+
+  if (question.value.type === '判断题') {
+    return !!selectedAnswer.value
+  }
+
+  if (question.value.is_multiple_choice) {
+    return selectedAnswers.value.size > 0
+  }
+
+  return !!selectedAnswer.value
+})
+
+const canRevealAnswer = computed(
+  () => !loadingSubmit.value && !loadingReveal.value && isQuestionMode.value,
+)
+
+const showLoadingIndicator = computed(
+  () => (loading.value && displayMode.value === 'question') || initializing.value,
+)
+
+const loadingText = computed(() =>
+  initializing.value ? '正在初始化练习会话，请稍候...' : '题目正在加载中，请稍候...',
+)
+
+const showEmptyState = computed(
+  () =>
+    !loading.value && !initializing.value && !question.value && displayMode.value === 'question',
+)
+
+const autoNextCountdownText = computed(
+  () => `${Math.ceil(autoNextCountdown.value)}秒后自动进入下一题`,
+)
+
+const hasOptionsToReview = computed(() => {
+  if (!question.value) return false
+  return question.value.type !== '判断题' ? !!question.value.options_for_practice : true
+})
+
+const optionsReviewTitle = computed(() =>
+  question.value?.type === '判断题' ? '判断选项' : '所有选项',
+)
+
+const optionsForReview = computed(() => {
+  if (!question.value) return {}
+  return question.value.type === '判断题' ? tfOptions : question.value.options_for_practice || {}
+})
+
+const hasKnowledgePoints = computed(
+  () => question.value?.knowledge_points && question.value.knowledge_points.length > 0,
+)
+
+const feedbackButtonText = computed(() => (isViewingHistory.value ? '返回当前题目' : '继续练习'))
+
+const canJumpToQuestion = computed(
+  () => (displayMode.value === 'question' || isViewingHistory.value) && !loadingSubmit.value,
+)
+
+const canGoPrevious = computed(() => !loadingSubmit.value && currentQuestionIndex.value > 0)
+
+const canGoNext = computed(
+  () =>
+    !loadingSubmit.value && progress.value && currentQuestionIndex.value < progress.value.total - 1,
+)
+
+const answerCardGridClass = computed(() => ({
+  expanded: isAnswerCardExpanded.value,
+  'has-left-overflow': hasLeftOverflow.value,
+  'has-right-overflow': hasRightOverflow.value,
+}))
+
+// 可见题目列表
+const visibleQuestions = computed<QuestionStatus[]>(() => {
+  if (!progress.value) return []
+  const totalQuestions = progress.value.total
+
+  if (questionStatuses.value.length !== totalQuestions && totalQuestions > 0) {
+    const newStatuses = new Array(totalQuestions).fill(QUESTION_STATUS.UNANSWERED)
+    for (let i = 0; i < Math.min(questionStatuses.value.length, totalQuestions); i++) {
+      newStatuses[i] = questionStatuses.value[i]
+    }
+    questionStatuses.value = newStatuses
+  }
+
+  const statusesToDisplay = questionStatuses.value.slice(0, totalQuestions)
+
+  if (isAnswerCardExpanded.value) {
+    return statusesToDisplay.map((status, index) => ({
+      status,
+      number: index + 1,
+      isCurrent: index === currentQuestionIndex.value,
+    }))
+  }
+
+  const currentIndex = currentQuestionIndex.value
+  const displayCount = 15
+  const halfDisplay = Math.floor(displayCount / 2)
+
+  let startIndex = Math.max(0, currentIndex - halfDisplay)
+  const endIndex = Math.min(totalQuestions, startIndex + displayCount)
+
+  if (endIndex - startIndex < displayCount && totalQuestions >= displayCount) {
+    startIndex = Math.max(0, endIndex - displayCount)
+  }
+
+  return statusesToDisplay.slice(startIndex, endIndex).map((status, index) => ({
+    status,
+    number: startIndex + index + 1,
+    isCurrent: startIndex + index === currentIndex,
+  }))
+})
+
+const hasLeftOverflow = computed(() => {
+  if (isAnswerCardExpanded.value || !progress.value) return false
+  const currentIndex = currentQuestionIndex.value
+  const displayCount = 15
+  const halfDisplay = Math.floor(displayCount / 2)
+  return Math.max(0, currentIndex - halfDisplay) > 0
+})
+
+const hasRightOverflow = computed(() => {
+  if (isAnswerCardExpanded.value || !progress.value) return false
+  const currentIndex = currentQuestionIndex.value
+  const totalQuestions = progress.value.total
+  const displayCount = 15
+  const halfDisplay = Math.floor(displayCount / 2)
+  let startIndex = Math.max(0, currentIndex - halfDisplay)
+  const endIndex = Math.min(totalQuestions, startIndex + displayCount)
+
+  if (endIndex - startIndex < displayCount && totalQuestions >= displayCount) {
+    startIndex = Math.max(0, endIndex - displayCount)
+  }
+
+  return endIndex < totalQuestions
+})
+
+// 方法
 const getDisplayNameFromFilePath = (filePath: string): string => {
   try {
-    // 规范化路径分隔符
     const normalizedPath = filePath.replace(/\\/g, '/')
     const pathParts = normalizedPath.split('/')
 
-    if (pathParts.length === 0) {
-      return filePath
-    }
+    if (pathParts.length === 0) return filePath
 
-    // 获取文件名（最后一部分）
     const filenameWithExt = pathParts[pathParts.length - 1]
-
-    // 移除文件扩展名
     const displayName = filenameWithExt.replace(/\.(xlsx|xls)$/i, '')
 
     return displayName || filePath
   } catch (error) {
     console.error('Error extracting display name from file path:', error)
     return filePath
+  }
+}
+
+const isOptionSelected = (key: string): boolean => {
+  if (!question.value) return false
+  return question.value.is_multiple_choice
+    ? selectedAnswers.value.has(key)
+    : selectedAnswer.value === key
+}
+
+const getInputName = (key: string): string => {
+  if (!question.value) return ''
+  return question.value.is_multiple_choice ? `answer_mcq_${key}` : 'answer_scq'
+}
+
+const getOptionLabelClass = (key: string) => ({
+  'option-label': true,
+  selected: isOptionSelected(key),
+  'multiple-choice-option': question.value?.is_multiple_choice,
+})
+
+const getCustomDisplayClass = (key: string) => {
+  if (!question.value) return ''
+  const isSelected = isOptionSelected(key)
+  return question.value.is_multiple_choice
+    ? { 'checkbox-custom-display': true, checked: isSelected }
+    : { 'radio-custom-display': true, checked: isSelected }
+}
+
+const getReviewOptionClass = (key: string) => {
+  if (!currentFeedback.value || !question.value) return { 'option-review': true }
+
+  const isCorrect =
+    question.value.type === '判断题'
+      ? question.value.answer === key
+      : question.value.answer.includes(key)
+
+  const isIncorrect =
+    !currentFeedback.value.is_correct &&
+    (question.value.type === '判断题'
+      ? getUserAnswerFromTFDisplay(currentFeedback.value.user_answer_display) === key
+      : currentFeedback.value.user_answer_display.startsWith(key) ||
+        currentFeedback.value.user_answer_display.includes(` + ${key}.`))
+
+  return {
+    'option-review': true,
+    'option-correct': isCorrect,
+    'option-incorrect': isIncorrect,
+  }
+}
+
+const getOptionText = (option: any): string => {
+  return typeof option === 'string' ? option : option.text || ''
+}
+
+const getQuestionNumberBtnClass = (
+  status: QuestionStatusType,
+  index: number,
+  isCurrent?: boolean,
+) => ({
+  'question-number-btn': true,
+  current: isCurrent !== undefined ? isCurrent : index === currentQuestionIndex.value,
+  correct: isCorrectStatus(status),
+  wrong: isWrongStatus(status),
+  unanswered: isUnansweredStatus(status),
+})
+
+const toggleAnswerCard = () => {
+  isAnswerCardExpanded.value = !isAnswerCardExpanded.value
+}
+
+const handleFeedbackAction = () => {
+  if (isViewingHistory.value) {
+    backToCurrentQuestion()
+  } else {
+    handleContinueAfterReveal()
+  }
+}
+
+// 自动跳转相关函数
+const startAutoNextTimer = () => {
+  showAutoNextHint.value = true
+  autoNextCountdown.value = 2
+
+  const countdownInterval = setInterval(() => {
+    autoNextCountdown.value -= 0.1
+    if (autoNextCountdown.value <= 0) {
+      clearInterval(countdownInterval)
+      executeAutoNext()
+    }
+  }, 100)
+
+  autoNextTimer.value = countdownInterval
+}
+
+const clearAutoNextTimer = () => {
+  if (autoNextTimer.value) {
+    clearInterval(autoNextTimer.value)
+    autoNextTimer.value = null
+  }
+  showAutoNextHint.value = false
+  autoNextCountdown.value = 0
+}
+
+const executeAutoNext = () => {
+  clearAutoNextTimer()
+  if (progress.value && currentQuestionIndex.value < progress.value.total - 1) {
+    goToNextQuestion()
+  }
+}
+
+const handleOptionSelect = (key: string) => {
+  if (!question.value) return
+
+  if (question.value.is_multiple_choice) {
+    if (selectedAnswers.value.has(key)) {
+      selectedAnswers.value.delete(key)
+    } else {
+      selectedAnswers.value.add(key)
+    }
+  } else {
+    selectedAnswer.value = key
+  }
+}
+
+const resetState = () => {
+  selectedAnswer.value = ''
+  selectedAnswers.value = new Set()
+  currentFeedback.value = null
+  displayMode.value = 'question'
+}
+
+const updateQuestionStatus = (index: number, isCorrect: boolean) => {
+  if (index >= 0 && index < questionStatuses.value.length) {
+    questionStatuses.value[index] = isCorrect ? QUESTION_STATUS.CORRECT : QUESTION_STATUS.WRONG
+  }
+}
+
+// 其他方法保持不变...
+const getUserAnswerFromTFDisplay = (display: string): string => {
+  if (!display) return ''
+  if (display.includes('未作答')) return ''
+  if (display.includes('正确')) return 'T'
+  if (display.includes('错误')) return 'F'
+
+  const trimmed = display.trim().toUpperCase()
+  if (trimmed === 'T' || trimmed === 'F') return trimmed
+
+  const match = display.match(/^([TF])\./)
+  if (match) return match[1]
+
+  return ''
+}
+
+const goToNextQuestion = () => {
+  if (progress.value && currentQuestionIndex.value < progress.value.total - 1) {
+    jumpToQuestion(currentQuestionIndex.value + 1)
+  }
+}
+
+const goToPreviousQuestion = () => {
+  if (progress.value && currentQuestionIndex.value > 0) {
+    jumpToQuestion(currentQuestionIndex.value - 1)
+  }
+}
+
+const jumpToQuestion = async (index: number) => {
+  clearAutoNextTimer()
+  loading.value = true
+
+  try {
+    if (index < 0 || index >= questionStatuses.value.length) {
+      toast.error('题目索引无效', { timeout: 3000 })
+      return
+    }
+
+    const questionStatus = questionStatuses.value[index]
+    const isAnswered = !isUnansweredStatus(questionStatus)
+
+    if (isAnswered) {
+      try {
+        const historyResponse = await apiService.getQuestionHistory(index)
+
+        if (historyResponse.success && historyResponse.question && historyResponse.feedback) {
+          question.value = historyResponse.question
+          currentFeedback.value = historyResponse.feedback
+
+          if (progress.value) {
+            progress.value.current = index + 1
+          }
+
+          displayMode.value = 'feedback'
+          isViewingHistory.value = true
+          resetState()
+          return
+        }
+      } catch (error) {
+        console.warn(`获取题目历史记录失败:`, error)
+      }
+    }
+
+    if (isViewingHistory.value) {
+      isViewingHistory.value = false
+    }
+
+    const response = await apiService.jumpToQuestion(index)
+    if (response.success) {
+      await loadQuestion()
+    } else {
+      toast.error(response.message || '跳转失败', { timeout: 3000 })
+    }
+  } catch (error) {
+    console.error('Error jumping to question:', error)
+    toast.error(error instanceof Error ? error.message : '跳转失败', {
+      timeout: 4000,
+    })
+  } finally {
+    loading.value = false
+  }
+}
+
+const syncQuestionStatuses = async () => {
+  try {
+    const statusResponse = await apiService.getQuestionStatuses()
+    if (statusResponse.success && statusResponse.statuses.length > 0) {
+      const currentStatusStr = JSON.stringify(questionStatuses.value)
+      const newStatusStr = JSON.stringify(statusResponse.statuses)
+
+      if (currentStatusStr !== newStatusStr) {
+        questionStatuses.value = [...statusResponse.statuses]
+      }
+    }
+  } catch (error) {
+    console.warn('同步答题卡状态失败:', error)
   }
 }
 
@@ -703,28 +936,25 @@ const loadQuestion = async () => {
       progress.value = response.progress
       messages.value = response.flash_messages || []
       displayMode.value = 'question'
-      isViewingHistory.value = false // 重置查看历史状态
-      selectedAnswer.value = ''
-      selectedAnswers.value = new Set()
-      currentFeedback.value = null
+      isViewingHistory.value = false
+      resetState()
 
-      // 确保答题卡状态数组长度与当前轮次题目数量匹配
+      // 确保答题卡状态数组长度匹配
       if (progress.value && questionStatuses.value.length !== progress.value.total) {
-        if (questionStatuses.value.length < progress.value.total) {
-          // 如果答题卡状态数组长度不够，用UNANSWERED(0)填充
-          const additionalStatuses = new Array(
-            progress.value.total - questionStatuses.value.length,
-          ).fill(QUESTION_STATUS.UNANSWERED)
+        const newLength = progress.value.total
+        if (questionStatuses.value.length < newLength) {
+          const additionalStatuses = new Array(newLength - questionStatuses.value.length).fill(
+            QUESTION_STATUS.UNANSWERED,
+          )
           questionStatuses.value = [...questionStatuses.value, ...additionalStatuses]
         } else {
-          // 如果答题卡状态数组过长，截取到正确长度
-          questionStatuses.value = questionStatuses.value.slice(0, progress.value.total)
+          questionStatuses.value = questionStatuses.value.slice(0, newLength)
         }
       }
 
       // 重置选项
       if (question.value.options_for_practice) {
-        shuffledMcqOptions.value = JSON.parse(JSON.stringify(question.value.options_for_practice))
+        shuffledMcqOptions.value = { ...question.value.options_for_practice }
       } else {
         shuffledMcqOptions.value = {}
       }
@@ -741,71 +971,41 @@ const loadQuestion = async () => {
   }
 }
 
-const handleOptionSelect = (key: string) => {
-  if (!question.value) return
-
-  if (question.value.is_multiple_choice) {
-    if (selectedAnswers.value.has(key)) {
-      selectedAnswers.value.delete(key)
-    } else {
-      selectedAnswers.value.add(key)
-    }
-  } else {
-    selectedAnswer.value = key
-  }
-}
-
 const submitAnswer = async () => {
   if (!question.value || loadingSubmit.value) return
 
-  // 清除可能存在的自动跳转定时器
   clearAutoNextTimer()
-
   loadingSubmit.value = true
+
   try {
     const answer = question.value.is_multiple_choice
       ? Array.from(selectedAnswers.value).sort().join('')
       : selectedAnswer.value
 
-    const feedback = await apiService.submitAnswer(
-      answer,
-      question.value.id,
-      false, // 未查看答案
-      false, // 不是复习模式
-    )
+    const feedback = await apiService.submitAnswer(answer, question.value.id, false, false)
 
     currentFeedback.value = feedback
     displayMode.value = 'feedback'
-    isViewingHistory.value = false // 正常答题，不是查看历史
+    isViewingHistory.value = false
 
-    // 显示答题结果通知
     if (feedback.is_correct) {
-      toast.success('回答正确！🎉', {
-        timeout: 2000,
-      })
+      toast.success('回答正确！🎉', { timeout: 2000 })
 
-      // 启动自动跳转到下一题（如果不是最后一题）
+      // 启动自动跳转（如果不是最后一题）
       if (progress.value && currentQuestionIndex.value < progress.value.total - 1) {
         startAutoNextTimer()
       }
     } else {
-      toast.warning('回答错误，查看解析学习一下吧 📚', {
-        timeout: 3000,
-      })
+      toast.warning('回答错误，查看解析学习一下吧 📚', { timeout: 3000 })
     }
 
     // 更新答题卡状态
-    if (
-      currentQuestionIndex.value >= 0 &&
-      currentQuestionIndex.value < questionStatuses.value.length
-    ) {
-      updateQuestionStatus(currentQuestionIndex.value, feedback.is_correct)
-    }
+    updateQuestionStatus(currentQuestionIndex.value, feedback.is_correct)
 
-    // 同步后端状态，确保一致性
+    // 同步后端状态
     setTimeout(async () => {
       await syncQuestionStatuses()
-    }, 100) // 短暂延迟确保后端已更新
+    }, 100)
   } catch (error) {
     console.error('Error submitting answer:', error)
     toast.error(error instanceof Error ? error.message : '答案提交失败', {
@@ -822,17 +1022,11 @@ const revealAnswer = async () => {
   loadingReveal.value = true
 
   try {
-    // 先准备所有需要的数据，避免多次状态切换
     const questionId = question.value.id
     const currentIndex = currentQuestionIndex.value
 
     // 提交查看答案的请求
-    const feedback = await apiService.submitAnswer(
-      '', // 空答案
-      questionId,
-      true, // 标记为已查看答案
-      false, // 不是复习模式
-    )
+    const feedback = await apiService.submitAnswer('', questionId, true, false)
 
     // 获取题目解析
     const analysisResponse = await apiService.getQuestionAnalysis(questionId)
@@ -850,7 +1044,6 @@ const revealAnswer = async () => {
       current_index: currentIndex,
     }
 
-    // 如果获取到解析，更新题目数据
     if (analysisResponse.success) {
       question.value = {
         ...question.value,
@@ -859,15 +1052,8 @@ const revealAnswer = async () => {
       }
     }
 
-    // 一次性更新所有状态，避免多次重渲染
     currentFeedback.value = feedbackData
-
-    // 标记当前题目为错误（用于答题卡显示）
-    if (currentIndex >= 0 && currentIndex < questionStatuses.value.length) {
-      updateQuestionStatus(currentIndex, false)
-    }
-
-    // 最后切换到反馈模式
+    updateQuestionStatus(currentIndex, false)
     displayMode.value = 'feedback'
     isViewingHistory.value = true
   } catch (error) {
@@ -882,19 +1068,9 @@ const revealAnswer = async () => {
 
 const handleContinueAfterReveal = async () => {
   try {
-    // 清除自动跳转定时器
     clearAutoNextTimer()
-
-    // 重置状态
-    selectedAnswer.value = ''
-    selectedAnswers.value = new Set()
-    currentFeedback.value = null
-    displayMode.value = 'question'
-
-    // 加载下一题
+    resetState()
     await loadQuestion()
-
-    // 同步答题卡状态，确保与后端一致
     await syncQuestionStatuses()
   } catch (error) {
     console.error('Error continuing to next question:', error)
@@ -906,16 +1082,8 @@ const handleContinueAfterReveal = async () => {
 
 const backToCurrentQuestion = async () => {
   try {
-    // 清除自动跳转定时器
     clearAutoNextTimer()
-
-    // 重置状态
-    selectedAnswer.value = ''
-    selectedAnswers.value = new Set()
-    currentFeedback.value = null
-    displayMode.value = 'question'
-
-    // 加载当前题目
+    resetState()
     await loadQuestion()
   } catch (error) {
     console.error('Error returning to current question:', error)
@@ -927,36 +1095,19 @@ const backToCurrentQuestion = async () => {
 
 const goBackToIndexPage = async () => {
   try {
-    // 显示正在保存的提示
     const savingToast = toast.info('正在保存练习进度...', {
-      timeout: false, // 不自动消失
+      timeout: false,
       closeOnClick: false,
       pauseOnHover: false,
     })
 
-    // 在返回首页之前保存当前session进度
     await apiService.saveSession()
-    console.log('Session progress saved successfully')
-
-    // 关闭保存中的提示
     toast.dismiss(savingToast)
-
-    // 显示保存成功的提示
-    toast.success('练习进度已保存 💾', {
-      timeout: 2000,
-    })
-
-    // 返回首页
+    toast.success('练习进度已保存 💾', { timeout: 2000 })
     router.push('/')
   } catch (error) {
     console.error('Failed to save session progress:', error)
-
-    // 即使保存失败也要提示用户，但仍然可以继续使用
-    toast.warning('保存进度失败，但可以继续使用 ⚠️', {
-      timeout: 3000,
-    })
-
-    // 仍然返回首页
+    toast.warning('保存进度失败，但可以继续使用 ⚠️', { timeout: 3000 })
     router.push('/')
   }
 }
@@ -977,333 +1128,29 @@ const formatAnswerWithOptions = (
   return `${answer}. ${options[answer] || ''}`
 }
 
-const getQuestionTypeDisplay = (q: Question): string => {
-  return q.type
-}
-
-// Answer Card State
-const isAnswerCardExpanded = ref(false)
-const questionStatuses = ref<Array<QuestionStatusType>>([])
-const currentQuestionIndex = computed(() => (progress.value ? progress.value.current - 1 : 0))
-
-// 修复：更宽松的跳转权限，允许跳转到任何题目
-const canJumpToQuestion = computed(() => {
-  return (displayMode.value === 'question' || isViewingHistory.value) && !loadingSubmit.value
-})
-
-const visibleQuestions = computed<QuestionStatus[]>(() => {
-  if (!progress.value) return [] // Guard against progress being null
-  const totalActualQuestions = progress.value.total // This should be total in current round
-
-  // If questionStatuses hasn't caught up with totalActualQuestions, initialize/resize it
-  if (questionStatuses.value.length !== totalActualQuestions && totalActualQuestions > 0) {
-    // This is a temporary fix. Ideally, questionStatuses is always in sync or derived differently.
-    // For now, we fill with unanswered if it's out of sync.
-    const newStatuses = new Array(totalActualQuestions).fill(QUESTION_STATUS.UNANSWERED)
-    // Preserve existing statuses if possible (e.g. if total decreased, this won't happen often)
-    for (let i = 0; i < Math.min(questionStatuses.value.length, totalActualQuestions); i++) {
-      newStatuses[i] = questionStatuses.value[i]
-    }
-    // eslint-disable-next-line vue/no-side-effects-in-computed-properties
-    questionStatuses.value = newStatuses
-  }
-
-  const statusesToDisplay = questionStatuses.value.slice(0, totalActualQuestions)
-
-  if (isAnswerCardExpanded.value) {
-    return statusesToDisplay.map((status, index) => ({
-      status,
-      number: index + 1,
-      isCurrent: index === currentQuestionIndex.value,
-    }))
-  }
-
-  const currentIndex = currentQuestionIndex.value
-  const displayCount = 15 // Number of items to show when collapsed
-  const halfDisplay = Math.floor(displayCount / 2)
-
-  let startIndex = Math.max(0, currentIndex - halfDisplay)
-  const endIndex = Math.min(totalActualQuestions, startIndex + displayCount)
-
-  if (endIndex - startIndex < displayCount && totalActualQuestions >= displayCount) {
-    startIndex = Math.max(0, endIndex - displayCount)
-  }
-
-  return statusesToDisplay.slice(startIndex, endIndex).map((status, index) => ({
-    status,
-    number: startIndex + index + 1,
-    isCurrent: startIndex + index === currentIndex,
-  }))
-})
-
-const initializeQuestionStatuses = (totalQuestions: number) => {
-  if (totalQuestions > 0) {
-    questionStatuses.value = new Array(totalQuestions).fill(QUESTION_STATUS.UNANSWERED)
-  }
-}
-
-const updateQuestionStatus = (index: number, isCorrect: boolean) => {
-  if (index >= 0 && index < questionStatuses.value.length) {
-    questionStatuses.value[index] = isCorrect ? QUESTION_STATUS.CORRECT : QUESTION_STATUS.WRONG
-  }
-}
-
-// Watch for changes in total questions to initialize/reset statuses
+// 监听器
 watch(
   () => progress.value?.total,
   (newTotal) => {
-    if (newTotal && newTotal > 0) {
-      // Only initialize if the number of statuses doesn't match or is empty
-      // This prevents re-initializing on round changes if total is coincidentally the same
-      if (questionStatuses.value.length !== newTotal) {
-        initializeQuestionStatuses(newTotal)
+    if (newTotal && newTotal > 0 && questionStatuses.value.length !== newTotal) {
+      const newStatuses = new Array(newTotal).fill(QUESTION_STATUS.UNANSWERED)
+      for (let i = 0; i < Math.min(questionStatuses.value.length, newTotal); i++) {
+        newStatuses[i] = questionStatuses.value[i]
       }
-    } else {
-      questionStatuses.value = [] // Clear statuses if no questions
+      questionStatuses.value = newStatuses
     }
   },
   { immediate: true },
-) // Immediate true to run on mount if progress is already there
+)
 
-// 修复jumpToQuestion函数，优化历史记录获取和跳转逻辑
-const jumpToQuestion = async (index: number) => {
-  // 清除自动跳转定时器
-  clearAutoNextTimer()
-
-  loading.value = true
-
-  try {
-    // 检查索引有效性
-    if (index < 0 || index >= questionStatuses.value.length) {
-      toast.error('题目索引无效', { timeout: 3000 })
-      return
-    }
-
-    // 获取题目状态
-    const questionStatus = questionStatuses.value[index]
-    const isAnswered = !isUnansweredStatus(questionStatus)
-
-    // 如果是已答题目，优先尝试获取历史记录
-    if (isAnswered) {
-      console.log(`题目 ${index + 1} 已作答，尝试获取历史记录...`)
-
-      try {
-        const historyResponse = await apiService.getQuestionHistory(index)
-
-        if (historyResponse.success && historyResponse.question && historyResponse.feedback) {
-          console.log(`成功获取题目 ${index + 1} 的历史记录`)
-
-          // 设置题目和反馈数据
-          question.value = historyResponse.question
-          currentFeedback.value = historyResponse.feedback
-
-          // 更新进度信息
-          if (progress.value) {
-            progress.value.current = index + 1
-          }
-
-          // 切换到反馈模式，标记为查看历史
-          displayMode.value = 'feedback'
-          isViewingHistory.value = true
-
-          // 重置选择状态
-          selectedAnswer.value = ''
-          selectedAnswers.value = new Set()
-
-          console.log(`已切换到题目 ${index + 1} 的历史记录显示`)
-          return
-        } else {
-          console.warn(`获取题目 ${index + 1} 历史记录失败:`, historyResponse.message)
-          // 如果获取历史失败，继续正常跳转流程
-        }
-      } catch (error) {
-        console.error(`获取题目 ${index + 1} 历史记录时出错:`, error)
-        // 如果获取历史出错，继续正常跳转流程
-      }
-    }
-
-    // 对于未答题目或获取历史失败的情况，执行正常跳转
-    console.log(`正常跳转到题目 ${index + 1}...`)
-
-    // 如果当前在查看历史，先清除查看历史状态
-    if (isViewingHistory.value) {
-      isViewingHistory.value = false
-    }
-
-    // 调用后端API跳转
-    const response = await apiService.jumpToQuestion(index)
-    if (response.success) {
-      console.log(`成功跳转到题目 ${index + 1}`)
-      // 重新加载当前题目
-      await loadQuestion()
-    } else {
-      console.error(`跳转到题目 ${index + 1} 失败:`, response.message)
-      toast.error(response.message || '跳转失败', {
-        timeout: 3000,
-      })
-    }
-  } catch (error) {
-    console.error('Error jumping to question:', error)
-    toast.error(error instanceof Error ? error.message : '跳转失败', {
-      timeout: 4000,
-    })
-  } finally {
-    loading.value = false
-  }
-}
-
-// 同步答题卡状态 - 增加调试信息
-const syncQuestionStatuses = async () => {
-  try {
-    const statusResponse = await apiService.getQuestionStatuses()
-    if (statusResponse.success && statusResponse.statuses.length > 0) {
-      // 只有当状态不同时才更新，避免不必要的重渲染
-      const currentStatusStr = JSON.stringify(questionStatuses.value)
-      const newStatusStr = JSON.stringify(statusResponse.statuses)
-
-      if (currentStatusStr !== newStatusStr) {
-        questionStatuses.value = [...statusResponse.statuses]
-      }
-    }
-  } catch (error) {
-    console.warn('同步答题卡状态失败:', error)
-    // 静默处理同步错误，不影响用户体验
-  }
-}
-
-const hasLeftOverflow = computed(() => {
-  if (isAnswerCardExpanded.value || !progress.value) return false
-  const currentIndex = currentQuestionIndex.value
-  const displayCount = 15
-  const halfDisplay = Math.floor(displayCount / 2)
-  const startIndex = Math.max(0, currentIndex - halfDisplay)
-  return startIndex > 0
-})
-
-const hasRightOverflow = computed(() => {
-  if (isAnswerCardExpanded.value || !progress.value) return false
-  const currentIndex = currentQuestionIndex.value
-  const totalQuestions = progress.value.total
-  const displayCount = 15
-  const halfDisplay = Math.floor(displayCount / 2)
-  let startIndex = Math.max(0, currentIndex - halfDisplay)
-  const endIndex = Math.min(totalQuestions, startIndex + displayCount)
-
-  if (endIndex - startIndex < displayCount && totalQuestions >= displayCount) {
-    startIndex = Math.max(0, endIndex - displayCount)
-  }
-
-  return endIndex < totalQuestions
-})
-
-const showQuestionHistory = async (index: number) => {
-  try {
-    const historyResponse = await apiService.getQuestionHistory(index)
-
-    if (historyResponse.success && historyResponse.question && historyResponse.feedback) {
-      // 设置题目和反馈数据
-      question.value = historyResponse.question
-      currentFeedback.value = historyResponse.feedback
-      displayMode.value = 'feedback'
-      isViewingHistory.value = true // 标记为查看历史状态
-
-      // 重置选择状态（历史记录不需要选择）
-      selectedAnswer.value = ''
-      selectedAnswers.value = new Set()
-    } else {
-      toast.error('无法获取该题的答题记录', {
-        timeout: 3000,
-      })
-    }
-  } catch (error) {
-    toast.error('获取答题历史失败', {
-      timeout: 3000,
-    })
-  }
-}
-
-const getUserAnswerFromTFDisplay = (display: string): string => {
-  // 从判断题用户答案显示中提取实际答案
-  // 可能的格式：
-  // - "T" 或 "F" (直接答案)
-  // - "T. 正确" 或 "F. 错误" (带选项文本)
-  // - "正确" 或 "错误" (只有文本)
-  // - "未作答（直接查看答案）"
-
-  if (!display) return ''
-
-  // 如果包含"未作答"，返回空
-  if (display.includes('未作答')) return ''
-
-  // 如果显示内容包含"正确"，返回T
-  if (display.includes('正确')) return 'T'
-
-  // 如果显示内容包含"错误"，返回F
-  if (display.includes('错误')) return 'F'
-
-  // 如果是单个字母T或F，直接返回
-  const trimmed = display.trim().toUpperCase()
-  if (trimmed === 'T' || trimmed === 'F') return trimmed
-
-  // 如果格式是"T. xxx"或"F. xxx"，提取第一个字母
-  const match = display.match(/^([TF])\./)
-  if (match) return match[1]
-
-  return ''
-}
-
-const goToNextQuestion = () => {
-  if (progress.value && currentQuestionIndex.value < progress.value.total - 1) {
-    jumpToQuestion(currentQuestionIndex.value + 1)
-  }
-}
-
-const goToPreviousQuestion = () => {
-  if (progress.value && currentQuestionIndex.value > 0) {
-    jumpToQuestion(currentQuestionIndex.value - 1)
-  }
-}
-
-// 自动跳转相关函数
-const startAutoNextTimer = () => {
-  showAutoNextHint.value = true
-  autoNextCountdown.value = 2
-
-  const countdownInterval = setInterval(() => {
-    autoNextCountdown.value -= 0.1
-    if (autoNextCountdown.value <= 0) {
-      clearInterval(countdownInterval)
-      executeAutoNext()
-    }
-  }, 100)
-
-  autoNextTimer.value = countdownInterval
-}
-
-const clearAutoNextTimer = () => {
-  if (autoNextTimer.value) {
-    clearInterval(autoNextTimer.value)
-    autoNextTimer.value = null
-  }
-  showAutoNextHint.value = false
-  autoNextCountdown.value = 0
-}
-
-const executeAutoNext = () => {
-  clearAutoNextTimer()
-  if (progress.value && currentQuestionIndex.value < progress.value.total - 1) {
-    goToNextQuestion()
-  }
-}
-
-// 在组件卸载时清理定时器
+// 生命周期
 onBeforeUnmount(() => {
   clearAutoNextTimer()
 })
 </script>
 
 <style scoped>
-/* 让背景撑满整个屏幕 */
+/* 全屏布局 */
 .practice-page-wrapper {
   position: fixed;
   top: 0;
@@ -1317,26 +1164,41 @@ onBeforeUnmount(() => {
   overflow-x: hidden;
 }
 
-/* 确保内容容器在wrapper内部正确布局 */
-.practice-page-wrapper .container {
+.container {
   position: relative;
   width: 100%;
   max-width: 1200px;
   margin: 0 auto;
-  padding: var(--space-8);
+  padding: 2rem;
   min-height: 100vh;
   box-sizing: border-box;
 }
 
+/* 练习容器 */
 .practice-container {
   background: white;
   border-radius: 16px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
   width: 100%;
   margin: 0 auto;
-  padding: var(--space-6);
+  padding: 1.5rem;
 }
 
+.practice-title {
+  margin-bottom: 2rem;
+  text-align: center;
+}
+
+.practice-title h1 {
+  font-size: 1.75rem;
+  font-weight: 600;
+  color: #1f2937;
+  line-height: 1.4;
+  padding-bottom: 1rem;
+  border-bottom: 2px solid #e5e7eb;
+}
+
+/* 布局 */
 .practice-layout {
   display: flex;
   gap: 2rem;
@@ -1348,6 +1210,7 @@ onBeforeUnmount(() => {
   min-width: 0;
 }
 
+/* 页面头部 */
 .page-header {
   display: flex;
   align-items: center;
@@ -1369,6 +1232,12 @@ onBeforeUnmount(() => {
   transition: all 0.3s ease;
   white-space: nowrap;
   flex-shrink: 0;
+}
+
+.btn-navigate-back:hover {
+  background-color: #3b82f6;
+  color: white;
+  transform: translateY(-2px);
 }
 
 .progress-bar-wrapper {
@@ -1401,18 +1270,53 @@ onBeforeUnmount(() => {
   transition: width 0.3s ease;
 }
 
-.btn-navigate-back:hover {
-  background-color: #3b82f6;
-  color: white;
-  transform: translateY(-2px);
+/* 提示信息 */
+.flash-messages {
+  list-style: none;
+  padding: 0;
+  margin-bottom: 1rem;
 }
 
-.question-header {
-  margin-bottom: 1.5rem;
+.flash-messages li {
+  padding: 1rem;
+  margin-bottom: 0.5rem;
+  border-radius: 8px;
+  font-weight: 500;
 }
 
-.question-content {
+.flash-messages .info {
+  background: #eff6ff;
+  color: #1e40af;
+  border-left: 4px solid #3b82f6;
+}
+
+.session-info {
+  background-color: #f8fafc;
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.info-icon {
+  font-size: 1.25rem;
+}
+
+.info-text {
+  font-size: 0.9rem;
+  color: #6b7280;
+}
+
+/* 题目和反馈区域 */
+.question-section,
+.feedback-section {
+  background: white;
+  border-radius: 16px;
+  padding: 2rem;
   margin-bottom: 2rem;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
 }
 
 .question-text {
@@ -1436,21 +1340,8 @@ onBeforeUnmount(() => {
   font-weight: 600;
   color: white;
   border-radius: 999px;
-  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.15);
   flex-shrink: 0;
   margin-top: 0.2rem;
-}
-
-.question-text-content {
-  flex: 1;
-}
-
-.question-section {
-  background: white;
-  border-radius: 16px;
-  padding: 2rem;
-  margin-bottom: 2rem;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
 }
 
 .question-type-badge.multiple-choice-badge {
@@ -1465,10 +1356,16 @@ onBeforeUnmount(() => {
   background: linear-gradient(135deg, #10b981, #34d399);
 }
 
+.question-text-content {
+  flex: 1;
+}
+
+/* 选项样式 */
 .options-grid {
   display: flex;
   flex-direction: column;
   gap: 1rem;
+  margin-bottom: 2rem;
 }
 
 .option-label {
@@ -1502,10 +1399,8 @@ onBeforeUnmount(() => {
   height: 1px;
 }
 
-.checkbox-custom-display {
-  width: 1.5rem;
-  height: 1.5rem;
-  border: 2px solid #60a5fa;
+.checkbox-custom-display,
+.radio-custom-display {
   position: absolute;
   left: 1rem;
   top: 50%;
@@ -1514,8 +1409,21 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   transition: all 0.2s ease;
-  border-radius: 4px;
   background-color: white;
+}
+
+.checkbox-custom-display {
+  width: 1.5rem;
+  height: 1.5rem;
+  border: 2px solid #60a5fa;
+  border-radius: 4px;
+}
+
+.radio-custom-display {
+  width: 1.25rem;
+  height: 1.25rem;
+  border: 2px solid #60a5fa;
+  border-radius: 50%;
 }
 
 .checkbox-custom-display.checked {
@@ -1528,60 +1436,6 @@ onBeforeUnmount(() => {
   color: white;
   font-size: 1rem;
   font-weight: bold;
-}
-
-.option-label.multiple-choice-option {
-  padding-left: 3.5rem;
-  border-width: 2px;
-}
-
-.option-label.multiple-choice-option:hover {
-  border-color: #3b82f6;
-  background-color: #f8fafc;
-}
-
-.option-label.multiple-choice-option.selected {
-  background-color: #eff6ff;
-  border-color: #3b82f6;
-}
-
-.option-label.multiple-choice-option.correct-answer-highlight {
-  background-color: #ecfdf5;
-  border-color: #059669;
-}
-
-.multiple-choice-hint {
-  margin: 1rem 0;
-  padding: 1rem;
-  background-color: #eff6ff;
-  border: 2px solid #3b82f6;
-  border-radius: 8px;
-  color: #1e40af;
-  display: flex;
-  align-items: center;
-  font-size: 0.95rem;
-  font-weight: 500;
-}
-
-.hint-icon {
-  margin-right: 0.75rem;
-  font-size: 1.25rem;
-}
-
-.radio-custom-display {
-  width: 1.25rem;
-  height: 1.25rem;
-  border: 2px solid #60a5fa;
-  position: absolute;
-  left: 0.75rem;
-  top: 50%;
-  transform: translateY(-50%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s ease;
-  border-radius: 50%;
-  background-color: white;
 }
 
 .radio-custom-display.checked {
@@ -1598,11 +1452,6 @@ onBeforeUnmount(() => {
   display: block;
 }
 
-.option-label:hover .checkbox-custom-display:not(.checked),
-.option-label:hover .radio-custom-display:not(.checked) {
-  border-color: #2563eb;
-}
-
 .option-key {
   font-weight: 600;
   color: #3b82f6;
@@ -1615,6 +1464,7 @@ onBeforeUnmount(() => {
   color: #4b5563;
 }
 
+/* 按钮样式 */
 .action-buttons {
   display: flex;
   gap: 1rem;
@@ -1629,6 +1479,7 @@ onBeforeUnmount(() => {
   transition: all 0.3s ease;
   min-width: 120px;
   text-align: center;
+  cursor: pointer;
 }
 
 .btn-submit {
@@ -1646,8 +1497,6 @@ onBeforeUnmount(() => {
   background-color: transparent;
   color: #4b5563;
   border: 2px solid #e5e7eb;
-  position: relative;
-  overflow: hidden;
 }
 
 .btn-reveal:hover:not(:disabled) {
@@ -1660,95 +1509,41 @@ onBeforeUnmount(() => {
   cursor: not-allowed;
 }
 
-.btn-reveal.loading {
-  color: #3b82f6;
-  border-color: #3b82f6;
-}
-
-.btn-reveal.loading::after {
-  content: '';
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 16px;
-  height: 16px;
-  margin: -8px 0 0 -8px;
-  border: 2px solid transparent;
-  border-top: 2px solid currentColor;
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.feedback-section {
-  background: white;
-  border-radius: 16px;
-  padding: 2rem;
-  animation: slideIn 0.3s ease-out;
-}
-
-@keyframes slideIn {
-  from {
-    opacity: 0;
-    transform: translateY(20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.feedback-banner {
+/* 反馈区域 */
+.history-notice {
+  background: linear-gradient(135deg, #fef3c7, #fbbf24);
+  color: #92400e;
+  padding: 1rem 1.5rem;
+  border-radius: 8px;
+  margin-bottom: 1.5rem;
   display: flex;
   align-items: center;
-  padding: 1.5rem 2rem;
-  border-radius: 12px;
-  margin-bottom: 2rem;
+  gap: 0.75rem;
+  font-weight: 500;
+}
+
+.auto-next-hint {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 1rem 1.5rem;
+  background: linear-gradient(135deg, #f0f9ff, #e0f2fe);
+  border: 1px solid #0ea5e9;
+  border-radius: 8px;
+  margin: 1rem 0;
+}
+
+.btn-cancel-auto {
+  background: linear-gradient(135deg, #3b82f6, #60a5fa);
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
   font-weight: 600;
-  font-size: 1.2rem;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-}
-
-.feedback-banner.feedback-correct {
-  background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
-  color: #059669;
-  border: none;
-}
-
-.feedback-banner.feedback-incorrect {
-  background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%);
-  color: #dc2626;
-  border: none;
-}
-
-.feedback-icon {
-  font-size: 2rem;
-  margin-right: 1rem;
-  animation: bounce 0.6s ease-in-out;
-}
-
-@keyframes bounce {
-  0%,
-  20%,
-  50%,
-  80%,
-  100% {
-    transform: translateY(0);
-  }
-  40% {
-    transform: translateY(-20px);
-  }
-  60% {
-    transform: translateY(-10px);
-  }
+  cursor: pointer;
+  transition: all 0.3s ease;
 }
 
 .question-review-content {
@@ -1786,15 +1581,6 @@ onBeforeUnmount(() => {
   color: #374151;
 }
 
-.user-answer-text-correct {
-  color: #059669;
-  font-weight: 600;
-  padding: 0.5rem 1rem;
-  background: #ecfdf5;
-  border-radius: 6px;
-  display: inline-block;
-}
-
 .user-answer-text-incorrect {
   color: #dc2626;
   font-weight: 600;
@@ -1814,13 +1600,56 @@ onBeforeUnmount(() => {
   display: inline-block;
 }
 
-.feedback-actions {
+.knowledge-points {
   display: flex;
-  justify-content: center;
-  gap: 1rem;
-  margin-top: 2rem;
-  padding-top: 1rem;
-  border-top: 2px solid #e5e7eb;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.knowledge-point-tag {
+  background: #e0f2fe;
+  color: #0369a1;
+  padding: 0.25rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.options-review {
+  margin: 1rem 0;
+  padding: 1rem;
+  background: #f8fafc;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+}
+
+.review-mode {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.option-review {
+  display: flex;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  background: white;
+}
+
+.option-review.option-correct {
+  background-color: #ecfdf5;
+  border-color: #059669;
+  color: #065f46;
+}
+
+.option-review.option-incorrect {
+  background-color: #fef2f2;
+  border-color: #dc2626;
+  color: #991b1b;
 }
 
 .btn-continue {
@@ -1831,6 +1660,8 @@ onBeforeUnmount(() => {
   font-weight: 600;
   transition: all 0.3s ease;
   min-width: 160px;
+  border: none;
+  cursor: pointer;
 }
 
 .btn-continue:hover {
@@ -1838,6 +1669,7 @@ onBeforeUnmount(() => {
   box-shadow: 0 4px 12px rgba(59, 130, 246, 0.25);
 }
 
+/* 答题卡 */
 .answer-card-panel {
   width: 280px;
   background: white;
@@ -1847,12 +1679,6 @@ onBeforeUnmount(() => {
   position: sticky;
   top: 2rem;
   flex-shrink: 0;
-}
-
-.answer-card-header {
-  margin-bottom: 1.5rem;
-  padding-bottom: 1rem;
-  border-bottom: 1px solid #e5e7eb;
 }
 
 .answer-card-title {
@@ -1880,7 +1706,6 @@ onBeforeUnmount(() => {
   border-radius: 8px;
   cursor: pointer;
   transition: all 0.2s ease;
-  font-size: 1.1rem;
 }
 
 .btn-toggle:hover {
@@ -1894,6 +1719,7 @@ onBeforeUnmount(() => {
   gap: 0.75rem;
   font-size: 0.875rem;
   color: #6b7280;
+  margin-bottom: 1rem;
 }
 
 .legend-item {
@@ -1911,82 +1737,26 @@ onBeforeUnmount(() => {
 
 .status-dot.current {
   background-color: #3b82f6;
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
 }
 
 .status-dot.correct {
   background-color: #10b981;
-  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
 }
 
 .status-dot.wrong {
   background-color: #ef4444;
-  box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.2);
 }
 
 .answer-card-grid-container {
   position: relative;
   overflow: hidden;
   height: 240px;
-  transition: height 0.3s ease;
 }
 
 .answer-card-grid-container.expanded {
   height: auto;
   max-height: calc(100vh - 200px);
   overflow-y: auto;
-}
-
-/* 缩略模式的阴影遮罩效果 */
-.answer-card-grid-container:not(.expanded) {
-  position: relative;
-  /* 添加subtle的内阴影暗示可滚动 */
-  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.02);
-}
-
-.answer-card-grid-container:not(.expanded).has-left-overflow::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 20px;
-  background: linear-gradient(to right, rgba(255, 255, 255, 0.95), transparent);
-  z-index: 10;
-  pointer-events: none;
-}
-
-.answer-card-grid-container:not(.expanded).has-right-overflow::after {
-  content: '';
-  position: absolute;
-  right: 0;
-  top: 0;
-  bottom: 0;
-  width: 20px;
-  background: linear-gradient(to left, rgba(255, 255, 255, 0.95), transparent);
-  z-index: 10;
-  pointer-events: none;
-}
-
-/* 当同时有左右溢出时，加强遮罩效果 */
-.answer-card-grid-container:not(.expanded).has-left-overflow.has-right-overflow::before {
-  width: 25px;
-  background: linear-gradient(
-    to right,
-    rgba(255, 255, 255, 0.98),
-    rgba(255, 255, 255, 0.6),
-    transparent
-  );
-}
-
-.answer-card-grid-container:not(.expanded).has-left-overflow.has-right-overflow::after {
-  width: 25px;
-  background: linear-gradient(
-    to left,
-    rgba(255, 255, 255, 0.98),
-    rgba(255, 255, 255, 0.6),
-    transparent
-  );
 }
 
 .answer-card-grid {
@@ -2014,7 +1784,6 @@ onBeforeUnmount(() => {
 .question-number-btn:hover:not(.current):not(.correct):not(.wrong) {
   border-color: #3b82f6;
   color: #3b82f6;
-  transform: translateY(-1px);
 }
 
 .question-number-btn.current {
@@ -2022,8 +1791,6 @@ onBeforeUnmount(() => {
   color: white;
   border: none;
   transform: scale(1.1);
-  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.25);
-  z-index: 1;
 }
 
 .question-number-btn.correct {
@@ -2041,830 +1808,9 @@ onBeforeUnmount(() => {
 .question-number-btn:disabled {
   opacity: 0.7;
   cursor: not-allowed;
-  transform: none;
 }
 
-/* 缩略模式的特殊样式 */
-.answer-card-grid:not(.expanded) {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 0.75rem;
-}
-
-.answer-card-grid:not(.expanded) .question-number-btn {
-  width: 36px;
-  height: 36px;
-  font-size: 0.95rem;
-}
-
-.answer-card-grid:not(.expanded) .question-number-btn.current {
-  position: relative;
-}
-
-.answer-card-grid:not(.expanded) .question-number-btn.current::after {
-  content: '';
-  position: absolute;
-  bottom: -4px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 6px;
-  height: 6px;
-  background: #3b82f6;
-  border-radius: 50%;
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
-}
-
-@media (max-width: 1024px) {
-  .answer-card-panel {
-    width: 100%;
-    position: static;
-    margin-top: 2rem;
-  }
-
-  .answer-card-grid-container {
-    height: auto;
-    max-height: none;
-  }
-}
-
-.footer-credit {
-  text-align: center;
-  margin-top: 3rem;
-  padding-top: 1.5rem;
-  border-top: 2px solid #e5e7eb;
-  color: #6b7280;
-  font-size: 0.9rem;
-}
-
-@media (max-width: 640px) {
-  .practice-container {
-    padding: 1rem;
-    margin: 1rem;
-  }
-
-  .action-buttons {
-    flex-direction: column;
-  }
-
-  .btn {
-    width: 100%;
-  }
-}
-
-.empty-state-message {
-  padding: 1rem;
-  text-align: center;
-  color: #6b7280;
-  background-color: #f3f4f6;
-  border-radius: 8px;
-  margin-top: 1rem;
-}
-
-.knowledge-points {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  margin-top: 0.5rem;
-}
-
-.knowledge-point-tag {
-  background: #e0f2fe;
-  color: #0369a1;
-  padding: 0.25rem 0.75rem;
-  border-radius: 999px;
-  font-size: 0.9rem;
-  font-weight: 500;
-}
-
-.answer-item {
-  background: white;
-  padding: 1.5rem;
-  border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
-  transition: transform 0.2s ease;
-}
-
-.answer-item:hover {
-  transform: translateY(-2px);
-}
-
-.options-review {
-  margin: 1rem 0;
-  padding: 1rem;
-  background: #f8fafc;
-  border-radius: 12px;
-  border: 1px solid #e2e8f0;
-}
-
-.review-mode {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  margin-top: 0.75rem;
-}
-
-.option-review {
-  display: flex;
-  align-items: center;
-  padding: 0.75rem 1rem;
-  border-radius: 8px;
-  border: 1px solid #e2e8f0;
-  background: white;
-  transition: all 0.2s ease;
-}
-
-.option-review.option-correct {
-  background-color: #ecfdf5;
-  border-color: #059669;
-  color: #065f46;
-}
-
-.option-review.option-incorrect {
-  background-color: #fef2f2;
-  border-color: #dc2626;
-  color: #991b1b;
-}
-
-.option-review .option-key {
-  font-weight: 600;
-  margin-right: 1rem;
-  min-width: 24px;
-}
-
-.option-review .option-text {
-  flex: 1;
-}
-
-.session-info {
-  background-color: #f8fafc;
-  border-radius: 8px;
-  padding: 1rem;
-  margin-top: 1rem;
-}
-
-.session-info-content {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.info-icon {
-  font-size: 1.25rem;
-}
-
-.info-text {
-  font-size: 0.9rem;
-  color: #6b7280;
-}
-
-.history-notice {
-  background: linear-gradient(135deg, #fef3c7, #fbbf24);
-  color: #92400e;
-  padding: 1rem 1.5rem;
-  border-radius: 8px;
-  margin-bottom: 1.5rem;
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  font-weight: 500;
-  box-shadow: 0 2px 8px rgba(251, 191, 36, 0.15);
-}
-
-.history-icon {
-  font-size: 1.25rem;
-}
-
-.history-text {
-  font-size: 1rem;
-}
-
-.history-navigation-tip {
-  background: #f0f9ff;
-  color: #0369a1;
-  padding: 0.75rem 1rem;
-  border-radius: 6px;
-  margin-bottom: 1rem;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 0.875rem;
-  font-weight: 500;
-  border-left: 3px solid #0ea5e9;
-}
-
-.tip-icon {
-  font-size: 1rem;
-}
-
-.tip-text {
-  flex: 1;
-}
-
-/* 内容切换过渡动画 */
-.content-fade-enter-active,
-.content-fade-leave-active {
-  transition: all 0.3s ease-in-out;
-}
-
-.content-fade-enter-from {
-  opacity: 0;
-  transform: translateY(20px);
-}
-
-.content-fade-leave-to {
-  opacity: 0;
-  transform: translateY(-20px);
-}
-
-.content-fade-enter-to,
-.content-fade-leave-from {
-  opacity: 1;
-  transform: translateY(0);
-}
-
-.practice-container {
-  /* Add any additional styles specific to the practice container */
-}
-
-/* 查看历史时的答题卡样式 */
-.answer-card-panel.history-mode .question-number-btn:not(.current):not(:disabled) {
-  cursor: pointer;
-  border-color: #0ea5e9;
-  transition: all 0.2s ease;
-}
-
-.answer-card-panel.history-mode .question-number-btn:not(.current):not(:disabled):hover {
-  background: #f0f9ff;
-  border-color: #0369a1;
-  color: #0369a1;
-  transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgba(3, 105, 161, 0.15);
-}
-
-/* 响应式设计优化 */
-
-/* 超大屏幕 (≥1600px) */
-@media (min-width: 1600px) {
-  .practice-container {
-    max-width: 1800px;
-    padding: 3rem;
-  }
-
-  .practice-layout {
-    gap: 3rem;
-  }
-
-  .question-section,
-  .feedback-section {
-    padding: 3rem;
-  }
-
-  .question-text {
-    font-size: 1.375rem;
-    padding: 2rem;
-  }
-
-  .option-label {
-    padding: 1.25rem;
-    padding-left: 3.5rem;
-  }
-
-  .answer-card-panel {
-    width: 320px;
-    padding: 2rem;
-  }
-
-  .answer-card-grid {
-    grid-template-columns: repeat(6, 1fr);
-    gap: 0.75rem;
-  }
-
-  .question-number-btn {
-    font-size: 1rem;
-  }
-}
-
-/* 大屏幕 (1200px - 1599px) */
-@media (min-width: 1200px) and (max-width: 1599px) {
-  .practice-container {
-    max-width: 95%;
-  }
-
-  .answer-card-panel {
-    width: 300px;
-  }
-
-  .answer-card-grid {
-    grid-template-columns: repeat(6, 1fr);
-  }
-}
-
-/* 中等屏幕 (992px - 1199px) */
-@media (min-width: 992px) and (max-width: 1199px) {
-  .practice-container {
-    max-width: 95%;
-    padding: 1.5rem;
-  }
-
-  .practice-layout {
-    gap: 1.5rem;
-  }
-
-  .question-section,
-  .feedback-section {
-    padding: 1.75rem;
-  }
-
-  .answer-card-panel {
-    width: 280px;
-  }
-
-  .answer-card-grid {
-    grid-template-columns: repeat(5, 1fr);
-  }
-
-  .question-text {
-    font-size: 1.125rem;
-    padding: 1.25rem;
-  }
-}
-
-/* 平板横屏 (768px - 991px) */
-@media (min-width: 768px) and (max-width: 991px) {
-  .practice-container {
-    max-width: 95%;
-    margin: 1rem auto;
-    padding: 1.25rem;
-  }
-
-  .practice-layout {
-    flex-direction: column;
-    gap: 1.5rem;
-  }
-
-  .answer-card-panel {
-    order: -1;
-    position: static;
-    width: 100%;
-    border-radius: 12px;
-    padding: 1rem;
-    margin-bottom: 0;
-  }
-
-  .answer-card-grid-container {
-    height: auto;
-    max-height: none;
-  }
-
-  .answer-card-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(45px, 1fr));
-    gap: 0.5rem;
-    padding: 0.5rem 0;
-  }
-
-  .page-header {
-    flex-wrap: wrap;
-    gap: 1rem;
-  }
-
-  .progress-bar-wrapper {
-    min-width: 250px;
-  }
-
-  .question-text {
-    font-size: 1.125rem;
-    flex-direction: column;
-    gap: 0.75rem;
-    align-items: flex-start;
-  }
-
-  .question-type-badge {
-    margin-top: 0;
-  }
-
-  .answer-card-title h3 {
-    font-size: 1.125rem;
-  }
-
-  .answer-card-legend {
-    justify-content: center;
-    gap: 1rem;
-  }
-
-  .question-number-btn {
-    height: 45px;
-    font-size: 0.9rem;
-  }
-}
-
-/* 平板竖屏和大手机 (576px - 767px) */
-@media (min-width: 576px) and (max-width: 767px) {
-  .practice-container {
-    margin: 0.5rem auto;
-    padding: 1rem;
-    border-radius: 12px;
-  }
-
-  .practice-layout {
-    flex-direction: column;
-    gap: 1rem;
-  }
-
-  .answer-card-panel {
-    order: -1;
-    position: static;
-    width: 100%;
-    border-radius: 12px;
-    padding: 1rem;
-    margin-bottom: 0;
-  }
-
-  .answer-card-grid-container {
-    height: auto;
-    max-height: none;
-  }
-
-  .answer-card-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(42px, 1fr));
-    gap: 0.5rem;
-    padding: 0.5rem 0;
-  }
-
-  .page-header {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 1rem;
-  }
-
-  .progress-bar-wrapper {
-    min-width: unset;
-    width: 100%;
-  }
-
-  .question-section,
-  .feedback-section {
-    padding: 1.25rem;
-  }
-
-  .question-text {
-    font-size: 1.1rem;
-    padding: 1rem;
-    flex-direction: column;
-    gap: 0.75rem;
-    align-items: flex-start;
-  }
-
-  .option-label {
-    padding: 0.875rem;
-    padding-left: 2.75rem;
-  }
-
-  .action-buttons {
-    flex-direction: column;
-    gap: 0.75rem;
-  }
-
-  .btn {
-    width: 100%;
-    padding: 0.875rem 1.25rem;
-  }
-
-  .answer-card-title h3 {
-    font-size: 1.125rem;
-  }
-
-  .answer-card-legend {
-    justify-content: center;
-    gap: 1rem;
-  }
-
-  .question-number-btn {
-    height: 42px;
-    font-size: 0.85rem;
-  }
-}
-
-/* 小手机 (≤575px) */
-@media (max-width: 575px) {
-  .practice-container {
-    margin: 0;
-    padding: 0.75rem;
-    border-radius: 8px;
-  }
-
-  .practice-layout {
-    flex-direction: column;
-    gap: 1rem;
-  }
-
-  .answer-card-panel {
-    order: -1;
-    width: 100%;
-    max-height: 160px;
-    overflow-y: auto;
-    padding: 0.75rem;
-    border-radius: 8px;
-  }
-
-  .answer-card-grid {
-    grid-template-columns: repeat(auto-fill, minmax(38px, 1fr));
-    gap: 0.375rem;
-    padding: 0.375rem 0;
-  }
-
-  .question-number-btn {
-    width: 38px;
-    height: 38px;
-    font-size: 0.8rem;
-    border-radius: 6px;
-  }
-
-  .page-header {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 0.75rem;
-    margin-bottom: 1rem;
-  }
-
-  .btn-navigate-back {
-    padding: 0.625rem 1rem;
-    font-size: 0.9rem;
-  }
-
-  .progress-bar-wrapper {
-    min-width: unset;
-    width: 100%;
-    padding: 0.75rem 1rem;
-  }
-
-  .progress-bar-text {
-    font-size: 1rem;
-    margin-bottom: 0.5rem;
-  }
-
-  .question-section,
-  .feedback-section {
-    padding: 1rem;
-  }
-
-  .question-text {
-    font-size: 1rem;
-    padding: 0.875rem;
-    flex-direction: column;
-    gap: 0.625rem;
-    align-items: flex-start;
-    line-height: 1.6;
-  }
-
-  .question-type-badge {
-    padding: 0.3rem 0.6rem;
-    font-size: 0.8rem;
-  }
-
-  .option-label {
-    padding: 0.75rem;
-    padding-left: 2.5rem;
-    font-size: 0.95rem;
-  }
-
-  .checkbox-custom-display,
-  .radio-custom-display {
-    width: 1.25rem;
-    height: 1.25rem;
-    left: 0.75rem;
-  }
-
-  .option-key {
-    font-size: 0.9rem;
-    min-width: 1.5rem;
-  }
-
-  .action-buttons {
-    flex-direction: column;
-    gap: 0.75rem;
-  }
-
-  .btn {
-    width: 100%;
-    padding: 0.75rem 1rem;
-    font-size: 0.95rem;
-  }
-
-  .feedback-banner {
-    padding: 1rem;
-    font-size: 1rem;
-  }
-
-  .answer-comparison {
-    margin: 1rem 0;
-  }
-
-  .options-review {
-    margin: 0.75rem 0;
-    padding: 0.75rem;
-  }
-
-  .option-review {
-    padding: 0.625rem 0.75rem;
-    font-size: 0.9rem;
-  }
-
-  .option-review .option-key {
-    min-width: 20px;
-    margin-right: 0.75rem;
-  }
-
-  .session-info {
-    padding: 0.75rem;
-  }
-
-  .info-text {
-    font-size: 0.85rem;
-  }
-
-  .history-notice {
-    padding: 0.75rem 1rem;
-    margin-bottom: 1rem;
-  }
-
-  .flash-messages {
-    margin-bottom: 1rem;
-  }
-
-  .flash-messages li {
-    padding: 0.75rem 1rem;
-    font-size: 0.9rem;
-  }
-
-  .answer-card-header {
-    margin-bottom: 1rem;
-    padding-bottom: 0.75rem;
-  }
-
-  .answer-card-title {
-    margin-bottom: 0.75rem;
-  }
-
-  .answer-card-title h3 {
-    font-size: 1rem;
-  }
-
-  .btn-toggle {
-    width: 28px;
-    height: 28px;
-    font-size: 1rem;
-  }
-
-  .answer-card-legend {
-    font-size: 0.8rem;
-    gap: 0.75rem;
-    flex-wrap: wrap;
-    justify-content: space-around;
-  }
-
-  .legend-item {
-    gap: 0.375rem;
-  }
-
-  .status-dot {
-    width: 8px;
-    height: 8px;
-  }
-}
-
-/* 横屏模式特殊优化 */
-@media (max-height: 600px) and (orientation: landscape) {
-  .answer-card-panel {
-    max-height: calc(100vh - 100px);
-    overflow-y: auto;
-  }
-
-  .answer-card-grid-container.expanded {
-    max-height: 200px;
-    overflow-y: auto;
-  }
-}
-
-.practice-title {
-  margin-bottom: 2rem;
-  text-align: center;
-}
-
-.practice-title h1 {
-  font-size: 1.75rem;
-  font-weight: 600;
-  color: #1f2937;
-  line-height: 1.4;
-  padding-bottom: 1rem;
-  border-bottom: 2px solid #e5e7eb;
-}
-
-/* 响应式设计优化 */
-@media (max-width: 768px) {
-  .practice-title h1 {
-    font-size: 1.5rem;
-    padding-bottom: 0.75rem;
-  }
-}
-
-@media (max-width: 576px) {
-  .practice-title h1 {
-    font-size: 1.25rem;
-    padding-bottom: 0.5rem;
-  }
-}
-
-/* 移动端优化阴影效果 */
-@media (max-width: 768px) {
-  .answer-card-grid-container:not(.expanded).has-left-overflow::before,
-  .answer-card-grid-container:not(.expanded).has-right-overflow::after {
-    width: 15px;
-  }
-
-  .answer-card-grid-container:not(.expanded).has-left-overflow.has-right-overflow::before,
-  .answer-card-grid-container:not(.expanded).has-left-overflow.has-right-overflow::after {
-    width: 18px;
-  }
-
-  .practice-title h1 {
-    font-size: 1.5rem;
-    padding-bottom: 0.75rem;
-  }
-}
-
-@media (max-width: 576px) {
-  .answer-card-grid-container:not(.expanded).has-left-overflow::before,
-  .answer-card-grid-container:not(.expanded).has-right-overflow::after {
-    width: 12px;
-    background: linear-gradient(to right, rgba(255, 255, 255, 0.9), transparent);
-  }
-
-  .answer-card-grid-container:not(.expanded).has-right-overflow::after {
-    background: linear-gradient(to left, rgba(255, 255, 255, 0.9), transparent);
-  }
-
-  .answer-card-grid-container:not(.expanded).has-left-overflow.has-right-overflow::before {
-    width: 15px;
-    background: linear-gradient(
-      to right,
-      rgba(255, 255, 255, 0.95),
-      rgba(255, 255, 255, 0.5),
-      transparent
-    );
-  }
-
-  .answer-card-grid-container:not(.expanded).has-left-overflow.has-right-overflow::after {
-    width: 15px;
-    background: linear-gradient(
-      to left,
-      rgba(255, 255, 255, 0.95),
-      rgba(255, 255, 255, 0.5),
-      transparent
-    );
-  }
-
-  .practice-title h1 {
-    font-size: 1.25rem;
-    padding-bottom: 0.5rem;
-  }
-}
-
-/* 为答题卡网格添加平滑滚动提示 */
-.answer-card-grid-container:not(.expanded) {
-  position: relative;
-  /* 添加subtle的内阴影暗示可滚动 */
-  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.02);
-}
-
-/* 响应式设计优化 */
-
-/* 移动设备响应式优化 */
-@media (max-width: 768px) {
-  .practice-page-wrapper .container {
-    padding: var(--space-4);
-  }
-
-  .practice-container {
-    padding: var(--space-4);
-    border-radius: 12px;
-  }
-}
-
-@media (max-width: 576px) {
-  .practice-page-wrapper .container {
-    padding: var(--space-3);
-  }
-
-  .practice-container {
-    padding: var(--space-3);
-    border-radius: 8px;
-  }
-}
-
-/* 答题卡操作按钮区域 */
+/* 答题卡操作按钮 */
 .answer-card-actions {
   margin-top: 1rem;
   padding-top: 1rem;
@@ -2873,7 +1819,7 @@ onBeforeUnmount(() => {
 
 .navigation-buttons {
   display: flex;
-  gap: 1rem;
+  gap: 0.5rem;
 }
 
 .btn-answer-card-action {
@@ -2890,45 +1836,72 @@ onBeforeUnmount(() => {
   font-size: 0.9rem;
   cursor: pointer;
   transition: all 0.3s ease;
-  min-height: 44px;
   flex: 1;
 }
 
 .btn-answer-card-action:hover:not(:disabled) {
   background: linear-gradient(135deg, #2563eb, #3b82f6);
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.25);
 }
 
 .btn-answer-card-action:disabled {
   background: #9ca3af;
   cursor: not-allowed;
   transform: none;
-  box-shadow: none;
 }
 
-.btn-answer-card-action .action-icon {
-  font-size: 1.1rem;
-  font-weight: bold;
-}
-
-/* 返回当前题按钮的特殊样式 */
 .btn-return {
   width: 100%;
 }
 
-.btn-return .action-icon {
-  color: #e0f2fe;
+/* 加载和空状态 */
+.loading-indicator-fullscreen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4rem 2rem;
+  text-align: center;
+  color: #6b7280;
+  font-size: 1.1rem;
 }
 
-/* 移动端响应式优化 */
-@media (max-width: 768px) {
-  .practice-container {
-    margin: 0.5rem auto;
-    padding: 1rem;
-    border-radius: 12px;
-  }
+.empty-state-message {
+  padding: 2rem;
+  text-align: center;
+  color: #6b7280;
+  background-color: #f9fafb;
+  border-radius: 12px;
+  border: 2px dashed #e5e7eb;
+}
 
+/* 页脚 */
+.footer-credit {
+  text-align: center;
+  margin-top: 3rem;
+  padding-top: 1.5rem;
+  border-top: 2px solid #e5e7eb;
+  color: #6b7280;
+  font-size: 0.9rem;
+}
+
+/* 过渡动画 */
+.content-fade-enter-active,
+.content-fade-leave-active {
+  transition: all 0.3s ease-in-out;
+}
+
+.content-fade-enter-from {
+  opacity: 0;
+  transform: translateY(20px);
+}
+
+.content-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-20px);
+}
+
+/* 响应式设计 */
+@media (max-width: 1024px) {
   .practice-layout {
     flex-direction: column;
     gap: 1rem;
@@ -2938,140 +1911,64 @@ onBeforeUnmount(() => {
     order: -1;
     position: static;
     width: 100%;
-    border-radius: 12px;
+  }
+}
+
+@media (max-width: 768px) {
+  .container {
     padding: 1rem;
-    margin-bottom: 0;
   }
 
-  .answer-card-grid-container {
-    height: auto;
-    max-height: none;
-  }
-
-  .answer-card-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(42px, 1fr));
-    gap: 0.5rem;
-    padding: 0.5rem 0;
-  }
-
-  .navigation-buttons {
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-
-  .btn-answer-card-action {
-    padding: 0.625rem 0.875rem;
-    font-size: 0.85rem;
-    min-height: 40px;
+  .practice-container {
+    padding: 1rem;
   }
 
   .page-header {
     flex-direction: column;
-    align-items: stretch;
     gap: 1rem;
   }
 
   .progress-bar-wrapper {
     min-width: unset;
-    width: 100%;
-  }
-
-  .question-section,
-  .feedback-section {
-    padding: 1.25rem;
   }
 
   .question-text {
     font-size: 1.1rem;
-    padding: 1rem;
     flex-direction: column;
     gap: 0.75rem;
     align-items: flex-start;
   }
 
   .option-label {
-    padding: 0.875rem;
     padding-left: 2.75rem;
   }
 
   .action-buttons {
     flex-direction: column;
-    gap: 0.75rem;
   }
 
-  .btn {
-    width: 100%;
-    padding: 0.875rem 1.25rem;
+  .navigation-buttons {
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 576px) {
+  .practice-title h1 {
+    font-size: 1.25rem;
   }
 
-  .answer-card-title h3 {
-    font-size: 1.125rem;
+  .question-text {
+    font-size: 1rem;
+    padding: 1rem;
   }
 
-  .answer-card-legend {
-    justify-content: center;
-    gap: 1rem;
+  .answer-card-grid {
+    grid-template-columns: repeat(auto-fill, minmax(38px, 1fr));
   }
 
   .question-number-btn {
-    height: 42px;
-    font-size: 0.85rem;
+    height: 38px;
+    font-size: 0.8rem;
   }
-}
-
-.auto-next-hint {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.75rem;
-  padding: 1rem 1.5rem;
-  background: linear-gradient(135deg, #f0f9ff, #e0f2fe);
-  border: 1px solid #0ea5e9;
-  border-radius: 8px;
-  margin: 1rem 0;
-  animation: slideDown 0.3s ease-out;
-}
-
-@keyframes slideDown {
-  from {
-    opacity: 0;
-    transform: translateY(-10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.auto-next-hint .hint-icon {
-  font-size: 1.25rem;
-}
-
-.auto-next-hint .hint-text {
-  font-size: 0.95rem;
-  color: #0369a1;
-  font-weight: 500;
-  flex: 1;
-  text-align: center;
-}
-
-.btn-cancel-auto {
-  background: linear-gradient(135deg, #3b82f6, #60a5fa);
-  color: white;
-  border: none;
-  padding: 0.5rem 1rem;
-  border-radius: 6px;
-  font-size: 0.85rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  min-width: 60px;
-}
-
-.btn-cancel-auto:hover {
-  background: linear-gradient(135deg, #2563eb, #3b82f6);
-  transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.25);
 }
 </style>

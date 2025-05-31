@@ -385,6 +385,18 @@ const handleLogout = async () => {
 onMounted(async () => {
   loading.value = true
   try {
+    // 首先确保用户已认证
+    if (!authStore.isAuthenticated) {
+      await authStore.checkAuth()
+      if (!authStore.isAuthenticated) {
+        toast.error('用户认证已过期，请重新登录', {
+          timeout: 3000
+        })
+        router.push('/login')
+        return
+      }
+    }
+
     const response = await apiService.getFileOptions()
     subjects.value = response.subjects
     if (response.message) {
@@ -400,6 +412,10 @@ onMounted(async () => {
     }
   } catch (error) {
     console.error('Error fetching subjects:', error)
+    // 如果是认证错误，不显示错误信息，因为用户已被重定向到登录页
+    if (error instanceof Error && error.message.includes('登录已过期')) {
+      return
+    }
     toast.error(error instanceof Error ? error.message : '获取科目列表失败', {
       timeout: 5000
     })

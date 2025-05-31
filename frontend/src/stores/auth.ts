@@ -66,7 +66,7 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       await authService.logout();
     } catch (err) {
-      console.error('登出时发生错误:', err);
+      // 保留错误日志，但可以考虑使用更简洁的方式
     } finally {
       user.value = null;
       error.value = null;
@@ -87,7 +87,6 @@ export const useAuthStore = defineStore('auth', () => {
         user.value = null;
       }
     } catch (err) {
-      console.error('检查登录状态时发生错误:', err);
       user.value = null;
     } finally {
       isLoading.value = false;
@@ -99,6 +98,13 @@ export const useAuthStore = defineStore('auth', () => {
     error.value = null;
   }
 
+  // 处理认证失败
+  function handleAuthFailure(): void {
+    user.value = null;
+    error.value = null;
+    isLoading.value = false;
+  }
+
   return {
     user,
     isLoading,
@@ -108,6 +114,7 @@ export const useAuthStore = defineStore('auth', () => {
     register,
     logout,
     checkAuth,
-    clearError
+    clearError,
+    handleAuthFailure
   };
 }); 

@@ -20,6 +20,12 @@
             :disabled="authStore.isLoading"
           />
           <p v-if="invitationCodeError" class="error-text">{{ invitationCodeError }}</p>
+          <div class="invitation-hint">
+            <svg class="hint-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+            </svg>
+            <span class="hint-text">没有邀请码请联系MT，否则不可注册</span>
+          </div>
         </div>
 
         <div class="form-group">
@@ -321,23 +327,27 @@ onUnmounted(() => {
 
 .form-control {
   padding: var(--space-3);
-  border: 2px solid var(--border-color);
+  border: 3px solid #e2e8f0;
   border-radius: var(--radius-md);
   font-size: var(--text-base);
   transition: all var(--transition-fast);
   width: 100%;
   box-sizing: border-box;
   line-height: 1.5;
+  background-color: #ffffff;
 }
 
 .form-control:focus {
   outline: none;
-  border-color: var(--primary-color);
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.15);
+  background-color: #fafbff;
 }
 
 .form-control-error {
-  border-color: var(--error-color);
+  border-color: #ef4444;
+  background-color: #fef7f7;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1);
 }
 
 .password-input-container {
@@ -349,13 +359,13 @@ onUnmounted(() => {
   right: var(--space-3);
   top: 50%;
   transform: translateY(-50%);
-  background: none;
-  border: none;
-  color: var(--text-secondary);
+  background: #f8fafc;
+  border: 2px solid #e2e8f0;
+  color: #475569;
   cursor: pointer;
   padding: var(--space-1);
-  border-radius: var(--radius-sm);
-  transition: color var(--transition-fast);
+  border-radius: var(--radius-md);
+  transition: all var(--transition-fast);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -364,7 +374,9 @@ onUnmounted(() => {
 }
 
 .password-toggle:hover {
-  color: var(--text-primary);
+  background: #e2e8f0;
+  border-color: #cbd5e1;
+  color: #1e293b;
 }
 
 .password-toggle:disabled {
@@ -378,42 +390,73 @@ onUnmounted(() => {
 }
 
 .error-text {
-  color: var(--error-color);
+  color: #dc2626;
   font-size: var(--text-sm);
   margin: 0;
   line-height: 1.4;
+  font-weight: 500;
+}
+
+/* 邀请码提示样式 */
+.invitation-hint {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  padding: var(--space-3);
+  background: linear-gradient(135deg, #eff6ff, #dbeafe);
+  border: 1px solid #93c5fd;
+  border-radius: var(--radius-md);
+  color: #1e40af;
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+.hint-icon {
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
+  margin-top: 0.125rem;
+}
+
+.hint-text {
+  font-weight: 500;
 }
 
 .error-banner {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  padding: var(--space-3);
-  background-color: #fef2f2;
-  border: 1px solid #fecaca;
-  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  background: linear-gradient(135deg, #fef2f2, #fee2e2);
+  border: 2px solid #fca5a5;
+  border-radius: var(--radius-lg);
   color: #dc2626;
   font-size: var(--text-sm);
   line-height: 1.5;
+  font-weight: 500;
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.15);
 }
 
 .success-banner {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  padding: var(--space-3);
-  background-color: #f0fdf4;
-  border: 1px solid #bbf7d0;
-  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  background: linear-gradient(135deg, #f0fdf4, #dcfce7);
+  border: 2px solid #86efac;
+  border-radius: var(--radius-lg);
   color: #16a34a;
   font-size: var(--text-sm);
   line-height: 1.5;
+  font-weight: 500;
+  box-shadow: 0 4px 12px rgba(22, 163, 74, 0.15);
 }
 
 .error-icon,
 .success-icon {
-  width: 1rem;
-  height: 1rem;
+  width: 1.25rem;
+  height: 1.25rem;
   flex-shrink: 0;
 }
 
@@ -421,37 +464,46 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: var(--space-3) var(--space-4);
-  border: none;
-  border-radius: var(--radius-md);
-  font-weight: var(--font-medium);
+  padding: var(--space-4) var(--space-6);
+  border: 3px solid transparent;
+  border-radius: var(--radius-lg);
+  font-weight: 600;
   cursor: pointer;
   transition: all var(--transition-fast);
-  font-size: var(--text-base);
+  font-size: var(--text-lg);
   line-height: 1.5;
   text-decoration: none;
   box-sizing: border-box;
-  min-height: 48px;
+  min-height: 56px;
   gap: var(--space-2);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
 .btn-primary {
-  background-color: var(--primary-color);
+  background: linear-gradient(135deg, #3b82f6, #1d4ed8);
   color: white;
+  border-color: #2563eb;
 }
 
 .btn-primary:hover:not(:disabled) {
-  background-color: var(--primary-hover);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
+  background: linear-gradient(135deg, #2563eb, #1e40af);
+  border-color: #1d4ed8;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(59, 130, 246, 0.35);
+}
+
+.btn-primary:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.25);
 }
 
 .btn-primary:disabled {
-  background-color: var(--primary-disabled);
-  color: rgba(255, 255, 255, 0.7);
+  background: linear-gradient(135deg, #9ca3af, #6b7280);
+  border-color: #9ca3af;
+  color: rgba(255, 255, 255, 0.8);
   cursor: not-allowed;
   transform: none;
-  box-shadow: none;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .btn-full {
@@ -459,8 +511,8 @@ onUnmounted(() => {
 }
 
 .loading-spinner {
-  width: 1rem;
-  height: 1rem;
+  width: 1.25rem;
+  height: 1.25rem;
   animation: spin 1s linear infinite;
 }
 
@@ -474,25 +526,29 @@ onUnmounted(() => {
 }
 
 .register-footer {
-  margin-top: var(--space-6);
+  margin-top: var(--space-5);
   text-align: center;
 }
 
 .auth-link {
   color: var(--text-secondary);
-  font-size: var(--text-sm);
+  font-size: var(--text-base);
   line-height: 1.5;
+  font-weight: 500;
 }
 
 .link {
-  color: var(--primary-color);
+  color: #3b82f6;
   text-decoration: none;
-  font-weight: var(--font-medium);
-  transition: color var(--transition-fast);
+  font-weight: 600;
+  transition: all var(--transition-fast);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
 }
 
 .link:hover {
-  color: var(--primary-hover);
+  color: #1d4ed8;
+  background-color: rgba(59, 130, 246, 0.1);
   text-decoration: underline;
 }
 
@@ -705,7 +761,7 @@ onUnmounted(() => {
   }
   
   .register-form {
-    gap: var(--space-5);
+    gap: var(--space-4);
   }
   
   .form-control {
@@ -751,6 +807,16 @@ onUnmounted(() => {
   .register-footer {
     margin-top: var(--space-5);
   }
+  
+  .invitation-hint {
+    padding: var(--space-2);
+    font-size: 0.8rem;
+  }
+  
+  .hint-icon {
+    width: 0.8rem;
+    height: 0.8rem;
+  }
 }
 
 /* 超小屏幕 (最小320px) */
@@ -788,6 +854,16 @@ onUnmounted(() => {
   
   .register-form {
     gap: var(--space-4);
+  }
+  
+  .invitation-hint {
+    padding: var(--space-2);
+    font-size: 0.8rem;
+  }
+  
+  .hint-icon {
+    width: 0.8rem;
+    height: 0.8rem;
   }
 }
 

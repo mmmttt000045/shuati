@@ -19,7 +19,12 @@ from connectDB import (
     create_user, 
     verify_invitation_code, 
     get_user_info,
-    create_invitation_code
+    create_invitation_code,
+    save_user_session,
+    load_user_session,
+    delete_user_session,
+    update_session_timestamp,
+    cleanup_expired_sessions
 )
 
 # Configure logging
@@ -72,6 +77,22 @@ SESSION_KEYS = {
     'USERNAME': 'username'  # 用户名
 }
 
+# --- Session管理策略 ---
+# --- 题目状态常量 ---
+# 使用数字代替字符串，节省内存和传输带宽
+QUESTION_STATUS = {
+    'UNANSWERED': 0,  # 未作答
+    'CORRECT': 1,     # 答对
+    'WRONG': 2        # 答错/查看答案
+}
+
+# 状态映射（用于调试和日志）
+QUESTION_STATUS_NAMES = {
+    0: 'unanswered',
+    1: 'correct', 
+    2: 'wrong'
+}
+
 # --- 用户认证装饰器 ---
 def login_required(f):
     """检查用户是否已登录的装饰器"""
@@ -79,8 +100,21 @@ def login_required(f):
     
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        if not session.get('user_id'):
+        user_id = session.get('user_id')
+        username = session.get('username')
+        
+        # 详细的session检查和日志
+        if not user_id:
+            logger.warning(f"Access denied to {request.endpoint}: No user_id in session. Session keys: {list(session.keys())}")
             return jsonify({'success': False, 'error': '请先登录'}), 401
+            
+        if not username:
+            logger.warning(f"Access denied to {request.endpoint}: user_id={user_id} but no username in session")
+            return jsonify({'success': False, 'error': '会话信息不完整，请重新登录'}), 401
+            
+        # 记录成功的认证访问
+        logger.debug(f"Authenticated access to {request.endpoint} by user {username} (id: {user_id})")
+        
         return f(*args, **kwargs)
     return decorated_function
 
@@ -114,6 +148,7 @@ def normalize_filepath(filepath: str) -> str:
 def get_safe_session_value(key: str, default: Any = None) -> Any:
     """Safely get a value from the session."""
     try:
+        # 直接从本地session获取，不再每次都从数据库加载
         value = session.get(key, default)
         return value
     except Exception as e:
@@ -124,10 +159,59 @@ def get_safe_session_value(key: str, default: Any = None) -> Any:
 def set_safe_session_value(key: str, value: Any) -> None:
     """Safely set a value in the session."""
     try:
+        # 只保存到本地session，不再每次都保存到数据库
         session[key] = value
         session.modified = True
     except Exception as e:
         logger.error(f"Error setting session key '{key}': {e}")
+
+
+def clear_user_session() -> None:
+    """清除用户session数据"""
+    try:
+        user_id = session.get('user_id')
+        if user_id:
+            # 在清除前，将当前session数据保存到数据库（登出时保存）
+            session_data = {}
+            for key in SESSION_KEYS.values():
+                if key in session:
+                    session_data[key] = session[key]
+            
+            if session_data:
+                save_user_session(user_id, session_data)
+                logger.info(f"Session data saved to database for user {user_id} on logout")
+        
+        # 清除本地session
+        session.clear()
+        session.modified = True
+    except Exception as e:
+        logger.error(f"Error clearing user session: {e}")
+
+
+def refresh_user_session() -> None:
+    """刷新用户session时间戳 - 现在只在登录时使用"""
+    try:
+        user_id = session.get('user_id')
+        if user_id:
+            update_session_timestamp(user_id)
+    except Exception as e:
+        logger.error(f"Error refreshing user session: {e}")
+
+
+def load_session_from_db() -> None:
+    """从数据库加载session数据到本地session - 只在登录时使用"""
+    try:
+        user_id = session.get('user_id')
+        if user_id:
+            user_session_data = load_user_session(user_id)
+            if user_session_data:
+                # 将数据库中的session数据同步到本地session
+                for key, value in user_session_data.items():
+                    session[key] = value
+                session.modified = True
+                logger.info(f"Session data loaded from database for user {user_id}")
+    except Exception as e:
+        logger.error(f"Error loading session from database: {e}")
 
 
 def load_questions_from_excel(filepath: str, sheetname: Union[str, int]) -> Optional[List[Dict[str, Any]]]:
@@ -364,10 +448,10 @@ def print_activity_periodically():
     """后台线程函数，定期打印服务器活动摘要"""
     global num_requests_since_last_check
     print("后台活动监控线程已启动。")
+    cleanup_counter = 0  # 清理计数器
+    
     while not stop_event.is_set():
         # 等待30秒，或者直到 stop_event 被设置
-        # stop_event.wait(30) # 这会使得循环在退出时更快响应
-        # 为了简单，这里用 time.sleep，但在实际退出时可能需要 KeyboardInterrupt 多次
         time.sleep(30)  # 每30秒打印一次
         if stop_event.is_set():
             break
@@ -378,6 +462,17 @@ def print_activity_periodically():
 
         timestamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
         print(f"[{timestamp}] 服务器在线。过去30秒内处理请求数: {current_request_count}")
+        
+        # 每5分钟清理一次过期session（10个周期 * 30秒 = 5分钟）
+        cleanup_counter += 1
+        if cleanup_counter >= 10:
+            try:
+                cleaned_count = cleanup_expired_sessions()
+                if cleaned_count > 0:
+                    print(f"[{timestamp}] 清理了 {cleaned_count} 个过期的用户session")
+            except Exception as e:
+                logger.error(f"清理过期session时出错: {e}")
+            cleanup_counter = 0
 
 
 @app.before_request
@@ -454,7 +549,7 @@ def api_register() -> tuple[Response, int] | Response:
 
 
 @app.route('/api/auth/login', methods=['POST'])
-def api_login() -> Response:
+def api_login() -> tuple[Response, int] | Response:
     """用户登录"""
     try:
         data = request.get_json()
@@ -476,6 +571,12 @@ def api_login() -> Response:
             session['username'] = result['username']
             session.permanent = True
             
+            # 登录时加载历史session数据
+            load_session_from_db()
+            
+            # 刷新session时间戳
+            refresh_user_session()
+            
             logger.info(f"User logged in successfully: {username}")
             return jsonify({
                 'success': True,
@@ -494,12 +595,12 @@ def api_login() -> Response:
 
 
 @app.route('/api/auth/logout', methods=['POST'])
-def api_logout() -> Response:
+def api_logout() -> tuple[Response, int] | Response:
     """用户登出"""
     try:
         if session.get('user_id'):
             username = session.get('username', 'Unknown')
-            session.clear()
+            clear_user_session()  # 使用新的清除函数
             logger.info(f"User logged out: {username}")
             return jsonify({'success': True, 'message': '登出成功'})
         else:
@@ -512,7 +613,7 @@ def api_logout() -> Response:
 
 @app.route('/api/auth/user', methods=['GET'])
 @login_required
-def api_get_user_info() -> Response:
+def api_get_user_info() -> tuple[Response, int] | Response:
     """获取当前登录用户信息"""
     try:
         user_id = session.get('user_id')
@@ -538,7 +639,7 @@ def api_get_user_info() -> Response:
 
 
 @app.route('/api/auth/check', methods=['GET'])
-def api_check_auth() -> Response:
+def api_check_auth() -> tuple[Response, int] | Response:
     """检查用户登录状态"""
     try:
         if session.get('user_id'):
@@ -563,7 +664,7 @@ def api_check_auth() -> Response:
 
 @app.route('/api/file_options', methods=['GET'])
 @login_required
-def api_file_options() -> Response:
+def api_file_options() -> tuple[Response, int] | Response:
     """Get available question bank files with progress information."""
     subjects_data: Dict[str, List[Dict[str, Any]]] = {}
 
@@ -650,7 +751,7 @@ def api_file_options() -> Response:
 
 @app.route('/api/start_practice', methods=['POST'])
 @login_required
-def api_start_practice() -> Response:
+def api_start_practice() -> tuple[Response, int] | Response:
     """Start a new practice session."""
     try:
         data = request.get_json()
@@ -705,7 +806,6 @@ def api_start_practice() -> Response:
             logger.info(f"Questions kept in sequential order")
 
         # 清除旧的 session 数据并设置新的
-        session.clear()
         set_safe_session_value(SESSION_KEYS['CURRENT_EXCEL_FILE'], selected_file_path)
         set_safe_session_value(SESSION_KEYS['QUESTION_INDICES'], question_indices)
         set_safe_session_value(SESSION_KEYS['CURRENT_INDEX'], 0)
@@ -714,8 +814,8 @@ def api_start_practice() -> Response:
         set_safe_session_value(SESSION_KEYS['INITIAL_TOTAL'], len(question_indices))
         set_safe_session_value(SESSION_KEYS['CORRECT_FIRST_TRY'], 0)
         
-        # 初始化题目状态数组，所有题目初始状态为'unanswered'
-        question_statuses = ['unanswered'] * len(question_indices)
+        # 初始化题目状态数组，所有题目初始状态为未作答(0)
+        question_statuses = [QUESTION_STATUS['UNANSWERED']] * len(question_indices)
         set_safe_session_value(SESSION_KEYS['QUESTION_STATUSES'], question_statuses)
         
         # 初始化答题历史字典
@@ -777,7 +877,7 @@ def api_practice_question() -> Response:
             set_safe_session_value(SESSION_KEYS['ROUND_NUMBER'], round_number)
             
             # 重置新轮次的题目状态数组
-            new_question_statuses = ['unanswered'] * len(new_round_indices)
+            new_question_statuses = [QUESTION_STATUS['UNANSWERED']] * len(new_round_indices)
             set_safe_session_value(SESSION_KEYS['QUESTION_STATUSES'], new_question_statuses)
             
             # 重置新轮次的答题历史
@@ -992,20 +1092,23 @@ def update_practice_record(question, is_correct: bool, peeked: bool):
     if len(question_statuses) == len(q_indices):
         # 确保状态数组长度正确
         if is_correct and not peeked:
-            question_statuses[current_idx] = 'correct'
+            question_statuses[current_idx] = QUESTION_STATUS['CORRECT']
         else:
-            question_statuses[current_idx] = 'wrong'
+            question_statuses[current_idx] = QUESTION_STATUS['WRONG']
         set_safe_session_value(SESSION_KEYS['QUESTION_STATUSES'], question_statuses)
 
-    # 保存答题历史
+    # 保存答题历史 - 修复：确保使用一致的键名格式
     answer_history = get_safe_session_value(SESSION_KEYS['ANSWER_HISTORY'], {})
-    # 使用题目在当前轮次中的索引作为key
-    answer_history[str(current_idx)] = {
+    history_key = str(current_idx)  # 使用题目在当前轮次中的索引作为key
+    
+    history_data = {
         'user_answer': session.get('last_user_answer', ''),
         'is_correct': is_correct,
         'peeked': peeked,
         'question_data': question
     }
+    
+    answer_history[history_key] = history_data
     set_safe_session_value(SESSION_KEYS['ANSWER_HISTORY'], answer_history)
 
     # 如果是查看答案或答错，添加到错题集
@@ -1042,8 +1145,31 @@ def api_completed_summary() -> tuple[Response, int] | Response:
             'completed_filename': completed_filename_display
         }
 
-        # Clear session
-        session.clear()
+        # 清理练习相关的session数据，但保留用户登录信息
+        user_id = session.get('user_id')
+        username = session.get('username')
+        
+        # 清除练习相关的session数据（只清理Cookie，不操作数据库）
+        practice_keys = [
+            SESSION_KEYS['CURRENT_EXCEL_FILE'],
+            SESSION_KEYS['QUESTION_INDICES'],
+            SESSION_KEYS['CURRENT_INDEX'],
+            SESSION_KEYS['WRONG_INDICES'],
+            SESSION_KEYS['ROUND_NUMBER'],
+            SESSION_KEYS['INITIAL_TOTAL'],
+            SESSION_KEYS['CORRECT_FIRST_TRY'],
+            SESSION_KEYS['QUESTION_STATUSES'],
+            SESSION_KEYS['ANSWER_HISTORY']
+        ]
+        
+        for key in practice_keys:
+            session.pop(key, None)
+        
+        # 恢复用户信息
+        if user_id:
+            session['user_id'] = user_id
+            session['username'] = username
+        
         session.modified = True
 
         return jsonify({
@@ -1153,6 +1279,54 @@ def api_session_status() -> tuple[Response, int] | Response:
         }), 500
 
 
+@app.route('/api/session/save', methods=['GET'])
+@login_required
+def api_save_session() -> tuple[Response, int] | Response:
+    """Save current session progress to database."""
+    try:
+        user_id = session.get('user_id')
+        if not user_id:
+            return jsonify({
+                'success': False,
+                'message': 'User not authenticated'
+            }), 401
+
+        # 获取当前session数据
+        session_data = {}
+        for key in SESSION_KEYS.values():
+            if key in session:
+                session_data[key] = session[key]
+
+        if not session_data:
+            return jsonify({
+                'success': True,
+                'message': 'No session data to save'
+            })
+
+        # 保存到数据库
+        success = save_user_session(user_id, session_data)
+        
+        if success:
+            logger.info(f"Session data saved to database for user {user_id}")
+            return jsonify({
+                'success': True,
+                'message': 'Session saved successfully'
+            })
+        else:
+            logger.error(f"Failed to save session data for user {user_id}")
+            return jsonify({
+                'success': False,
+                'message': 'Failed to save session'
+            }), 500
+
+    except Exception as e:
+        logger.error(f"Error saving session: {e}")
+        return jsonify({
+            'success': False,
+            'message': 'Internal server error'
+        }), 500
+
+
 @app.route('/api/questions/<question_id>/analysis', methods=['GET'])
 def api_question_analysis(question_id: str) -> tuple[Response, int] | Response:
     """Get analysis for a specific question."""
@@ -1220,16 +1394,32 @@ def get_question_history(question_index: int) -> tuple[Response, int] | Response
     """Get the answer history for a specific question."""
     try:
         q_indices = get_safe_session_value(SESSION_KEYS['QUESTION_INDICES'], [])
+        logger.info(f"Getting history for question index {question_index}, q_indices length: {len(q_indices)}")
+        
         if question_index < 0 or question_index >= len(q_indices):
+            logger.warning(f"Invalid question index {question_index}, valid range: 0-{len(q_indices)-1}")
             return jsonify({
                 'success': False,
-                'message': 'Invalid question index'
+                'message': f'Invalid question index. Valid range: 0-{len(q_indices)-1}'
             }), 400
 
         answer_history = get_safe_session_value(SESSION_KEYS['ANSWER_HISTORY'], {})
         history_key = str(question_index)
         
+        logger.info(f"Looking for history with key '{history_key}', available keys: {list(answer_history.keys())}")
+        
         if history_key not in answer_history:
+            logger.warning(f"No history found for question index {question_index} (key: '{history_key}')")
+            
+            # 尝试获取题目状态，看是否确实应该有历史记录
+            question_statuses = get_safe_session_value(SESSION_KEYS['QUESTION_STATUSES'], [])
+            if question_index < len(question_statuses):
+                status = question_statuses[question_index]
+                logger.info(f"Question {question_index} status: {status}")
+                
+                if status != QUESTION_STATUS['UNANSWERED']:
+                    logger.error(f"Question {question_index} marked as answered (status: {status}) but no history found!")
+            
             return jsonify({
                 'success': False,
                 'message': 'No history found for this question'
@@ -1237,6 +1427,9 @@ def get_question_history(question_index: int) -> tuple[Response, int] | Response
 
         history_data = answer_history[history_key]
         question_data = history_data['question_data']
+        
+        logger.info(f"Found history for question {question_index}: correct={history_data['is_correct']}, "
+                   f"peeked={history_data['peeked']}, user_answer='{history_data['user_answer']}'")
         
         # 格式化答案显示
         options = question_data.get('options_for_practice', {})
@@ -1251,7 +1444,7 @@ def get_question_history(question_index: int) -> tuple[Response, int] | Response
         
         correct_answer_display = format_answer_display(correct_answer, options, is_multiple_choice)
 
-        return jsonify({
+        response_data = {
             'success': True,
             'question': {
                 'id': question_data['id'],
@@ -1271,10 +1464,13 @@ def get_question_history(question_index: int) -> tuple[Response, int] | Response
                 'current_index': question_index,
                 'peeked': history_data['peeked']
             }
-        })
+        }
+        
+        logger.info(f"Successfully returned history for question {question_index}")
+        return jsonify(response_data)
 
     except Exception as e:
-        logger.error(f"Error getting question history: {e}")
+        logger.error(f"Error getting question history for index {question_index}: {e}")
         return jsonify({
             'success': False,
             'message': 'Internal server error'

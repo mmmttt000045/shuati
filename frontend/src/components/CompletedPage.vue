@@ -75,7 +75,6 @@ onMounted(async () => {
       });
     }
   } catch (error) {
-    console.error('Error fetching completion summary:', error);
     messages.value.push({
       category: 'error',
       text: error instanceof Error ? error.message : '获取完成信息时发生错误'

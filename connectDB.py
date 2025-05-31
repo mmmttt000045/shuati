@@ -4,6 +4,7 @@ import hashlib
 import secrets
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
+import json  # 添加json导入用于session数据序列化
 
 def connect_and_validate_mysql(host_name, user_name, user_password, db_name, target_username_to_check=None):
     """
@@ -328,6 +329,203 @@ def create_invitation_code(code: str, expires_days: Optional[int] = None) -> Dic
     except Error as e:
         print(f"创建邀请码时出错: {e}")
         return {"success": False, "error": f"创建邀请码失败: {str(e)}"}
+    finally:
+        if connection.is_connected():
+            connection.close()
+
+# ============ 用户Session管理相关函数 ============
+
+def save_user_session(user_id: int, session_data: Dict[str, Any]) -> bool:
+    """
+    保存用户的session数据到数据库
+    
+    Args:
+        user_id: 用户ID
+        session_data: session数据字典
+        
+    Returns:
+        bool: 保存是否成功
+    """
+    connection = get_db_connection()
+    if not connection:
+        return False
+    
+    try:
+        cursor = connection.cursor()
+        
+        # 将session数据序列化为JSON
+        session_json = json.dumps(session_data, ensure_ascii=False, default=str)
+        
+        # 使用REPLACE INTO来插入或更新session数据
+        query = """
+        REPLACE INTO user_sessions (user_id, session_data, updated_at)
+        VALUES (%s, %s, NOW())
+        """
+        cursor.execute(query, (user_id, session_json))
+        connection.commit()
+        
+        return True
+        
+    except Error as e:
+        print(f"保存用户session时出错: {e}")
+        return False
+    except (TypeError, ValueError) as e:
+        print(f"序列化session数据时出错: {e}")
+        return False
+    finally:
+        if cursor:
+            cursor.close()
+        if connection.is_connected():
+            connection.close()
+
+def load_user_session(user_id: int) -> Optional[Dict[str, Any]]:
+    """
+    从数据库加载用户的session数据
+    
+    Args:
+        user_id: 用户ID
+        
+    Returns:
+        Optional[Dict[str, Any]]: session数据字典，如果不存在或加载失败返回None
+    """
+    connection = get_db_connection()
+    if not connection:
+        return None
+    
+    try:
+        cursor = connection.cursor()
+        
+        query = """
+        SELECT session_data, updated_at 
+        FROM user_sessions 
+        WHERE user_id = %s
+        """
+        cursor.execute(query, (user_id,))
+        result = cursor.fetchone()
+        
+        if result:
+            session_json, updated_at = result
+            
+            # 检查session是否过期（2小时）
+            if updated_at and datetime.now() - updated_at > timedelta(hours=2):
+                # session已过期，删除它
+                delete_user_session(user_id)
+                return None
+            
+            # 反序列化JSON数据
+            try:
+                session_data = json.loads(session_json)
+                return session_data
+            except (json.JSONDecodeError, TypeError) as e:
+                print(f"反序列化session数据时出错: {e}")
+                return None
+        
+        return None
+        
+    except Error as e:
+        print(f"加载用户session时出错: {e}")
+        return None
+    finally:
+        if cursor:
+            cursor.close()
+        if connection.is_connected():
+            connection.close()
+
+def delete_user_session(user_id: int) -> bool:
+    """
+    删除用户的session数据
+    
+    Args:
+        user_id: 用户ID
+        
+    Returns:
+        bool: 删除是否成功
+    """
+    connection = get_db_connection()
+    if not connection:
+        return False
+    
+    try:
+        cursor = connection.cursor()
+        
+        query = "DELETE FROM user_sessions WHERE user_id = %s"
+        cursor.execute(query, (user_id,))
+        connection.commit()
+        
+        return True
+        
+    except Error as e:
+        print(f"删除用户session时出错: {e}")
+        return False
+    finally:
+        if cursor:
+            cursor.close()
+        if connection.is_connected():
+            connection.close()
+
+def cleanup_expired_sessions() -> int:
+    """
+    清理过期的session数据（超过2小时）
+    
+    Returns:
+        int: 清理的session数量
+    """
+    connection = get_db_connection()
+    if not connection:
+        return 0
+    
+    try:
+        cursor = connection.cursor()
+        
+        # 删除2小时前的session
+        query = """
+        DELETE FROM user_sessions 
+        WHERE updated_at < DATE_SUB(NOW(), INTERVAL 2 HOUR)
+        """
+        cursor.execute(query)
+        connection.commit()
+        
+        return cursor.rowcount
+        
+    except Error as e:
+        print(f"清理过期session时出错: {e}")
+        return 0
+    finally:
+        if cursor:
+            cursor.close()
+        if connection.is_connected():
+            connection.close()
+
+def update_session_timestamp(user_id: int) -> bool:
+    """
+    更新用户session的时间戳（用于延长session生命周期）
+    
+    Args:
+        user_id: 用户ID
+        
+    Returns:
+        bool: 更新是否成功
+    """
+    connection = get_db_connection()
+    if not connection:
+        return False
+    
+    try:
+        cursor = connection.cursor()
+        
+        query = """
+        UPDATE user_sessions 
+        SET updated_at = NOW() 
+        WHERE user_id = %s
+        """
+        cursor.execute(query, (user_id,))
+        connection.commit()
+        
+        return cursor.rowcount > 0
+        
+    except Error as e:
+        print(f"更新session时间戳时出错: {e}")
+        return False
     finally:
         if cursor:
             cursor.close()

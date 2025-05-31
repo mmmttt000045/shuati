@@ -88,7 +88,7 @@
                       >
                         <input
                           :checked="question.is_multiple_choice ? selectedAnswers.has(original_key) : selectedAnswer === original_key"
-                          :disabled="displayMode === 'feedback'"
+                          :disabled="displayMode !== 'question'"
                           :name="question.is_multiple_choice ? `answer_mcq_${original_key}` : 'answer_scq'"
                           :type="question.is_multiple_choice ? 'checkbox' : 'radio'"
                           :value="original_key"
@@ -118,7 +118,7 @@
                       >
                         <input
                           :checked="selectedAnswer === key"
-                          :disabled="displayMode === 'feedback'"
+                          :disabled="displayMode !== 'question'"
                           name="answer_tf"
                           type="radio"
                           :value="key"
@@ -147,7 +147,7 @@
                       提交答案
                     </button>
                     <button
-                      :disabled="loadingSubmit || loadingReveal || displayMode === 'feedback'"
+                      :disabled="loadingSubmit || loadingReveal || displayMode !== 'question'"
                       :class="['btn', 'btn-reveal', { 'loading': loadingReveal }]"
                       type="button"
                       @click="revealAnswer"
@@ -320,12 +320,12 @@
                     class="question-number-btn"
                     :class="{
                       current: index === currentQuestionIndex,
-                      correct: status === 'correct',
-                      wrong: status === 'wrong',
-                      unanswered: status === 'unanswered'
+                      correct: isCorrectStatus(status),
+                      wrong: isWrongStatus(status),
+                      unanswered: isUnansweredStatus(status)
                     }"
                     @click="jumpToQuestion(index)"
-                    :disabled="!canJumpToQuestion"
+                    :disabled="!canJumpToQuestion || loadingSubmit"
                   >
                     {{ index + 1 }}
                   </button>
@@ -335,15 +335,15 @@
                   <button
                     v-for="item in visibleQuestions"
                     :key="item.number"
-                    class="question-number-btn"
                     :class="{
-                      current: item.isCurrent,
-                      correct: item.status === 'correct',
-                      wrong: item.status === 'wrong',
-                      unanswered: item.status === 'unanswered'
+                      'question-number-btn': true,
+                      'current': item.isCurrent,
+                      correct: isCorrectStatus(item.status),
+                      wrong: isWrongStatus(item.status),
+                      unanswered: isUnansweredStatus(item.status)
                     }"
                     @click="jumpToQuestion(item.number - 1)"
-                    :disabled="!canJumpToQuestion"
+                    :disabled="!canJumpToQuestion || loadingSubmit"
                   >
                     {{ item.number }}
                   </button>
@@ -363,11 +363,25 @@
 import { ref, onMounted, computed, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { useToast } from 'vue-toastification';
-import type { Question, Progress, FlashMessage, Feedback } from '@/types';
+import type {
+  Question,
+  Progress,
+  FlashMessage,
+  Feedback,
+  QuestionStatus as QuestionStatusType
+} from '@/types';
+import {
+  QUESTION_STATUS,
+  getStatusName,
+  isCorrectStatus,
+  isWrongStatus,
+  isUnansweredStatus
+} from '@/types';
 import { apiService } from '@/services/api';
+import { useAuthStore } from '@/stores/auth';
 
 interface QuestionStatus {
-  status: 'unanswered' | 'correct' | 'wrong';
+  status: QuestionStatusType;  // 使用新的数字状态类型
   number: number;
   isCurrent: boolean;
 }
@@ -402,26 +416,34 @@ const tfOptions = {
 // 添加是否为查看历史的状态
 const isViewingHistory = ref(false);
 
+const authStore = useAuthStore();
+
 onMounted(async () => {
   try {
+    // 首先确保用户已认证
+    if (!authStore.isAuthenticated) {
+      await authStore.checkAuth();
+      if (!authStore.isAuthenticated) {
+        toast.error('用户认证已过期，请重新登录', {
+          timeout: 3000
+        });
+        router.push('/login');
+        return;
+      }
+    }
+
     // 首先检查是否已有活跃的练习会话
-    console.log('Checking existing session status...');
     const sessionStatus = await apiService.checkSessionStatus();
 
     if (sessionStatus.active) {
-      console.log('Found active session:', sessionStatus);
-
       // 检查会话是否已完成
       if (sessionStatus.completed) {
-        console.log('Session completed, redirecting to completed page');
         router.push('/completed');
         return;
       }
 
       // 检查会话文件是否与当前请求的文件匹配
       if (sessionStatus.file_info && sessionStatus.file_info.key === props.fileName) {
-        console.log('Resuming existing session for same file');
-        
         // 设置文件显示名称
         fileDisplayName.value = sessionStatus.file_info.display || props.fileName;
 
@@ -431,7 +453,7 @@ onMounted(async () => {
           toast.info(`已恢复练习进度：第${sessionStatus.progress.round}轮，第${sessionStatus.progress.current}/${sessionStatus.progress.total}题`, {
             timeout: 4000
           });
-          
+
           // 同时在页面上显示持久信息
           messages.value.push({
             category: 'info',
@@ -439,18 +461,24 @@ onMounted(async () => {
           });
         }
 
-        // 恢复答题卡状态
+        // 恢复答题卡状态 - 修复：确保状态数组正确初始化
         if (sessionStatus.question_statuses && sessionStatus.question_statuses.length > 0) {
           questionStatuses.value = [...sessionStatus.question_statuses];
-          console.log('Restored question statuses:', questionStatuses.value);
+          console.log('从会话状态恢复答题卡状态：', questionStatuses.value);
+        } else if (sessionStatus.progress) {
+          // 如果没有状态数组，根据进度创建默认状态数组
+          const defaultStatuses = new Array(sessionStatus.progress.total).fill(QUESTION_STATUS.UNANSWERED);
+          questionStatuses.value = defaultStatuses;
+          console.log('创建默认答题卡状态：', questionStatuses.value);
         }
 
         // 直接加载当前题目，无需重新开始练习
         await loadQuestion();
+
+        // 加载完成后立即同步状态，确保一致性
+        await syncQuestionStatuses();
         return;
       } else if (sessionStatus.file_info) {
-        console.log('Active session for different file, starting new practice');
-
         // 显示切换题库的提示信息
         toast.info(`已从《${sessionStatus.file_info.display}》切换到当前题库`, {
           timeout: 3000
@@ -462,27 +490,25 @@ onMounted(async () => {
         if (!startResponse.success) {
           throw new Error(startResponse.message);
         }
-        // 设置新的文件显示名称
-        if (startResponse.file_info) {
-          fileDisplayName.value = startResponse.file_info.display || props.fileName;
-        }
+        // 设置文件显示名称
+        fileDisplayName.value = props.fileName;
       }
     } else {
-      console.log('No active session found, starting new practice');
       // 没有活跃会话，开始新的练习
       const shuffleQuestions = props.order !== 'sequential'; // 默认为随机，除非明确指定为顺序
       const startResponse = await apiService.startPractice(props.subject, props.fileName, false, shuffleQuestions);
       if (!startResponse.success) {
         throw new Error(startResponse.message);
       }
-      // 设置新的文件显示名称
-      if (startResponse.file_info) {
-        fileDisplayName.value = startResponse.file_info.display || props.fileName;
-      }
+      // 设置文件显示名称
+      fileDisplayName.value = props.fileName;
     }
 
     // 加载第一题或当前题目
     await loadQuestion();
+
+    // 确保答题卡状态正确同步
+    await syncQuestionStatuses();
 
   } catch (error) {
     console.error('Error initializing practice:', error);
@@ -519,11 +545,9 @@ const loadQuestion = async () => {
 
       // 确保答题卡状态数组长度与当前轮次题目数量匹配
       if (progress.value && questionStatuses.value.length !== progress.value.total) {
-        console.log(`Adjusting question statuses length from ${questionStatuses.value.length} to ${progress.value.total}`);
-
         if (questionStatuses.value.length < progress.value.total) {
-          // 如果答题卡状态数组长度不够，用'unanswered'填充
-          const additionalStatuses = new Array(progress.value.total - questionStatuses.value.length).fill('unanswered');
+          // 如果答题卡状态数组长度不够，用UNANSWERED(0)填充
+          const additionalStatuses = new Array(progress.value.total - questionStatuses.value.length).fill(QUESTION_STATUS.UNANSWERED);
           questionStatuses.value = [...questionStatuses.value, ...additionalStatuses];
         } else {
           // 如果答题卡状态数组过长，截取到正确长度
@@ -694,7 +718,7 @@ const handleContinueAfterReveal = async () => {
     await syncQuestionStatuses();
   } catch (error) {
     console.error('Error continuing to next question:', error);
-    toast.error(error instanceof Error ? error.message : '加载下一题时发生错误', {
+    toast.error(error instanceof Error ? error.message : '加载下一题失败', {
       timeout: 4000
     });
   }
@@ -712,14 +736,46 @@ const backToCurrentQuestion = async () => {
     await loadQuestion();
   } catch (error) {
     console.error('Error returning to current question:', error);
-    toast.error(error instanceof Error ? error.message : '返回当前题目时发生错误', {
+    toast.error(error instanceof Error ? error.message : '返回当前题目失败', {
       timeout: 4000
     });
   }
 };
 
-const goBackToIndexPage = () => {
-  router.push('/');
+const goBackToIndexPage = async () => {
+  try {
+    // 显示正在保存的提示
+    const savingToast = toast.info('正在保存练习进度...', {
+      timeout: false, // 不自动消失
+      closeOnClick: false,
+      pauseOnHover: false
+    });
+    
+    // 在返回首页之前保存当前session进度
+    await apiService.saveSession();
+    console.log('Session progress saved successfully');
+    
+    // 关闭保存中的提示
+    toast.dismiss(savingToast);
+    
+    // 显示保存成功的提示
+    toast.success('练习进度已保存 💾', {
+      timeout: 2000
+    });
+    
+    // 返回首页
+    router.push('/');
+  } catch (error) {
+    console.error('Failed to save session progress:', error);
+    
+    // 即使保存失败也要提示用户，但仍然可以继续使用
+    toast.warning('保存进度失败，但可以继续使用 ⚠️', {
+      timeout: 3000
+    });
+    
+    // 仍然返回首页
+    router.push('/');
+  }
 };
 
 const formatAnswerWithOptions = (answer: string, options?: Record<string, string>, isMultipleChoice = false) => {
@@ -737,13 +793,12 @@ const getQuestionTypeDisplay = (q: Question): string => {
 
 // Answer Card State
 const isAnswerCardExpanded = ref(false);
-const questionStatuses = ref<Array<'unanswered' | 'correct' | 'wrong'>>([]);
+const questionStatuses = ref<Array<QuestionStatusType>>([]);
 const currentQuestionIndex = computed(() => (progress.value ? progress.value.current - 1 : 0));
+
+// 修复：更宽松的跳转权限，允许跳转到任何题目
 const canJumpToQuestion = computed(() => {
-  // 允许在以下情况下跳转：
-  // 1. 正常的题目模式
-  // 2. 正在查看历史记录的反馈模式
-  return (displayMode.value === 'question' || isViewingHistory.value) && !loading.value;
+  return (displayMode.value === 'question' || isViewingHistory.value) && !loadingSubmit.value;
 });
 
 const visibleQuestions = computed<QuestionStatus[]>(() => {
@@ -754,7 +809,7 @@ const visibleQuestions = computed<QuestionStatus[]>(() => {
   if (questionStatuses.value.length !== totalActualQuestions && totalActualQuestions > 0) {
     // This is a temporary fix. Ideally, questionStatuses is always in sync or derived differently.
     // For now, we fill with unanswered if it's out of sync.
-    const newStatuses = new Array(totalActualQuestions).fill('unanswered');
+    const newStatuses = new Array(totalActualQuestions).fill(QUESTION_STATUS.UNANSWERED);
     // Preserve existing statuses if possible (e.g. if total decreased, this won't happen often)
     for (let i = 0; i < Math.min(questionStatuses.value.length, totalActualQuestions); i++) {
       newStatuses[i] = questionStatuses.value[i];
@@ -793,13 +848,13 @@ const visibleQuestions = computed<QuestionStatus[]>(() => {
 
 const initializeQuestionStatuses = (totalQuestions: number) => {
   if (totalQuestions > 0) {
-    questionStatuses.value = new Array(totalQuestions).fill('unanswered');
+    questionStatuses.value = new Array(totalQuestions).fill(QUESTION_STATUS.UNANSWERED);
   }
 };
 
 const updateQuestionStatus = (index: number, isCorrect: boolean) => {
   if (index >= 0 && index < questionStatuses.value.length) {
-    questionStatuses.value[index] = isCorrect ? 'correct' : 'wrong';
+    questionStatuses.value[index] = isCorrect ? QUESTION_STATUS.CORRECT : QUESTION_STATUS.WRONG;
   }
 };
 
@@ -816,57 +871,83 @@ watch(() => progress.value?.total, (newTotal) => {
   }
 }, { immediate: true }); // Immediate true to run on mount if progress is already there
 
+// 修复jumpToQuestion函数，优化历史记录获取和跳转逻辑
 const jumpToQuestion = async (index: number) => {
-  if (!canJumpToQuestion.value) return;
-
   loading.value = true;
+
   try {
-    // 检查题目状态，如果已经做过，直接显示反馈
+    // 检查索引有效性
+    if (index < 0 || index >= questionStatuses.value.length) {
+      toast.error('题目索引无效', { timeout: 3000 });
+      return;
+    }
+
+    // 获取题目状态
     const questionStatus = questionStatuses.value[index];
+    const isAnswered = !isUnansweredStatus(questionStatus);
 
-    if (questionStatus === 'correct' || questionStatus === 'wrong') {
-      // 题目已做过，获取答题历史并显示反馈
-      console.log(`Question ${index} already answered, showing feedback`);
+    // 如果是已答题目，优先尝试获取历史记录
+    if (isAnswered) {
+      console.log(`题目 ${index + 1} 已作答，尝试获取历史记录...`);
 
-      const historyResponse = await apiService.getQuestionHistory(index);
-      if (historyResponse.success && historyResponse.question && historyResponse.feedback) {
-        // 设置题目和反馈数据
-        question.value = historyResponse.question;
-        currentFeedback.value = historyResponse.feedback;
+      try {
+        const historyResponse = await apiService.getQuestionHistory(index);
 
-        // 更新进度信息
-        if (progress.value) {
-          progress.value.current = index + 1;
+        if (historyResponse.success && historyResponse.question && historyResponse.feedback) {
+          console.log(`成功获取题目 ${index + 1} 的历史记录`);
+
+          // 设置题目和反馈数据
+          question.value = historyResponse.question;
+          currentFeedback.value = historyResponse.feedback;
+
+          // 更新进度信息
+          if (progress.value) {
+            progress.value.current = index + 1;
+          }
+
+          // 切换到反馈模式，标记为查看历史
+          displayMode.value = 'feedback';
+          isViewingHistory.value = true;
+
+          // 重置选择状态
+          selectedAnswer.value = '';
+          selectedAnswers.value = new Set();
+
+          console.log(`已切换到题目 ${index + 1} 的历史记录显示`);
+          return;
+        } else {
+          console.warn(`获取题目 ${index + 1} 历史记录失败:`, historyResponse.message);
+          // 如果获取历史失败，继续正常跳转流程
         }
-
-        // 切换到反馈模式
-        displayMode.value = 'feedback';
-        isViewingHistory.value = true;
-
-        return;
-      } else {
-        console.error('Failed to get question history:', historyResponse.message);
-        // 如果获取历史失败，fallback到正常跳转
+      } catch (error) {
+        console.error(`获取题目 ${index + 1} 历史记录时出错:`, error);
+        // 如果获取历史出错，继续正常跳转流程
       }
     }
 
-    // 未做过的题目或获取历史失败，正常跳转
+    // 对于未答题目或获取历史失败的情况，执行正常跳转
+    console.log(`正常跳转到题目 ${index + 1}...`);
+
     // 如果当前在查看历史，先清除查看历史状态
     if (isViewingHistory.value) {
       isViewingHistory.value = false;
     }
 
+    // 调用后端API跳转
     const response = await apiService.jumpToQuestion(index);
     if (response.success) {
+      console.log(`成功跳转到题目 ${index + 1}`);
+      // 重新加载当前题目
       await loadQuestion();
     } else {
+      console.error(`跳转到题目 ${index + 1} 失败:`, response.message);
       toast.error(response.message || '跳转失败', {
         timeout: 3000
       });
     }
   } catch (error) {
     console.error('Error jumping to question:', error);
-    toast.error(error instanceof Error ? error.message : '跳转时发生错误', {
+    toast.error(error instanceof Error ? error.message : '跳转失败', {
       timeout: 4000
     });
   } finally {
@@ -874,19 +955,22 @@ const jumpToQuestion = async (index: number) => {
   }
 };
 
-// 同步答题卡状态
+// 同步答题卡状态 - 增加调试信息
 const syncQuestionStatuses = async () => {
   try {
     const statusResponse = await apiService.getQuestionStatuses();
     if (statusResponse.success && statusResponse.statuses.length > 0) {
       // 只有当状态不同时才更新，避免不必要的重渲染
-      if (JSON.stringify(questionStatuses.value) !== JSON.stringify(statusResponse.statuses)) {
+      const currentStatusStr = JSON.stringify(questionStatuses.value);
+      const newStatusStr = JSON.stringify(statusResponse.statuses);
+
+      if (currentStatusStr !== newStatusStr) {
         questionStatuses.value = [...statusResponse.statuses];
-        console.log('Synced question statuses from backend:', questionStatuses.value);
       }
     }
   } catch (error) {
-    console.error('Error syncing question statuses:', error);
+    console.warn('同步答题卡状态失败:', error);
+    // 静默处理同步错误，不影响用户体验
   }
 };
 
@@ -914,6 +998,32 @@ const hasRightOverflow = computed(() => {
 
   return endIndex < totalQuestions;
 });
+
+const showQuestionHistory = async (index: number) => {
+  try {
+    const historyResponse = await apiService.getQuestionHistory(index);
+
+    if (historyResponse.success && historyResponse.question && historyResponse.feedback) {
+      // 设置题目和反馈数据
+      question.value = historyResponse.question;
+      currentFeedback.value = historyResponse.feedback;
+      displayMode.value = 'feedback';
+      isViewingHistory.value = true;  // 标记为查看历史状态
+
+      // 重置选择状态（历史记录不需要选择）
+      selectedAnswer.value = '';
+      selectedAnswers.value = new Set();
+    } else {
+      toast.error('无法获取该题的答题记录', {
+        timeout: 3000
+      });
+    }
+  } catch (error) {
+    toast.error('获取答题历史失败', {
+      timeout: 3000
+    });
+  }
+};
 
 </script>
 
@@ -2437,7 +2547,7 @@ const hasRightOverflow = computed(() => {
   .practice-page-wrapper .container {
     padding: var(--space-4);
   }
-  
+
   .practice-container {
     padding: var(--space-4);
     border-radius: 12px;
@@ -2448,7 +2558,7 @@ const hasRightOverflow = computed(() => {
   .practice-page-wrapper .container {
     padding: var(--space-3);
   }
-  
+
   .practice-container {
     padding: var(--space-3);
     border-radius: 8px;

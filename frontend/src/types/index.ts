@@ -1,5 +1,32 @@
 export type QuestionType = '单选题' | '多选题' | '判断题' | '选择题';
 
+// 题目状态常量定义 (与后端保持一致)
+export const QUESTION_STATUS = {
+  UNANSWERED: 0,  // 未作答
+  CORRECT: 1,     // 答对
+  WRONG: 2        // 答错/查看答案
+} as const;
+
+// 状态类型
+export type QuestionStatus = typeof QUESTION_STATUS[keyof typeof QUESTION_STATUS];
+
+// 状态名称映射 (用于显示和CSS类名)
+export const STATUS_NAMES = {
+  [QUESTION_STATUS.UNANSWERED]: 'unanswered',
+  [QUESTION_STATUS.CORRECT]: 'correct',
+  [QUESTION_STATUS.WRONG]: 'wrong'
+} as const;
+
+// 工具函数：将数字状态转换为字符串名称
+export const getStatusName = (status: QuestionStatus): string => {
+  return STATUS_NAMES[status] || 'unknown';
+};
+
+// 工具函数：检查状态类型
+export const isCorrectStatus = (status: QuestionStatus): boolean => status === QUESTION_STATUS.CORRECT;
+export const isWrongStatus = (status: QuestionStatus): boolean => status === QUESTION_STATUS.WRONG;
+export const isUnansweredStatus = (status: QuestionStatus): boolean => status === QUESTION_STATUS.UNANSWERED;
+
 export interface Question {
   id: string;
   type: string;

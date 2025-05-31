@@ -11,51 +11,52 @@ import { useAuthStore } from './stores/auth'
 
 const app = createApp(App)
 
-app.use(createPinia())
-app.use(router)
-
-// Configure vue-toastification
+// 配置 Toast
 app.use(Toast, {
   position: POSITION.TOP_RIGHT,
-  timeout: 4000,
+  timeout: 3000,
   closeOnClick: true,
-  pauseOnFocusLoss: true,
   pauseOnHover: true,
   draggable: true,
-  draggablePercent: 0.6,
-  showCloseButtonOnHover: false,
-  hideProgressBar: false,
-  closeButton: "button",
-  icon: true,
-  rtl: false
+  dragOffset: 50,
+  showIcon: true,
+  maxToasts: 5,
+  newestOnTop: true
 })
 
-// Global error handler
+// 配置 Pinia
+app.use(createPinia())
+
+// 全局错误处理
 app.config.errorHandler = (err, vm, info) => {
-  console.error('Global error:', err)
-  console.error('Component:', vm)
-  console.error('Error info:', info)
+  // 重要错误仍然记录到控制台，便于调试
+  if (err instanceof Error && err.message.includes('network')) {
+    console.error('Network error detected:', err)
+  }
 }
 
-// Global warning handler
+// 全局警告处理（生产环境可以完全关闭）
 app.config.warnHandler = (msg, vm, trace) => {
-  console.warn('Global warning:', msg)
-  console.warn('Component:', vm)
-  console.warn('Trace:', trace)
+  // 生产环境静默处理警告
+  if (import.meta.env.DEV) {
+    console.warn('Vue warning:', msg)
+  }
 }
 
-// Initialize authentication on app startup
-async function initApp() {
+// 配置路由
+app.use(router)
+
+// 初始化认证状态
+const initAuth = async () => {
   const authStore = useAuthStore()
-  
   try {
-    // Check if user is already authenticated
     await authStore.checkAuth()
   } catch (error) {
-    console.error('Failed to check authentication status:', error)
+    // 静默处理初始认证检查失败
   }
-  
-  app.mount('#app')
 }
 
-initApp()
+// 挂载应用
+initAuth().then(() => {
+  app.mount('#app')
+})

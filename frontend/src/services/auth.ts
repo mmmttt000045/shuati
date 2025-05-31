@@ -1,4 +1,4 @@
-import { AUTH_API_BASE_URL, enableApiLogging } from '@/config/api';
+import { AUTH_API_BASE_URL } from '@/config/api';
 
 interface AuthUser {
   user_id: number;
@@ -52,16 +52,6 @@ class AuthService {
       }
     };
 
-    if (enableApiLogging) {
-      console.log('Making auth request:', {
-        url,
-        method: finalOptions.method || 'GET',
-        headers: finalOptions.headers,
-        credentials: finalOptions.credentials,
-        cookies: document.cookie
-      });
-    }
-
     return fetch(url, finalOptions);
   }
 
@@ -72,17 +62,8 @@ class AuthService {
         body: JSON.stringify(data),
       });
 
-      const result = await response.json();
-      
-      if (enableApiLogging) {
-        console.log('注册响应:', result);
-      }
-      
-      return result;
+      return await response.json();
     } catch (error) {
-      if (enableApiLogging) {
-        console.error('注册请求失败:', error);
-      }
       return {
         success: false,
         error: '网络请求失败，请检查网络连接'
@@ -97,18 +78,8 @@ class AuthService {
         body: JSON.stringify(data),
       });
 
-      const result = await response.json();
-      
-      if (enableApiLogging) {
-        console.log('登录响应:', result);
-        console.log('登录后cookies:', document.cookie);
-      }
-      
-      return result;
+      return await response.json();
     } catch (error) {
-      if (enableApiLogging) {
-        console.error('登录请求失败:', error);
-      }
       return {
         success: false,
         error: '网络请求失败，请检查网络连接'
@@ -122,17 +93,8 @@ class AuthService {
         method: 'POST',
       });
 
-      const result = await response.json();
-      
-      if (enableApiLogging) {
-        console.log('登出响应:', result);
-      }
-      
-      return result;
+      return await response.json();
     } catch (error) {
-      if (enableApiLogging) {
-        console.error('登出请求失败:', error);
-      }
       return {
         success: false,
         error: '网络请求失败'
@@ -146,17 +108,8 @@ class AuthService {
         method: 'GET',
       });
 
-      const result = await response.json();
-      
-      if (enableApiLogging) {
-        console.log('认证检查响应:', result);
-      }
-      
-      return result;
+      return await response.json();
     } catch (error) {
-      if (enableApiLogging) {
-        console.error('检查登录状态失败:', error);
-      }
       return {
         success: false,
         authenticated: false,
@@ -171,17 +124,8 @@ class AuthService {
         method: 'GET',
       });
 
-      const result = await response.json();
-      
-      if (enableApiLogging) {
-        console.log('用户信息响应:', result);
-      }
-      
-      return result;
+      return await response.json();
     } catch (error) {
-      if (enableApiLogging) {
-        console.error('获取用户信息失败:', error);
-      }
       return {
         success: false,
         error: '网络请求失败'

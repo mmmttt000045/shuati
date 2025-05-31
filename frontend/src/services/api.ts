@@ -4,9 +4,12 @@ import type {
   Feedback,
   Question,
   QuestionResponse,
-  SubjectsResponse
+  SubjectsResponse,
+  QuestionStatus
 } from '@/types';
 import { API_BASE_URL, enableApiLogging } from '@/config/api';
+import { useAuthStore } from '@/stores/auth';
+import router from '@/router';
 
 // 使用配置文件中的API基地址
 const API_BASE = API_BASE_URL;
@@ -49,22 +52,35 @@ export interface ApiService {
       correct_first_try: number;
       wrong_count: number;
     };
-    question_statuses?: Array<'unanswered' | 'correct' | 'wrong'>;
+    question_statuses?: Array<QuestionStatus>;
   }>;
   getQuestionStatuses(): Promise<{
-    statuses: Array<'unanswered' | 'correct' | 'wrong'>;
+    statuses: Array<QuestionStatus>;
     success: boolean;
+  }>;
+  saveSession(): Promise<{
+    success: boolean;
+    message?: string;
   }>;
 }
 
 class ApiServiceImpl implements ApiService {
   private async handleResponse<T>(response: Response): Promise<T> {
     if (!response.ok) {
-      console.error('API Error:', {
-        status: response.status,
-        statusText: response.statusText,
-        url: response.url
-      });
+      // 特殊处理401认证失败错误
+      if (response.status === 401) {
+        // 获取auth store并清除用户状态
+        const authStore = useAuthStore();
+        authStore.handleAuthFailure();
+        
+        // 重定向到登录页面
+        if (router.currentRoute.value.name !== 'login') {
+          router.push('/login');
+        }
+        
+        throw new Error('登录已过期，请重新登录');
+      }
+      
       const error = await response.json() as ApiError;
       throw new Error(error.message || 'An error occurred');
     }
@@ -94,44 +110,16 @@ class ApiServiceImpl implements ApiService {
       credentials: 'include' as RequestCredentials
     };
 
-    if (enableApiLogging) {
-      console.log('Making API request:', {
-        url,
-        method: finalOptions.method || 'GET',
-        headers: finalOptions.headers,
-        credentials: finalOptions.credentials,
-        cookies: document.cookie
-      });
-    }
-
     try {
       const response = await fetch(url, finalOptions);
 
-      // Log response details including cookies
-      if (enableApiLogging) {
-        const responseDetails = {
-          status: response.status,
-          statusText: response.statusText,
-          headers: Object.fromEntries(response.headers.entries()),
-          cookies: document.cookie
-        };
-        console.log('API response:', responseDetails);
-      }
-
       // Check for CORS issues
       if (!response.ok && response.status === 0) {
-        console.error('CORS error detected');
         throw new Error('CORS error - check browser console for details');
-      }
-
-      // Check for session-related issues
-      if (response.status === 400 && document.cookie === '') {
-        console.warn('Session may be invalid - no cookies present');
       }
 
       return response;
     } catch (error) {
-      console.error('API request failed:', error);
       throw error;
     }
   }
@@ -142,22 +130,16 @@ class ApiServiceImpl implements ApiService {
   }
 
   async startPractice(subject: string, fileName: string, forceRestart?: boolean, shuffleQuestions?: boolean): Promise<{ message: string; success: boolean; resumed?: boolean }> {
-    console.log('Starting practice:', { subject, fileName });
     const response = await this.fetchWithCredentials(`${API_BASE}/start_practice`, {
       method: 'POST',
       body: JSON.stringify({ subject, fileName, force_restart: forceRestart, shuffle_questions: shuffleQuestions })
     });
-    const result = await this.handleResponse<{ message: string; success: boolean; resumed?: boolean }>(response);
-    console.log('Practice start result:', result);
-    return result;
+    return this.handleResponse<{ message: string; success: boolean; resumed?: boolean }>(response);
   }
 
   async getCurrentQuestion(): Promise<QuestionResponse> {
-    console.log('Fetching current question');
     const response = await this.fetchWithCredentials(`${API_BASE}/practice/question`);
-    const result = await this.handleResponse<QuestionResponse>(response);
-    console.log('Current question result:', result);
-    return result;
+    return this.handleResponse<QuestionResponse>(response);
   }
 
   async submitAnswer(answer: string, questionId: string, isRevealed: boolean, isSkipped: boolean): Promise<Feedback> {
@@ -188,7 +170,6 @@ class ApiServiceImpl implements ApiService {
       const response = await this.fetchWithCredentials(`${API_BASE}/questions/${questionId}/analysis`);
       return await response.json();
     } catch (error) {
-      console.error('Error fetching question analysis:', error);
       return {
         success: false,
         message: 'Failed to fetch question analysis'
@@ -230,7 +211,7 @@ class ApiServiceImpl implements ApiService {
       correct_first_try: number;
       wrong_count: number;
     };
-    question_statuses?: Array<'unanswered' | 'correct' | 'wrong'>;
+    question_statuses?: Array<QuestionStatus>;
   }> {
     const response = await this.fetchWithCredentials(`${API_BASE}/session/status`);
     return this.handleResponse<{
@@ -252,12 +233,12 @@ class ApiServiceImpl implements ApiService {
         correct_first_try: number;
         wrong_count: number;
       };
-      question_statuses?: Array<'unanswered' | 'correct' | 'wrong'>;
+      question_statuses?: Array<QuestionStatus>;
     }>(response);
   }
 
   async getQuestionStatuses(): Promise<{
-    statuses: Array<'unanswered' | 'correct' | 'wrong'>;
+    statuses: Array<QuestionStatus>;
     success: boolean;
   }> {
     try {
@@ -267,12 +248,22 @@ class ApiServiceImpl implements ApiService {
         success: sessionStatus.active
       };
     } catch (error) {
-      console.error('Error getting question statuses:', error);
       return {
         statuses: [],
         success: false
       };
     }
+  }
+
+  async saveSession(): Promise<{
+    success: boolean;
+    message?: string;
+  }> {
+    const response = await this.fetchWithCredentials(`${API_BASE}/session/save`);
+    return this.handleResponse<{
+      success: boolean;
+      message?: string;
+    }>(response);
   }
 }
 

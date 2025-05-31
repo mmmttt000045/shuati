@@ -7020,3 +7020,27 @@
 2025-05-31 20:41:07,994 - __main__ - INFO - Looking for history with key '12', available keys: ['0', '1', '10', '11', '12', '2', '3', '4', '5', '6', '7', '8', '9']
 2025-05-31 20:41:07,994 - __main__ - INFO - Found history for question 12: correct=True, peeked=False, user_answer='BD'
 2025-05-31 20:41:07,994 - __main__ - INFO - Successfully returned history for question 12
+2025-05-31 21:00:24,714 - __main__ - INFO - Session data saved to database for user 2
+2025-05-31 21:03:11,530 - __main__ - INFO - Stopping background thread...
+2025-05-31 21:10:37,421 - INFO - Scanning 'subject' directory for question banks
+2025-05-31 21:10:37,617 - INFO - Loaded 109 questions from 'subject/Java程序设计/判断题.xlsx'
+2025-05-31 21:10:37,625 - INFO - Loaded 20 questions from 'subject/Java程序设计/单项选择1.xlsx'
+2025-05-31 21:10:37,634 - INFO - Loaded 19 questions from 'subject/Java程序设计/单项选择2.xlsx'
+2025-05-31 21:10:37,661 - INFO - Loaded 81 questions from 'subject/Java程序设计/单项选择3.xlsx'
+2025-05-31 21:10:37,681 - INFO - Loaded 165 questions from 'subject/习近平思想/导论习题库.xlsx'
+2025-05-31 21:10:37,681 - INFO - Loaded 5 question banks
+2025-05-31 21:10:37,685 - INFO - Starting Flask application on http://127.0.0.1:5051
+2025-05-31 21:10:37,777 - INFO - Using Waitress server
+2025-05-31 21:10:37,778 - INFO - Serving on http://127.0.0.1:5051
+2025-05-31 21:10:54,527 - INFO - User logged out: mmmttt
+2025-05-31 21:10:59,243 - INFO - User logged in: mmmttt
+2025-05-31 21:11:07,686 - INFO - Server active. Requests in last 30s: 20
+2025-05-31 21:11:37,686 - INFO - Server active. Requests in last 30s: 27
+2025-05-31 21:12:07,687 - INFO - Server active. Requests in last 30s: 23
+2025-05-31 21:12:37,688 - INFO - Server active. Requests in last 30s: 0
+2025-05-31 21:13:07,689 - INFO - Server active. Requests in last 30s: 5
+2025-05-31 21:13:37,689 - INFO - Server active. Requests in last 30s: 0
+2025-05-31 21:14:07,691 - INFO - Server active. Requests in last 30s: 0
+2025-05-31 21:14:37,692 - INFO - Server active. Requests in last 30s: 0
+2025-05-31 21:15:07,693 - INFO - Server active. Requests in last 30s: 0
+2025-05-31 21:15:12,665 - INFO - User logged out: mmmttt

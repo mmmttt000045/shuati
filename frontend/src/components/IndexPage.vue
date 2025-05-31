@@ -164,6 +164,10 @@
                 <span class="session-value">{{ confirmData.fileName }}</span>
               </div>
               <div class="session-detail">
+                <span class="session-label">Order：</span>
+                <span class="session-value">{{ confirmData.order }}</span>
+              </div>
+              <div class="session-detail">
                 <span class="session-label">进度：</span>
                 <span class="session-value">第{{ confirmData.progress?.current }}/{{ confirmData.progress?.total }}题</span>
               </div>
@@ -228,6 +232,7 @@ const showConfirmDialog = ref(false)
 const confirmData = ref<{
   fileName: string;
   subject: string;
+  order?: string;
   progress?: { current: number; total: number; round: number };
   progressPercent: number;
   sessionStatus?: any;
@@ -274,6 +279,7 @@ const startPractice = async (subject: string, fileName: string) => {
       confirmData.value = {
         fileName: sessionStatus.file_info.display,
         subject: subject,
+        order: sessionStatus.file_info.order_mode || '未知模式',
         progress: sessionStatus.progress,
         progressPercent: Math.round(((sessionStatus.progress?.current || 0) / (sessionStatus.progress?.total || 1)) * 100) || 0,
         sessionStatus: sessionStatus

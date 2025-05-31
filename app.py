@@ -16,9 +16,9 @@ from werkzeug.exceptions import NotFound, BadRequest
 
 # 导入数据库连接和用户认证相关函数
 from connectDB import (
-    authenticate_user, 
-    create_user, 
-    verify_invitation_code, 
+    authenticate_user,
+    create_user,
+    verify_invitation_code,
     get_user_info,
     create_invitation_code,
     save_user_session,
@@ -67,6 +67,7 @@ COLUMNS_FOR_EXCEL_OUTPUT = [QUESTION_COLUMN, OPTION_A_COLUMN, OPTION_B_COLUMN, O
 SESSION_KEYS = {
     'CURRENT_EXCEL_FILE': 'current_excel_file',
     'QUESTION_INDICES': 'q_indices_to_practice',
+    'QUESTION_ORDER': 'question_order',  # 添加题目顺序键
     'CURRENT_INDEX': 'current_idx_in_indices_list',
     'WRONG_INDICES': 'wrong_q_indices_this_round',
     'ROUND_NUMBER': 'round_number',
@@ -83,19 +84,21 @@ SESSION_KEYS = {
 # 使用数字代替字符串，节省内存和传输带宽
 QUESTION_STATUS = {
     'UNANSWERED': 0,  # 未作答
-    'CORRECT': 1,     # 答对
-    'WRONG': 2        # 答错/查看答案
+    'CORRECT': 1,  # 答对
+    'WRONG': 2  # 答错/查看答案
 }
 
 # 状态映射（用于调试和日志）
 QUESTION_STATUS_NAMES = {
     0: 'unanswered',
-    1: 'correct', 
+    1: 'correct',
     2: 'wrong'
 }
 
+
 # --- 公共工具函数 ---
-def create_response(success: bool = True, message: str = '', data: Any = None, status_code: int = 200) -> tuple[Response, int]:
+def create_response(success: bool = True, message: str = '', data: Any = None, status_code: int = 200) -> tuple[
+    Response, int]:
     """统一的API响应格式"""
     response_data = {'success': success}
     if message:
@@ -107,8 +110,10 @@ def create_response(success: bool = True, message: str = '', data: Any = None, s
             response_data['data'] = data
     return jsonify(response_data), status_code
 
+
 def handle_api_error(func):
     """统一的API错误处理装饰器"""
+
     @wraps(func)
     def wrapper(*args, **kwargs):
         try:
@@ -120,20 +125,25 @@ def handle_api_error(func):
         except Exception as e:
             logger.error(f"Error in {func.__name__}: {e}")
             return create_response(False, 'Internal server error', status_code=500)
+
     return wrapper
+
 
 def login_required(f):
     """检查用户是否已登录的装饰器"""
+
     @wraps(f)
     def decorated_function(*args, **kwargs):
         user_id = session.get('user_id')
         username = session.get('username')
-        
+
         if not user_id or not username:
             return create_response(False, '请先登录', status_code=401)
-            
+
         return f(*args, **kwargs)
+
     return decorated_function
+
 
 def standardize_tf_answer(answer_text: Optional[str]) -> Optional[str]:
     """标准化判断题答案"""
@@ -146,6 +156,7 @@ def standardize_tf_answer(answer_text: Optional[str]) -> Optional[str]:
         return INTERNAL_FALSE
     return None
 
+
 def is_tf_answer(answer_text: str) -> bool:
     """检查是否为判断题答案"""
     if not isinstance(answer_text, str):
@@ -154,18 +165,22 @@ def is_tf_answer(answer_text: str) -> bool:
     return (any(true_str.upper() == answer_upper for true_str in TRUE_ANSWER_STRINGS) or
             any(false_str.upper() == answer_upper for false_str in FALSE_ANSWER_STRINGS))
 
+
 def normalize_filepath(filepath: str) -> str:
     """标准化文件路径"""
     return filepath.replace("\\", "/")
+
 
 def get_session_value(key: str, default: Any = None) -> Any:
     """安全获取session值"""
     return session.get(key, default)
 
+
 def set_session_value(key: str, value: Any) -> None:
     """安全设置session值"""
     session[key] = value
     session.modified = True
+
 
 def clear_practice_session() -> None:
     """清除练习相关的session数据"""
@@ -176,10 +191,11 @@ def clear_practice_session() -> None:
         SESSION_KEYS['CORRECT_FIRST_TRY'], SESSION_KEYS['QUESTION_STATUSES'],
         SESSION_KEYS['ANSWER_HISTORY']
     ]
-    
+
     for key in practice_keys:
         session.pop(key, None)
     session.modified = True
+
 
 def save_session_to_db() -> None:
     """保存当前session到数据库"""
@@ -188,6 +204,7 @@ def save_session_to_db() -> None:
         session_data = {key: session.get(key) for key in SESSION_KEYS.values() if key in session}
         if session_data:
             save_user_session(user_id, session_data)
+
 
 def load_session_from_db() -> None:
     """从数据库加载session数据"""
@@ -198,6 +215,7 @@ def load_session_from_db() -> None:
             for key, value in user_session_data.items():
                 session[key] = value
             session.modified = True
+
 
 def format_answer_display(answer: str, options: dict, is_multiple_choice: bool) -> str:
     """格式化答案显示"""
@@ -217,6 +235,7 @@ def format_answer_display(answer: str, options: dict, is_multiple_choice: bool) 
     else:
         return f"{answer}. {options.get(answer, '')}" if answer in options else answer
 
+
 def validate_answer(user_answer: str, correct_answer: str, is_multiple_choice: bool) -> bool:
     """验证用户答案是否正确"""
     user_answer = user_answer.upper()
@@ -226,6 +245,7 @@ def validate_answer(user_answer: str, correct_answer: str, is_multiple_choice: b
         return set(user_answer) == set(correct_answer)
     else:
         return user_answer == correct_answer
+
 
 def load_questions_from_excel(filepath: str, sheetname: Union[str, int]) -> Optional[List[Dict[str, Any]]]:
     """从Excel文件加载题目"""
@@ -304,6 +324,7 @@ def load_questions_from_excel(filepath: str, sheetname: Union[str, int]) -> Opti
         logger.error(f"Critical error loading questions from '{filepath}': {e}")
         return None
 
+
 # --- Flask App Initialization ---
 app = Flask(__name__, static_folder='frontend/dist', static_url_path='')
 app.secret_key = 'your-fixed-secret-key-here'  # 使用固定的 secret key 方便调试
@@ -335,16 +356,18 @@ cors = CORS(app,
 # --- 预加载所有题库 ---
 APP_WIDE_QUESTION_DATA = {}
 
+
 def get_all_excel_files():
     """获取所有Excel文件"""
     pattern = os.path.join(SUBJECT_DIRECTORY, "*", "*.xlsx")
     files = glob.glob(pattern)
-    
+
     # 也查找直接在subject目录下的文件
     pattern_direct = os.path.join(SUBJECT_DIRECTORY, "*.xlsx")
     files.extend([f for f in glob.glob(pattern_direct) if f not in files])
-    
+
     return [f.replace("\\", "/") for f in files]
+
 
 def load_all_banks():
     """加载所有题库"""
@@ -367,6 +390,7 @@ def load_all_banks():
     logger.info(f"Loaded {len(data)} question banks")
     return data
 
+
 APP_WIDE_QUESTION_DATA = load_all_banks()
 
 # --- 新增：用于定期打印连接信息的全局变量和锁 ---
@@ -374,11 +398,12 @@ request_counter = 0
 request_counter_lock = threading.Lock()
 stop_event = threading.Event()  # 用于通知后台线程停止
 
+
 def monitor_activity():
     """后台活动监控"""
     global request_counter
     cleanup_counter = 0
-    
+
     while not stop_event.is_set():
         time.sleep(30)
         if stop_event.is_set():
@@ -389,7 +414,7 @@ def monitor_activity():
             request_counter = 0
 
         logger.info(f"Server active. Requests in last 30s: {current_count}")
-        
+
         cleanup_counter += 1
         if cleanup_counter >= 10:  # 每5分钟清理一次
             try:
@@ -400,6 +425,7 @@ def monitor_activity():
                 logger.error(f"Error cleaning sessions: {e}")
             cleanup_counter = 0
 
+
 @app.before_request
 def before_request():
     """请求前处理"""
@@ -408,11 +434,13 @@ def before_request():
         request_counter += 1
     session.permanent = True
 
+
 @app.after_request
 def after_request(response):
     """请求后处理"""
     session.modified = True
     return response
+
 
 # --- Flask Routes ---
 @app.route('/')
@@ -426,6 +454,7 @@ def serve_app(path: str = '') -> Response:
         return send_from_directory('../frontend/dist', 'index.html')
     except Exception:
         return create_response(False, 'Failed to serve application', status_code=500)[0]
+
 
 # --- 用户认证相关路由 ---
 @app.route('/api/auth/register', methods=['POST'])
@@ -461,6 +490,7 @@ def api_register():
     else:
         raise BadRequest(result['error'])
 
+
 @app.route('/api/auth/login', methods=['POST'])
 @handle_api_error
 def api_login():
@@ -481,7 +511,7 @@ def api_login():
         session['username'] = result['username']
         load_session_from_db()
         update_session_timestamp(result['user_id'])
-        
+
         logger.info(f"User logged in: {username}")
         return create_response(True, '登录成功', {
             'user': {
@@ -491,6 +521,7 @@ def api_login():
         })
     else:
         raise BadRequest(result['error'])
+
 
 @app.route('/api/auth/logout', methods=['POST'])
 @handle_api_error
@@ -505,6 +536,7 @@ def api_logout():
     else:
         raise BadRequest('用户未登录')
 
+
 @app.route('/api/auth/user', methods=['GET'])
 @login_required
 @handle_api_error
@@ -512,7 +544,7 @@ def api_get_user_info():
     """获取当前用户信息"""
     user_id = session.get('user_id')
     user_info = get_user_info(user_id)
-    
+
     if user_info:
         return create_response(True, data={
             'user': {
@@ -525,6 +557,7 @@ def api_get_user_info():
     else:
         session.clear()
         raise NotFound('用户信息不存在')
+
 
 @app.route('/api/auth/check', methods=['GET'])
 @handle_api_error
@@ -540,6 +573,7 @@ def api_check_auth():
         })
     else:
         return create_response(True, data={'authenticated': False})
+
 
 @app.route('/api/file_options', methods=['GET'])
 @login_required
@@ -558,7 +592,7 @@ def api_file_options():
         current_indices = get_session_value(SESSION_KEYS['QUESTION_INDICES'], [])
         current_index = get_session_value(SESSION_KEYS['CURRENT_INDEX'], 0)
         initial_total = get_session_value(SESSION_KEYS['INITIAL_TOTAL'], 0)
-        
+
         if current_indices and initial_total > 0:
             current_progress = {
                 'current_question': current_index + 1,
@@ -595,6 +629,7 @@ def api_file_options():
     }
 
     return create_response(True, data={'subjects': sorted_subjects})
+
 
 @app.route('/api/start_practice', methods=['POST'])
 @login_required
@@ -635,6 +670,7 @@ def api_start_practice():
     # 设置session
     set_session_value(SESSION_KEYS['CURRENT_EXCEL_FILE'], file_name)
     set_session_value(SESSION_KEYS['QUESTION_INDICES'], question_indices)
+    set_session_value(SESSION_KEYS['QUESTION_ORDER'], question_indices)
     set_session_value(SESSION_KEYS['CURRENT_INDEX'], 0)
     set_session_value(SESSION_KEYS['WRONG_INDICES'], [])
     set_session_value(SESSION_KEYS['ROUND_NUMBER'], 1)
@@ -645,6 +681,7 @@ def api_start_practice():
 
     practice_mode = "乱序练习" if shuffle_questions else "顺序练习"
     return create_response(True, f'开始{practice_mode}', {'resumed': False})
+
 
 @app.route('/api/practice/question', methods=['GET'])
 @handle_api_error
@@ -707,6 +744,7 @@ def api_practice_question():
         'flash_messages': flash_messages
     })
 
+
 @app.route('/api/practice/submit', methods=['POST'])
 @handle_api_error
 def api_submit_answer():
@@ -745,7 +783,8 @@ def api_submit_answer():
 
     # 格式化答案显示
     options = question_data.get('options_for_practice', {})
-    user_answer_display = '未作答（直接查看答案）' if peeked else format_answer_display(user_answer, options, is_multiple_choice)
+    user_answer_display = '未作答（直接查看答案）' if peeked else format_answer_display(user_answer, options,
+                                                                                      is_multiple_choice)
     correct_answer_display = format_answer_display(correct_answer, options, is_multiple_choice)
 
     if not is_review:
@@ -759,6 +798,7 @@ def api_submit_answer():
         "current_index": current_idx
     })
 
+
 def update_practice_record(question_data, is_correct: bool, peeked: bool, current_idx: int, user_answer: str):
     """更新练习记录"""
     q_indices = get_session_value(SESSION_KEYS['QUESTION_INDICES'], [])
@@ -767,7 +807,8 @@ def update_practice_record(question_data, is_correct: bool, peeked: bool, curren
     # 更新题目状态
     question_statuses = get_session_value(SESSION_KEYS['QUESTION_STATUSES'], [])
     if current_idx < len(question_statuses):
-        question_statuses[current_idx] = QUESTION_STATUS['CORRECT'] if (is_correct and not peeked) else QUESTION_STATUS['WRONG']
+        question_statuses[current_idx] = QUESTION_STATUS['CORRECT'] if (is_correct and not peeked) else QUESTION_STATUS[
+            'WRONG']
         set_session_value(SESSION_KEYS['QUESTION_STATUSES'], question_statuses)
 
     # 保存答题历史
@@ -794,6 +835,7 @@ def update_practice_record(question_data, is_correct: bool, peeked: bool, curren
     # 移动到下一题
     set_session_value(SESSION_KEYS['CURRENT_INDEX'], current_idx + 1)
 
+
 @app.route('/api/completed_summary', methods=['GET'])
 @handle_api_error
 def api_completed_summary():
@@ -818,6 +860,7 @@ def api_completed_summary():
 
     return create_response(True, data={'summary': summary_data})
 
+
 @app.route('/api/practice/jump', methods=['GET'])
 @handle_api_error
 def api_jump_to_question():
@@ -841,13 +884,14 @@ def api_jump_to_question():
     set_session_value(SESSION_KEYS['CURRENT_INDEX'], target_index)
     return create_response(True, "成功跳转到题目")
 
+
 @app.route('/api/session/status', methods=['GET'])
 @handle_api_error
 def api_session_status():
     """检查当前会话状态"""
     selected_file = get_session_value(SESSION_KEYS['CURRENT_EXCEL_FILE'])
     q_indices = get_session_value(SESSION_KEYS['QUESTION_INDICES'])
-    
+
     if not selected_file or not q_indices or selected_file not in APP_WIDE_QUESTION_DATA:
         return create_response(True, '没有活跃的练习会话', {'active': False})
 
@@ -862,13 +906,19 @@ def api_session_status():
     display_name = path_parts[-1].replace('.xlsx', '').replace('.xls', '')
     subject = path_parts[1] if len(path_parts) > 2 and path_parts[0] == SUBJECT_DIRECTORY else "未分类"
 
+    # 获取题目顺序信息
+    question_order = get_session_value(SESSION_KEYS['QUESTION_ORDER'], [])
+    initial_order = list(range(len(APP_WIDE_QUESTION_DATA.get(selected_file, []))))
+    is_shuffled = question_order != initial_order if question_order else False
+
     return create_response(True, data={
         'active': True,
         'completed': False,
         'file_info': {
             'key': selected_file,
             'display': display_name,
-            'subject': subject
+            'subject': subject,
+            'order_mode': '乱序练习' if is_shuffled else '顺序练习'  # 添加顺序模式信息
         },
         'progress': {
             'current': current_idx + 1,
@@ -883,6 +933,7 @@ def api_session_status():
         'question_statuses': get_session_value(SESSION_KEYS['QUESTION_STATUSES'], [])
     })
 
+
 @app.route('/api/session/save', methods=['GET'])
 @login_required
 @handle_api_error
@@ -891,31 +942,34 @@ def api_save_session():
     save_session_to_db()
     return create_response(True, '会话保存成功')
 
+
 @app.route('/api/practice/history/<int:question_index>', methods=['GET'])
 @handle_api_error
 def api_get_question_history(question_index: int):
     """获取题目答题历史"""
     q_indices = get_session_value(SESSION_KEYS['QUESTION_INDICES'], [])
-    
+
     if question_index < 0 or question_index >= len(q_indices):
-        raise BadRequest(f'无效的题目索引。有效范围: 0-{len(q_indices)-1}')
+        raise BadRequest(f'无效的题目索引。有效范围: 0-{len(q_indices) - 1}')
 
     answer_history = get_session_value(SESSION_KEYS['ANSWER_HISTORY'], {})
     history_key = str(question_index)
-    
+
     if history_key not in answer_history:
         raise NotFound('该题目没有答题历史')
 
     history_data = answer_history[history_key]
     question_data = history_data['question_data']
-    
+
     # 格式化答案显示
     options = question_data.get('options_for_practice', {})
     is_multiple_choice = question_data.get('is_multiple_choice', False)
     correct_answer = question_data['answer'].upper()
     user_answer = history_data['user_answer']
-    
-    user_answer_display = '未作答（直接查看答案）' if history_data['peeked'] else format_answer_display(user_answer, options, is_multiple_choice)
+
+    user_answer_display = '未作答（直接查看答案）' if history_data['peeked'] else format_answer_display(user_answer,
+                                                                                                      options,
+                                                                                                      is_multiple_choice)
     correct_answer_display = format_answer_display(correct_answer, options, is_multiple_choice)
 
     return create_response(True, data={
@@ -939,13 +993,27 @@ def api_get_question_history(question_index: int):
         }
     })
 
+
 if __name__ == '__main__':
+    import sys
+
     # 创建目录
     if not os.path.exists(SUBJECT_DIRECTORY):
         os.makedirs(SUBJECT_DIRECTORY)
 
-    # 配置日志
+    # 配置日志 - 确保日志可以在后台运行时正常工作
     logging.getLogger('werkzeug').setLevel(logging.ERROR)
+
+    # 如果检测到nohup环境，重定向标准输入输出
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
+        # 在nohup环境中，重定向标准输入到/dev/null（Windows上使用NUL）
+        try:
+            if os.name == 'nt':  # Windows
+                sys.stdin = open('NUL', 'r')
+            else:  # Unix/Linux
+                sys.stdin = open('/dev/null', 'r')
+        except Exception as e:
+            logger.warning(f"Failed to redirect stdin: {e}")
 
     # 启动后台监控线程
     activity_thread = threading.Thread(target=monitor_activity, daemon=True)
@@ -953,14 +1021,15 @@ if __name__ == '__main__':
 
     HOST = '127.0.0.1'
     PORT = 5051
-    
+
     logger.info(f"Starting Flask application on http://{HOST}:{PORT}")
-    
+
     try:
         # 尝试使用高性能服务器
         try:
             import gunicorn.app.base
-            
+
+
             class StandaloneApplication(gunicorn.app.base.BaseApplication):
                 def __init__(self, app, options=None):
                     self.options = options or {}
@@ -976,6 +1045,7 @@ if __name__ == '__main__':
                 def load(self):
                     return self.application
 
+
             options = {
                 'bind': f'{HOST}:{PORT}',
                 'workers': 9,
@@ -984,24 +1054,40 @@ if __name__ == '__main__':
                 'keepalive': 2,
                 'max_requests': 1000,
                 'preload_app': True,
-                'loglevel': 'info'
+                'loglevel': 'info',
+                'daemon': False,
+                'pidfile': None,
+                'access_log_format': '%(h)s %(l)s %(u)s %(t)s "%(r)s" %(s)s %(b)s "%(f)s" "%(a)s"'
             }
-            
+
             logger.info("Using Gunicorn server")
             StandaloneApplication(app, options).run()
-            
+
         except ImportError:
             try:
                 from waitress import serve
+
                 logger.info("Using Waitress server")
-                serve(app, host=HOST, port=PORT, threads=6)
+                # Waitress配置，更适合后台运行
+                serve(app,
+                      host=HOST,
+                      port=PORT,
+                      threads=6,
+                      connection_limit=100,
+                      cleanup_interval=30,
+                      channel_timeout=120)
             except ImportError:
-                logger.warning("Using Flask dev server")
-                app.run(host=HOST, port=PORT, debug=False)
-                
+                logger.warning("Using Flask dev server (not recommended for production)")
+                # 对于开发服务器，禁用重载器以避免nohup问题
+                app.run(host=HOST, port=PORT, debug=False, use_reloader=False, threaded=True)
+
     except KeyboardInterrupt:
-        logger.info("Server shutdown")
+        logger.info("Server shutdown requested")
+    except Exception as e:
+        logger.error(f"Server failed to start: {e}")
+        sys.exit(1)
     finally:
         stop_event.set()
         if activity_thread.is_alive():
             activity_thread.join(timeout=5)
+        logger.info("Server shutdown complete")

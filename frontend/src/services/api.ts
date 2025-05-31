@@ -41,6 +41,7 @@ export interface ApiService {
       key: string;
       display: string;
       subject: string;
+      order_mode?: string;
     };
     progress?: {
       current: number;
@@ -200,6 +201,7 @@ class ApiServiceImpl implements ApiService {
       key: string;
       display: string;
       subject: string;
+      order_mode?: string;
     };
     progress?: {
       current: number;
@@ -222,6 +224,7 @@ class ApiServiceImpl implements ApiService {
         key: string;
         display: string;
         subject: string;
+        order_mode?: string;
       };
       progress?: {
         current: number;

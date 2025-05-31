@@ -4,7 +4,7 @@
       <div class="practice-container">
         <!-- 标题区域 -->
         <header class="practice-title">
-          <h1>{{ fileDisplayName }}</h1>
+          <h1>{{ fileDisplayName }}<span v-if="orderMode" class="order-mode-badge">{{ orderMode }}</span></h1>
         </header>
 
         <div class="practice-layout">
@@ -35,11 +35,6 @@
               </li>
             </ul>
 
-            <!-- 友好提示 -->
-            <div v-if="showSessionInfo" class="session-info">
-              <span class="info-icon">💡</span>
-              <span class="info-text">提示：刷新页面后练习进度会自动保存和恢复</span>
-            </div>
 
             <!-- 主要内容区域 -->
             <transition name="content-fade" mode="out-in">
@@ -50,7 +45,7 @@
                     <span class="question-type-badge" :class="questionTypeBadgeClass">
                       {{ question?.type }}
                     </span>
-                    <span class="question-text-content">{{ question?.question }}</span>
+                    <span :class="questionTextClass">{{ question?.question }}</span>
                   </div>
                 </div>
 
@@ -142,7 +137,7 @@
 
                 <div class="question-review-content">
                   <h4>题目回顾：</h4>
-                  <p class="question-text-review">{{ question?.question }}</p>
+                  <p :class="questionReviewClass">{{ question?.question }}</p>
 
                   <div class="answer-comparison">
                     <!-- 选项展示 -->
@@ -263,9 +258,9 @@
                 </template>
                 <template v-else>
                   <button
-                    v-for="item in visibleQuestions"
+                    v-for="item in allQuestionsWithPreview"
                     :key="item.number"
-                    :class="getQuestionNumberBtnClass(item.status, item.number - 1, item.isCurrent)"
+                    :class="getQuestionNumberBtnClass(item.status, item.number - 1, item.isCurrent, item.isPreview)"
                     @click="jumpToQuestion(item.number - 1)"
                     :disabled="!canJumpToQuestion || loadingSubmit"
                   >
@@ -350,6 +345,7 @@ const authStore = useAuthStore()
 
 // 响应式状态
 const fileDisplayName = ref<string>('')
+const orderMode = ref<string>('')  // 添加练习模式状态
 const question = ref<Question | null>(null)
 const progress = ref<Progress | null>(null)
 const messages = ref<FlashMessage[]>([])
@@ -485,8 +481,87 @@ const answerCardGridClass = computed(() => ({
   'has-right-overflow': hasRightOverflow.value,
 }))
 
-// 可见题目列表
-const visibleQuestions = computed<QuestionStatus[]>(() => {
+// 检测题目文本是否包含特殊空白字符（换行符、制表符、多个连续空格）
+const hasSpecialWhitespace = computed(() => {
+  if (!question.value?.question) return false
+  const text = question.value.question
+  // 检测换行符、制表符、或者连续的多个空格
+  return /[\n\r\t]|  /.test(text)
+})
+
+// 题目文本的CSS类
+const questionTextClass = computed(() => ({
+  'question-text-content': true,
+  'formatted-text': hasSpecialWhitespace.value, // 包含特殊空白字符，左对齐
+  'plain-text': !hasSpecialWhitespace.value,     // 纯文本，居中对齐
+}))
+
+// 题目回顾文本的CSS类
+const questionReviewClass = computed(() => ({
+  'question-text-review': true,
+  'formatted-text': hasSpecialWhitespace.value, // 包含特殊空白字符，左对齐
+  'plain-text': !hasSpecialWhitespace.value,     // 纯文本，居中对齐
+}))
+
+// 缩略模式下的所有题目（包括模糊预览）
+const allQuestionsWithPreview = computed<Array<QuestionStatus & { isPreview?: boolean }>>(() => {
+  if (!progress.value || isAnswerCardExpanded.value) return []
+
+  // 确保状态数组正确初始化
+  const currentStatuses = ensureQuestionStatuses.value
+
+  const totalQuestions = progress.value.total
+  const currentIndex = currentQuestionIndex.value
+  const displayCount = 15
+  const halfDisplay = Math.floor(displayCount / 2)
+  const previewCount = 2 // 前后各显示2个模糊预览
+
+  let startIndex = Math.max(0, currentIndex - halfDisplay)
+  const endIndex = Math.min(totalQuestions, startIndex + displayCount)
+
+  if (endIndex - startIndex < displayCount && totalQuestions >= displayCount) {
+    startIndex = Math.max(0, endIndex - displayCount)
+  }
+
+  const allItems: Array<QuestionStatus & { isPreview?: boolean }> = []
+
+  // 添加左侧模糊预览
+  const leftPreviewStart = Math.max(0, startIndex - previewCount)
+  for (let i = leftPreviewStart; i < startIndex; i++) {
+    allItems.push({
+      status: currentStatuses[i] || QUESTION_STATUS.UNANSWERED,
+      number: i + 1,
+      isCurrent: false,
+      isPreview: true
+    })
+  }
+
+  // 添加正常显示的题目
+  for (let i = startIndex; i < endIndex; i++) {
+    allItems.push({
+      status: currentStatuses[i] || QUESTION_STATUS.UNANSWERED,
+      number: i + 1,
+      isCurrent: i === currentIndex,
+      isPreview: false
+    })
+  }
+
+  // 添加右侧模糊预览
+  const rightPreviewEnd = Math.min(totalQuestions, endIndex + previewCount)
+  for (let i = endIndex; i < rightPreviewEnd; i++) {
+    allItems.push({
+      status: currentStatuses[i] || QUESTION_STATUS.UNANSWERED,
+      number: i + 1,
+      isCurrent: false,
+      isPreview: true
+    })
+  }
+
+  return allItems
+})
+
+// 确保题目状态数组正确初始化
+const ensureQuestionStatuses = computed(() => {
   if (!progress.value) return []
   const totalQuestions = progress.value.total
 
@@ -497,33 +572,7 @@ const visibleQuestions = computed<QuestionStatus[]>(() => {
     }
     questionStatuses.value = newStatuses
   }
-
-  const statusesToDisplay = questionStatuses.value.slice(0, totalQuestions)
-
-  if (isAnswerCardExpanded.value) {
-    return statusesToDisplay.map((status, index) => ({
-      status,
-      number: index + 1,
-      isCurrent: index === currentQuestionIndex.value,
-    }))
-  }
-
-  const currentIndex = currentQuestionIndex.value
-  const displayCount = 15
-  const halfDisplay = Math.floor(displayCount / 2)
-
-  let startIndex = Math.max(0, currentIndex - halfDisplay)
-  const endIndex = Math.min(totalQuestions, startIndex + displayCount)
-
-  if (endIndex - startIndex < displayCount && totalQuestions >= displayCount) {
-    startIndex = Math.max(0, endIndex - displayCount)
-  }
-
-  return statusesToDisplay.slice(startIndex, endIndex).map((status, index) => ({
-    status,
-    number: startIndex + index + 1,
-    isCurrent: startIndex + index === currentIndex,
-  }))
+  return questionStatuses.value
 })
 
 const hasLeftOverflow = computed(() => {
@@ -624,8 +673,10 @@ const getQuestionNumberBtnClass = (
   status: QuestionStatusType,
   index: number,
   isCurrent?: boolean,
+  isPreview?: boolean,
 ) => ({
   'question-number-btn': true,
+  'preview-btn': isPreview, // 模糊预览样式
   current: isCurrent !== undefined ? isCurrent : index === currentQuestionIndex.value,
   correct: isCorrectStatus(status),
   wrong: isWrongStatus(status),
@@ -828,8 +879,9 @@ onMounted(async () => {
 
       // 检查会话文件是否与当前请求的文件匹配
       if (sessionStatus.file_info && sessionStatus.file_info.key === props.fileName) {
-        // 设置文件显示名称
+        // 设置文件显示名称和练习模式
         fileDisplayName.value = sessionStatus.file_info.display || props.fileName
+        orderMode.value = sessionStatus.file_info.order_mode || ''
 
         // 显示恢复会话的提示信息
         if (sessionStatus.progress) {
@@ -1327,7 +1379,7 @@ onBeforeUnmount(() => {
   padding: 1.5rem;
   border-radius: 12px;
   border-left: 4px solid #3b82f6;
-  margin: 0;
+  margin: 0 0 2rem 0;
   display: flex;
   align-items: flex-start;
   gap: 1rem;
@@ -1358,6 +1410,22 @@ onBeforeUnmount(() => {
 
 .question-text-content {
   flex: 1;
+  white-space: pre-wrap; /* 完整保留所有空白字符：换行符、制表符、空格 */
+}
+
+/* 纯文本题目 - 居中对齐 */
+.question-text-content.plain-text {
+  text-align: center;
+}
+
+/* 格式化文本题目（包含换行符、制表符等）- 左对齐 */
+.question-text-content.formatted-text {
+  text-align: left;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace; /* 使用等宽字体更好地显示格式化内容 */
+  background-color: #f8f9fa; /* 轻微背景色区分格式化文本 */
+  padding: 1rem;
+  border-radius: 8px;
+  border: 1px solid #e9ecef;
 }
 
 /* 选项样式 */
@@ -1365,7 +1433,7 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 1rem;
-  margin-bottom: 2rem;
+  margin: 1.5rem 0 2rem 0;
 }
 
 .option-label {
@@ -1462,6 +1530,7 @@ onBeforeUnmount(() => {
 .option-text {
   flex: 1;
   color: #4b5563;
+  white-space: pre-wrap;
 }
 
 /* 按钮样式 */
@@ -1560,6 +1629,22 @@ onBeforeUnmount(() => {
   margin-bottom: 2rem;
   padding-bottom: 1rem;
   border-bottom: 2px dashed #e5e7eb;
+  white-space: pre-wrap; /* 完整保留所有空白字符：换行符、制表符、空格 */
+}
+
+/* 纯文本题目回顾 - 居中对齐 */
+.question-text-review.plain-text {
+  text-align: center;
+}
+
+/* 格式化文本题目回顾（包含换行符、制表符等）- 左对齐 */
+.question-text-review.formatted-text {
+  text-align: left;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace; /* 使用等宽字体更好地显示格式化内容 */
+  background-color: #f8f9fa; /* 轻微背景色区分格式化文本 */
+  padding: 1rem;
+  border-radius: 8px;
+  border: 1px solid #e9ecef;
 }
 
 .answer-comparison {
@@ -1810,6 +1895,33 @@ onBeforeUnmount(() => {
   cursor: not-allowed;
 }
 
+/* 模糊预览按钮样式 */
+.question-number-btn.preview-btn {
+  opacity: 0.4;
+  filter: blur(1px);
+  transform: scale(0.85);
+  pointer-events: none; /* 禁止点击 */
+  transition: all 0.3s ease;
+  font-size: 0.8rem;
+}
+
+/* 预览按钮的状态颜色也要保持，但更淡 */
+.question-number-btn.preview-btn.correct {
+  background: rgba(16, 185, 129, 0.3);
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.question-number-btn.preview-btn.wrong {
+  background: rgba(239, 68, 68, 0.3);
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.question-number-btn.preview-btn.unanswered {
+  background: rgba(229, 231, 235, 0.5);
+  color: rgba(107, 114, 128, 0.8);
+  border: 1px solid rgba(229, 231, 235, 0.3);
+}
+
 /* 答题卡操作按钮 */
 .answer-card-actions {
   margin-top: 1rem;
@@ -1970,5 +2082,18 @@ onBeforeUnmount(() => {
     height: 38px;
     font-size: 0.8rem;
   }
+}
+
+/* 练习模式标识 */
+.order-mode-badge {
+  display: inline-block;
+  margin-left: 1rem;
+  padding: 0.5rem 1rem;
+  background: linear-gradient(135deg, #10b981, #34d399);
+  color: white;
+  font-size: 0.9rem;
+  font-weight: 600;
+  border-radius: 999px;
+  vertical-align: middle;
 }
 </style>

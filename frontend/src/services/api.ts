@@ -6,8 +6,10 @@ import type {
   QuestionResponse,
   SubjectsResponse
 } from '@/types';
+import { API_BASE_URL, enableApiLogging } from '@/config/api';
 
-const API_BASE = 'http://127.0.0.1:5051/api';
+// 使用配置文件中的API基地址
+const API_BASE = API_BASE_URL;
 
 export interface ApiService {
   getFileOptions(): Promise<SubjectsResponse>;
@@ -92,25 +94,29 @@ class ApiServiceImpl implements ApiService {
       credentials: 'include' as RequestCredentials
     };
 
-    console.log('Making API request:', {
-      url,
-      method: finalOptions.method || 'GET',
-      headers: finalOptions.headers,
-      credentials: finalOptions.credentials,
-      cookies: document.cookie
-    });
+    if (enableApiLogging) {
+      console.log('Making API request:', {
+        url,
+        method: finalOptions.method || 'GET',
+        headers: finalOptions.headers,
+        credentials: finalOptions.credentials,
+        cookies: document.cookie
+      });
+    }
 
     try {
       const response = await fetch(url, finalOptions);
 
       // Log response details including cookies
-      const responseDetails = {
-        status: response.status,
-        statusText: response.statusText,
-        headers: Object.fromEntries(response.headers.entries()),
-        cookies: document.cookie
-      };
-      console.log('API response:', responseDetails);
+      if (enableApiLogging) {
+        const responseDetails = {
+          status: response.status,
+          statusText: response.statusText,
+          headers: Object.fromEntries(response.headers.entries()),
+          cookies: document.cookie
+        };
+        console.log('API response:', responseDetails);
+      }
 
       // Check for CORS issues
       if (!response.ok && response.status === 0) {
@@ -119,7 +125,7 @@ class ApiServiceImpl implements ApiService {
       }
 
       // Check for session-related issues
-      if (response.status === 400 && responseDetails.cookies === '') {
+      if (response.status === 400 && document.cookie === '') {
         console.warn('Session may be invalid - no cookies present');
       }
 

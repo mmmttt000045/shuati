@@ -1,181 +1,206 @@
 <template>
-  <div class="container">
-    <h1 class="page-title">题目练习</h1>
-
-    <div v-if="messages.length > 0" class="messages">
-      <div v-for="(message, index) in messages" :key="index" :class="['message', message.category]">
-        {{ message.text }}
-      </div>
-    </div>
-
-    <div v-if="loading" class="loading">加载中...</div>
-
-    <div v-else-if="Object.keys(subjects).length === 0" class="empty-state">暂无可用的题目文件</div>
-
-    <div v-else class="subjects-grid">
-      <!-- 科目选择列表 -->
-      <div v-if="!selectedSubject" class="subjects-list">
-        <div
-          v-for="(files, subject) in subjects"
-          :key="subject"
-          class="subject-card"
-          @click="selectSubject(subject)"
-        >
-          <h2 class="subject-title">{{ subject }}</h2>
-          <div class="subject-info">
-            <span class="subject-count">{{ files.length }}个题库</span>
-            <span class="subject-total">共{{ getTotalQuestions(files) }}题</span>
+  <div class="index-page-wrapper">
+    <div class="container">
+      <!-- 用户导航栏 -->
+      <nav class="user-nav">
+        <div class="nav-content">
+          <div class="nav-left">
+            <h1 class="nav-title">MT题库练习系统</h1>
+          </div>
+          <div class="nav-right">
+            <div class="user-info">
+              <svg class="user-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
+              </svg>
+              <span class="username">{{ authStore.user?.username }}</span>
+            </div>
+            <button class="logout-btn" @click="handleLogout" :disabled="authStore.isLoading">
+              <svg class="logout-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path>
+              </svg>
+              登出
+            </button>
           </div>
         </div>
+      </nav>
+
+      <h1 class="page-title">题目练习</h1>
+
+      <div v-if="messages.length > 0" class="messages">
+        <div v-for="(message, index) in messages" :key="index" :class="['message', message.category]">
+          {{ message.text }}
+        </div>
       </div>
 
-      <!-- 题库选择列表 -->
-      <div v-else class="files-container">
-        <div class="back-button-container">
-          <button class="back-button" @click="goBackToSubjects">
-            <span class="back-arrow">←</span> 返回科目列表
-          </button>
-        </div>
+      <div v-if="loading" class="loading">加载中...</div>
 
-        <h2 class="selected-subject-title">{{ selectedSubject }}</h2>
+      <div v-else-if="Object.keys(subjects).length === 0" class="empty-state">暂无可用的题目文件</div>
 
-        <!-- 题目顺序选择 -->
-        <div class="order-selection">
-          <div class="order-options">
-            <label class="order-option" :class="{ selected: questionOrder === 'random' }">
-              <input
-                type="radio"
-                value="random"
-                v-model="questionOrder"
-                name="questionOrder"
-                class="order-radio"
-              />
-              <div class="option-content">
-                <span class="option-icon">🎲</span>
-                <div class="option-text">
-                  <span class="option-name">乱序练习</span>
-                  <span class="option-desc">题目随机打乱，提高练习效果</span>
-                </div>
-              </div>
-            </label>
-
-            <label class="order-option" :class="{ selected: questionOrder === 'sequential' }">
-              <input
-                type="radio"
-                value="sequential"
-                v-model="questionOrder"
-                name="questionOrder"
-                class="order-radio"
-              />
-              <div class="option-content">
-                <span class="option-icon">📋</span>
-                <div class="option-text">
-                  <span class="option-name">顺序练习</span>
-                  <span class="option-desc">按照原始顺序练习题目</span>
-                </div>
-              </div>
-            </label>
-          </div>
-        </div>
-
-        <div class="files-grid">
+      <div v-else class="subjects-grid">
+        <!-- 科目选择列表 -->
+        <div v-if="!selectedSubject" class="subjects-list">
           <div
-            v-for="file in subjects[selectedSubject]"
-            :key="file.key"
-            class="file-card"
-            @click="startPractice(selectedSubject, file.key)"
+            v-for="(files, subject) in subjects"
+            :key="subject"
+            class="subject-card"
+            @click="selectSubject(subject)"
           >
-            <div class="file-card-header">
-              <h3 class="file-title">{{ file.display }}</h3>
-              <span class="file-count-badge">{{ file.count }}题</span>
+            <h2 class="subject-title">{{ subject }}</h2>
+            <div class="subject-info">
+              <span class="subject-count">{{ files.length }}个题库</span>
+              <span class="subject-total">共{{ getTotalQuestions(files) }}题</span>
             </div>
+          </div>
+        </div>
 
-            <div class="file-card-content">
-              <!-- 显示练习进度 -->
-              <div v-if="file.progress" class="progress-section">
-                <div class="progress-details">
-                  <div class="progress-text">
-                    <span class="round-info">历史进度：第{{ file.progress.round_number }}轮</span>
-                    <span class="progress-percent-badge">{{ file.progress.progress_percent.toFixed(2).replace(/\.?0+$/, '') }}%</span>
+        <!-- 题库选择列表 -->
+        <div v-else class="files-container">
+          <div class="back-button-container">
+            <button class="back-button" @click="goBackToSubjects">
+              <span class="back-arrow">←</span> 返回科目列表
+            </button>
+          </div>
+
+          <h2 class="selected-subject-title">{{ selectedSubject }}</h2>
+
+          <!-- 题目顺序选择 -->
+          <div class="order-selection">
+            <div class="order-options">
+              <label class="order-option" :class="{ selected: questionOrder === 'random' }">
+                <input
+                  type="radio"
+                  value="random"
+                  v-model="questionOrder"
+                  name="questionOrder"
+                  class="order-radio"
+                />
+                <div class="option-content">
+                  <span class="option-icon">🎲</span>
+                  <div class="option-text">
+                    <span class="option-name">乱序练习</span>
+                    <span class="option-desc">题目随机打乱，提高练习效果</span>
                   </div>
-                  <div class="question-info">{{ file.progress.current_question }}/{{ file.progress.total_questions }}题</div>
                 </div>
-                <div class="progress-bar-container">
-                  <div class="progress-bar-card">
-                    <div
-                      class="progress-bar-fill-card"
-                      :style="{ width: file.progress.progress_percent + '%' }"
-                    ></div>
+              </label>
+
+              <label class="order-option" :class="{ selected: questionOrder === 'sequential' }">
+                <input
+                  type="radio"
+                  value="sequential"
+                  v-model="questionOrder"
+                  name="questionOrder"
+                  class="order-radio"
+                />
+                <div class="option-content">
+                  <span class="option-icon">📋</span>
+                  <div class="option-text">
+                    <span class="option-name">顺序练习</span>
+                    <span class="option-desc">按照原始顺序练习题目</span>
+                  </div>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          <div class="files-grid">
+            <div
+              v-for="file in subjects[selectedSubject]"
+              :key="file.key"
+              class="file-card"
+              @click="startPractice(selectedSubject, file.key)"
+            >
+              <div class="file-card-header">
+                <h3 class="file-title">{{ file.display }}</h3>
+                <span class="file-count-badge">{{ file.count }}题</span>
+              </div>
+
+              <div class="file-card-content">
+                <!-- 显示练习进度 -->
+                <div v-if="file.progress" class="progress-section">
+                  <div class="progress-details">
+                    <div class="progress-text">
+                      <span class="round-info">历史进度：第{{ file.progress.round_number }}轮</span>
+                      <span class="progress-percent-badge">{{ file.progress.progress_percent.toFixed(2).replace(/\.?0+$/, '') }}%</span>
+                    </div>
+                    <div class="question-info">{{ file.progress.current_question }}/{{ file.progress.total_questions }}题</div>
+                  </div>
+                  <div class="progress-bar-container">
+                    <div class="progress-bar-card">
+                      <div
+                        class="progress-bar-fill-card"
+                        :style="{ width: file.progress.progress_percent + '%' }"
+                      ></div>
+                    </div>
+                  </div>
+                </div>
+
+                <div v-else class="no-progress-section">
+                  <div class="no-progress-icon">🎯</div>
+                  <div class="no-progress-text">
+                    <span class="status-title">准备开始</span>
+                    <span class="status-desc">点击开始你的学习之旅</span>
                   </div>
                 </div>
               </div>
 
-              <div v-else class="no-progress-section">
-                <div class="no-progress-icon">🎯</div>
-                <div class="no-progress-text">
-                  <span class="status-title">准备开始</span>
-                  <span class="status-desc">点击开始你的学习之旅</span>
-                </div>
-              </div>
             </div>
-
           </div>
         </div>
       </div>
-    </div>
 
-    <!-- 自定义确认对话框 -->
-    <div v-if="showConfirmDialog" class="confirm-overlay" @click="closeConfirmDialog">
-      <div class="confirm-dialog" @click.stop>
-        <div class="confirm-header">
-          <div class="confirm-icon">📚</div>
-          <h3 class="confirm-title">发现练习进度</h3>
-        </div>
-
-        <div class="confirm-content">
-          <div class="session-info">
-            <div class="session-detail">
-              <span class="session-label">题库：</span>
-              <span class="session-value">{{ confirmData.fileName }}</span>
-            </div>
-            <div class="session-detail">
-              <span class="session-label">进度：</span>
-              <span class="session-value">第{{ confirmData.progress?.current }}/{{ confirmData.progress?.total }}题</span>
-            </div>
-            <div class="session-detail">
-              <span class="session-label">轮次：</span>
-              <span class="session-value">第{{ confirmData.progress?.round }}轮</span>
-            </div>
+      <!-- 自定义确认对话框 -->
+      <div v-if="showConfirmDialog" class="confirm-overlay" @click="closeConfirmDialog">
+        <div class="confirm-dialog" @click.stop>
+          <div class="confirm-header">
+            <div class="confirm-icon">📚</div>
+            <h3 class="confirm-title">发现练习进度</h3>
           </div>
 
-          <div class="progress-visual">
-            <div class="progress-bar-large">
-              <div
-                class="progress-bar-fill-large"
-                :style="{ width: confirmData.progressPercent + '%' }"
-              ></div>
+          <div class="confirm-content">
+            <div class="session-info">
+              <div class="session-detail">
+                <span class="session-label">题库：</span>
+                <span class="session-value">{{ confirmData.fileName }}</span>
+              </div>
+              <div class="session-detail">
+                <span class="session-label">进度：</span>
+                <span class="session-value">第{{ confirmData.progress?.current }}/{{ confirmData.progress?.total }}题</span>
+              </div>
+              <div class="session-detail">
+                <span class="session-label">轮次：</span>
+                <span class="session-value">第{{ confirmData.progress?.round }}轮</span>
+              </div>
             </div>
-            <div class="progress-text-large">{{ confirmData.progressPercent }}% 完成</div>
+
+            <div class="progress-visual">
+              <div class="progress-bar-large">
+                <div
+                  class="progress-bar-fill-large"
+                  :style="{ width: confirmData.progressPercent + '%' }"
+                ></div>
+              </div>
+              <div class="progress-text-large">{{ confirmData.progressPercent }}% 完成</div>
+            </div>
+
+            <p class="confirm-message">
+              你想要继续之前的练习进度，还是重新开始？
+            </p>
           </div>
 
-          <p class="confirm-message">
-            你想要继续之前的练习进度，还是重新开始？
-          </p>
-        </div>
-
-        <div class="confirm-actions">
-          <button class="confirm-btn confirm-btn-continue" @click="handleConfirmContinue">
-            <span class="btn-icon">📖</span>
-            继续练习
-          </button>
-          <button class="confirm-btn confirm-btn-restart" @click="handleConfirmRestart">
-            <span class="btn-icon">🔄</span>
-            重新开始
-          </button>
-          <button class="confirm-btn confirm-btn-cancel" @click="closeConfirmDialog">
-            <span class="btn-icon">✖️</span>
-            取消
-          </button>
+          <div class="confirm-actions">
+            <button class="confirm-btn confirm-btn-continue" @click="handleConfirmContinue">
+              <span class="btn-icon">📖</span>
+              继续练习
+            </button>
+            <button class="confirm-btn confirm-btn-restart" @click="handleConfirmRestart">
+              <span class="btn-icon">🔄</span>
+              重新开始
+            </button>
+            <button class="confirm-btn confirm-btn-cancel" @click="closeConfirmDialog">
+              <span class="btn-icon">✖️</span>
+              取消
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -187,10 +212,12 @@ import { onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useToast } from 'vue-toastification'
 import { apiService } from '@/services/api'
+import { useAuthStore } from '@/stores/auth'
 import type { FlashMessage, SubjectFile } from '@/types'
 
 const router = useRouter()
 const toast = useToast()
+const authStore = useAuthStore()
 const subjects = ref<Record<string, SubjectFile[]>>({})
 const selectedSubject = ref<string>('')
 const messages = ref<FlashMessage[]>([])
@@ -247,7 +274,7 @@ const startPractice = async (subject: string, fileName: string) => {
         fileName: sessionStatus.file_info.display,
         subject: subject,
         progress: sessionStatus.progress,
-        progressPercent: Math.round((sessionStatus.progress?.current / sessionStatus.progress?.total) * 100) || 0,
+        progressPercent: Math.round(((sessionStatus.progress?.current || 0) / (sessionStatus.progress?.total || 1)) * 100) || 0,
         sessionStatus: sessionStatus
       }
       return // 等待用户选择
@@ -340,6 +367,21 @@ const closeConfirmDialog = () => {
   loading.value = false
 }
 
+const handleLogout = async () => {
+  try {
+    await authStore.logout()
+    toast.success('已成功登出', {
+      timeout: 2000
+    })
+    router.push('/login')
+  } catch (error) {
+    console.error('登出失败:', error)
+    toast.error('登出失败，请重试', {
+      timeout: 3000
+    })
+  }
+}
+
 onMounted(async () => {
   loading.value = true
   try {
@@ -379,12 +421,119 @@ watch(questionOrder, (newOrder, oldOrder) => {
 </script>
 
 <style scoped>
-.container {
-  max-width: 1600px;
-  margin: 0 auto;
-  padding: 2rem;
-  min-height: 100vh;
+/* 让背景撑满整个屏幕 */
+.index-page-wrapper {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100vw;
+  height: 100vh;
   background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* 确保内容容器在wrapper内部正确布局 */
+.index-page-wrapper .container {
+  position: relative;
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: var(--space-8);
+  min-height: 100vh;
+  box-sizing: border-box;
+}
+
+/* 用户导航栏样式 */
+.user-nav {
+  background: white;
+  border-radius: 16px;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  margin-bottom: 2rem;
+  padding: 1rem 2rem;
+  width: 100%;
+  max-width: 1200px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.nav-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  max-width: 100%;
+}
+
+.nav-left {
+  display: flex;
+  align-items: center;
+}
+
+.nav-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #1e293b;
+  margin: 0;
+}
+
+.nav-right {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background-color: #f8fafc;
+  border-radius: 999px;
+  color: #475569;
+  font-weight: 500;
+}
+
+.user-icon {
+  width: 1.25rem;
+  height: 1.25rem;
+  color: #64748b;
+}
+
+.username {
+  font-size: 0.9rem;
+}
+
+.logout-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background-color: #ef4444;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 0.9rem;
+}
+
+.logout-btn:hover:not(:disabled) {
+  background-color: #dc2626;
+  transform: translateY(-1px);
+}
+
+.logout-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.logout-icon {
+  width: 1rem;
+  height: 1rem;
 }
 
 .page-title {
@@ -479,6 +628,8 @@ watch(questionOrder, (newOrder, oldOrder) => {
   gap: 2rem;
   width: 100%;
   padding: 1rem;
+  max-width: 1200px;
+  margin: 0 auto;
 }
 
 .subject-card {
@@ -939,7 +1090,7 @@ watch(questionOrder, (newOrder, oldOrder) => {
 /* 手机端 */
 @media (max-width: 768px) {
   .container {
-    padding: 1rem;
+    padding: var(--space-4);
   }
 
   .page-title {
@@ -1005,6 +1156,12 @@ watch(questionOrder, (newOrder, oldOrder) => {
 
   .order-options {
     flex-direction: column;
+  }
+}
+
+@media (max-width: 576px) {
+  .index-page-wrapper .container {
+    padding: var(--space-3);
   }
 }
 

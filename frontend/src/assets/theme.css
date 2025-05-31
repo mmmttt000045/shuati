@@ -1,113 +1,120 @@
+/**
+ * 主题兼容性层 - Theme Compatibility Layer
+ * 为了向后兼容现有组件而保留的变量映射
+ */
+
 :root {
-  /* Primary Colors */
-  --primary-color: #1890ff;
-  --primary-hover: #40a9ff;
-  --primary-active: #096dd9;
-  --primary-light: #e6f7ff;
+  /* 向后兼容的主题变量 - 映射到新的设计系统 */
+  
+  /* Primary Colors - 映射到新系统 */
+  --primary-color: var(--color-primary);
+  --primary-hover: var(--color-primary-hover);
+  --primary-active: var(--primary-700);
+  --primary-disabled: var(--color-primary-disabled);
+  --primary-light: var(--color-primary-light);
 
   /* Secondary Colors */
-  --secondary-color: #52c41a;
-  --secondary-hover: #73d13d;
-  --secondary-active: #389e0d;
-  --secondary-light: #f6ffed;
+  --secondary-color: var(--success-600);
+  --secondary-hover: var(--success-500);
+  --secondary-active: var(--success-700);
+  --secondary-light: var(--success-50);
 
   /* Orange Colors */
-  --orange-color: #ffa940;
-  --orange-hover: #ffc069;
-  --orange-active: #d87a16;
-  --orange-light: #fff7e6;
+  --orange-color: var(--warning-500);
+  --orange-hover: var(--warning-400);
+  --orange-active: var(--warning-600);
+  --orange-light: var(--warning-50);
 
-  /* Neutral Colors */
-  --neutral-100: #ffffff;
-  --neutral-200: #fafafa;
-  --neutral-300: #f5f5f5;
-  --neutral-400: #f0f0f0;
-  --neutral-500: #d9d9d9;
-  --neutral-600: #bfbfbf;
-  --neutral-700: #8c8c8c;
-  --neutral-800: #595959;
-  --neutral-900: #262626;
+  /* Neutral Colors - 映射到新系统 */
+  --neutral-100: var(--neutral-0);
+  --neutral-200: var(--neutral-50);
+  --neutral-300: var(--neutral-100);
+  --neutral-400: var(--neutral-200);
+  --neutral-500: var(--neutral-300);
+  --neutral-600: var(--neutral-400);
+  --neutral-700: var(--neutral-500);
+  --neutral-800: var(--neutral-600);
+  --neutral-900: var(--neutral-900);
 
-  /* Status Colors */
-  --success-color: #52c41a;
-  --warning-color: #faad14;
-  --error-color: #ff4d4f;
-  --info-color: #1890ff;
+  /* Status Colors - 映射到新系统 */
+  --success-color: var(--color-success);
+  --warning-color: var(--color-warning);
+  --error-color: var(--color-error);
+  --info-color: var(--color-info);
 
   /* Status Background Colors */
-  --success-bg: #f6ffed;
-  --warning-bg: #fffbe6;
-  --error-bg: #fff2f0;
-  --info-bg: #e6f7ff;
+  --success-bg: var(--color-success-bg);
+  --warning-bg: var(--color-warning-bg);
+  --error-bg: var(--color-error-bg);
+  --info-bg: var(--color-info-bg);
 
-  /* Text Colors */
-  --text-primary: var(--neutral-900);
-  --text-secondary: var(--neutral-700);
-  --text-disabled: var(--neutral-600);
-  --text-white: var(--neutral-100);
+  /* Text Colors - 映射到新系统 */
+  --text-primary: var(--text-primary);
+  --text-secondary: var(--text-secondary);
+  --text-disabled: var(--text-disabled);
+  --text-white: var(--text-white);
 
   /* Border Colors */
-  --border-color: var(--neutral-500);
-  --border-light: var(--neutral-400);
+  --border-color: var(--border-primary);
+  --border-light: var(--border-secondary);
 
-  /* Shadow */
-  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  /* Shadow - 映射到新系统 */
+  --shadow-sm: var(--shadow-sm);
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
 
-  /* Border Radius */
-  --radius-sm: 4px;
-  --radius-md: 6px;
-  --radius-lg: 8px;
-  --radius-xl: 12px;
-  --radius-full: 9999px;
+  /* Border Radius - 映射到新系统 */
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+  --radius-xl: var(--radius-xl);
+  --radius-full: var(--radius-full);
 
-  /* Spacing */
-  --space-1: 4px;
-  --space-2: 8px;
-  --space-3: 12px;
-  --space-4: 16px;
-  --space-5: 20px;
-  --space-6: 24px;
-  --space-8: 32px;
-  --space-10: 40px;
-  --space-12: 48px;
+  /* Spacing - 映射到新系统 */
+  --space-1: var(--space-1);
+  --space-2: var(--space-2);
+  --space-3: var(--space-3);
+  --space-4: var(--space-4);
+  --space-5: var(--space-5);
+  --space-6: var(--space-6);
+  --space-8: var(--space-8);
+  --space-10: var(--space-10);
+  --space-12: var(--space-12);
 
-  /* Typography */
-  --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
-    'Noto Sans', sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol',
-    'Noto Color Emoji';
+  /* Typography - 映射到新系统 */
+  --font-family: var(--font-sans);
   
   /* Font Sizes */
-  --text-xs: 12px;
-  --text-sm: 14px;
-  --text-base: 16px;
-  --text-lg: 18px;
-  --text-xl: 20px;
-  --text-2xl: 24px;
-  --text-3xl: 30px;
-  --text-4xl: 36px;
+  --text-xs: var(--text-xs);
+  --text-sm: var(--text-sm);
+  --text-base: var(--text-base);
+  --text-lg: var(--text-lg);
+  --text-xl: var(--text-xl);
+  --text-2xl: var(--text-2xl);
+  --text-3xl: var(--text-3xl);
+  --text-4xl: var(--text-4xl);
 
   /* Font Weights */
-  --font-normal: 400;
-  --font-medium: 500;
-  --font-semibold: 600;
-  --font-bold: 700;
+  --font-normal: var(--font-normal);
+  --font-medium: var(--font-medium);
+  --font-semibold: var(--font-semibold);
+  --font-bold: var(--font-bold);
 
   /* Line Heights */
-  --leading-none: 1;
-  --leading-tight: 1.25;
-  --leading-normal: 1.5;
-  --leading-relaxed: 1.625;
-  --leading-loose: 2;
+  --leading-none: var(--leading-none);
+  --leading-tight: var(--leading-tight);
+  --leading-normal: var(--leading-normal);
+  --leading-relaxed: var(--leading-relaxed);
+  --leading-loose: var(--leading-loose);
 
-  /* Transitions */
-  --transition-fast: 0.2s;
-  --transition-normal: 0.3s;
-  --transition-slow: 0.5s;
+  /* Transitions - 映射到新系统 */
+  --transition-fast: var(--transition-fast);
+  --transition-normal: var(--transition-normal);
+  --transition-slow: var(--transition-slow);
 }
 
-/* Utility Classes */
+/* 保留原有的实用类，但标记为废弃 */
+/* @deprecated 请使用新的设计系统中的对应类 */
 .text-primary { color: var(--primary-color); }
 .text-secondary { color: var(--secondary-color); }
 .text-success { color: var(--success-color); }

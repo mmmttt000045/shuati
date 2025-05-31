@@ -6650,3 +6650,25 @@
 2025-05-31 13:41:34,365 - waitress - INFO - Serving on http://127.0.0.1:5051
 2025-05-31 14:00:27,685 - __main__ - INFO - Stopping background thread...
 2025-05-31 14:00:32,695 - __main__ - INFO - Background thread stopped. Server shutdown complete.
+2025-05-31 14:18:48,060 - __main__ - INFO - Flask application starting on http://127.0.0.1:5051
+2025-05-31 14:18:48,117 - __main__ - INFO - Gunicorn not available！！, using Waitress server
+2025-05-31 14:18:48,119 - waitress - INFO - Serving on http://127.0.0.1:5051
+2025-05-31 14:45:04,979 - __main__ - INFO - Stopping background thread...
+2025-05-31 14:46:01,239 - __main__ - INFO - Flask application starting on http://127.0.0.1:5051
+2025-05-31 14:46:01,349 - __main__ - INFO - Gunicorn not available！！, using Waitress server
+2025-05-31 14:46:01,351 - waitress - INFO - Serving on http://127.0.0.1:5051
+2025-05-31 14:52:10,940 - __main__ - INFO - User registered successfully: mmmttt
+2025-05-31 14:52:19,974 - __main__ - INFO - User logged in successfully: mmmttt
+2025-05-31 14:55:20,711 - __main__ - INFO - Stopping background thread...
+2025-05-31 14:55:24,593 - __main__ - INFO - Flask application starting on http://127.0.0.1:5051
+2025-05-31 14:55:24,673 - __main__ - INFO - Gunicorn not available！！, using Waitress server
+2025-05-31 14:55:24,676 - waitress - INFO - Serving on http://127.0.0.1:5051
+2025-05-31 14:55:35,614 - __main__ - INFO - User logged in successfully: mmmttt
+2025-05-31 14:56:03,858 - __main__ - INFO - User logged out: mmmttt
+2025-05-31 15:04:15,021 - __main__ - INFO - User logged in successfully: mmmttt
+2025-05-31 15:04:32,003 - __main__ - INFO - Starting practice with subject: 习近平思想, file: subject\习近平思想\导论习题库.xlsx, force_restart: False, shuffle_questions: True
+2025-05-31 15:04:32,003 - __main__ - INFO - Questions shuffled for random practice
+2025-05-31 15:04:55,179 - __main__ - INFO - User logged in successfully: mmmttt
+2025-05-31 15:13:52,546 - __main__ - INFO - User logged out: mmmttt
+2025-05-31 15:19:35,066 - __main__ - INFO - User logged in successfully: mmmttt
+2025-05-31 15:20:34,814 - __main__ - INFO - User logged out: mmmttt

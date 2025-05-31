@@ -13,6 +13,15 @@ from flask import Flask, request, session, jsonify, send_from_directory, Respons
 from flask_cors import CORS  # 添加 CORS 支持
 from werkzeug.exceptions import NotFound, BadRequest
 
+# 导入数据库连接和用户认证相关函数
+from connectDB import (
+    authenticate_user, 
+    create_user, 
+    verify_invitation_code, 
+    get_user_info,
+    create_invitation_code
+)
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -58,9 +67,22 @@ SESSION_KEYS = {
     'INITIAL_TOTAL': 'initial_total_questions',
     'CORRECT_FIRST_TRY': 'correct_on_first_try',
     'QUESTION_STATUSES': 'question_answer_statuses',  # 保存每道题的答题状态
-    'ANSWER_HISTORY': 'question_answer_history'  # 保存每道题的答题历史
+    'ANSWER_HISTORY': 'question_answer_history',  # 保存每道题的答题历史
+    'USER_ID': 'user_id',  # 用户ID
+    'USERNAME': 'username'  # 用户名
 }
 
+# --- 用户认证装饰器 ---
+def login_required(f):
+    """检查用户是否已登录的装饰器"""
+    from functools import wraps
+    
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not session.get('user_id'):
+            return jsonify({'success': False, 'error': '请先登录'}), 401
+        return f(*args, **kwargs)
+    return decorated_function
 
 # --- 辅助函数 ---
 def standardize_tf_answer(answer_text: Optional[str]) -> Optional[str]:
@@ -368,18 +390,13 @@ def increment_request_count():
 
 # --- Flask Routes ---
 @app.route('/')
-def index() -> Response:
+def index() -> tuple[Response, int] | Response:
     """Serve the main Vue app."""
-
-    try:
-        return send_from_directory('../frontend/dist', 'index.html')
-    except Exception as e:
-        logger.error(f"Error serving index page: {e}")
-        return jsonify({'error': 'Failed to serve application'}), 500
+    return jsonify({'error': 'Failed to serve application'}), 500
 
 
 @app.route('/<path:path>')
-def serve_vue_assets(path: str) -> Response:
+def serve_vue_assets(path: str) -> tuple[Response, int] | Response:
     """Serve static assets for the Vue app."""
     try:
         dist_path = os.path.join(app.static_folder, '../frontend/dist')
@@ -391,7 +408,161 @@ def serve_vue_assets(path: str) -> Response:
         return jsonify({'error': 'Failed to serve asset'}), 500
 
 
+# --- 用户认证相关路由 ---
+@app.route('/api/auth/register', methods=['POST'])
+def api_register() -> tuple[Response, int] | Response:
+    """用户注册"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'success': False, 'error': '缺少请求数据'}), 400
+
+        username = data.get('username', '').strip()
+        password = data.get('password', '').strip()
+        invitation_code = data.get('invitation_code', '').strip()
+
+        # 验证输入
+        if not username or not password or not invitation_code:
+            return jsonify({'success': False, 'error': '用户名、密码和邀请码都不能为空'}), 400
+
+        if len(username) < 3 or len(username) > 20:
+            return jsonify({'success': False, 'error': '用户名长度必须在3-20个字符之间'}), 400
+
+        if len(password) < 6:
+            return jsonify({'success': False, 'error': '密码长度至少6个字符'}), 400
+
+        # 验证邀请码
+        invitation_code_id = verify_invitation_code(invitation_code)
+        if not invitation_code_id:
+            return jsonify({'success': False, 'error': '邀请码无效或已过期'}), 400
+
+        # 创建用户
+        result = create_user(username, password, invitation_code_id)
+        
+        if result['success']:
+            logger.info(f"User registered successfully: {username}")
+            return jsonify({
+                'success': True,
+                'message': '注册成功！请登录。'
+            })
+        else:
+            return jsonify({'success': False, 'error': result['error']}), 400
+
+    except Exception as e:
+        logger.error(f"Registration error: {e}")
+        return jsonify({'success': False, 'error': '注册过程中发生错误'}), 500
+
+
+@app.route('/api/auth/login', methods=['POST'])
+def api_login() -> Response:
+    """用户登录"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'success': False, 'error': '缺少请求数据'}), 400
+
+        username = data.get('username', '').strip()
+        password = data.get('password', '').strip()
+
+        if not username or not password:
+            return jsonify({'success': False, 'error': '用户名和密码不能为空'}), 400
+
+        # 验证用户
+        result = authenticate_user(username, password)
+        
+        if result['success']:
+            # 设置session
+            session['user_id'] = result['user_id']
+            session['username'] = result['username']
+            session.permanent = True
+            
+            logger.info(f"User logged in successfully: {username}")
+            return jsonify({
+                'success': True,
+                'message': '登录成功',
+                'user': {
+                    'user_id': result['user_id'],
+                    'username': result['username']
+                }
+            })
+        else:
+            return jsonify({'success': False, 'error': result['error']}), 400
+
+    except Exception as e:
+        logger.error(f"Login error: {e}")
+        return jsonify({'success': False, 'error': '登录过程中发生错误'}), 500
+
+
+@app.route('/api/auth/logout', methods=['POST'])
+def api_logout() -> Response:
+    """用户登出"""
+    try:
+        if session.get('user_id'):
+            username = session.get('username', 'Unknown')
+            session.clear()
+            logger.info(f"User logged out: {username}")
+            return jsonify({'success': True, 'message': '登出成功'})
+        else:
+            return jsonify({'success': False, 'error': '用户未登录'}), 400
+
+    except Exception as e:
+        logger.error(f"Logout error: {e}")
+        return jsonify({'success': False, 'error': '登出过程中发生错误'}), 500
+
+
+@app.route('/api/auth/user', methods=['GET'])
+@login_required
+def api_get_user_info() -> Response:
+    """获取当前登录用户信息"""
+    try:
+        user_id = session.get('user_id')
+        user_info = get_user_info(user_id)
+        
+        if user_info:
+            return jsonify({
+                'success': True,
+                'user': {
+                    'user_id': user_info['user_id'],
+                    'username': user_info['username'],
+                    'is_enabled': user_info['is_enabled'],
+                    'created_at': user_info['created_at'].isoformat() if user_info['created_at'] else None
+                }
+            })
+        else:
+            session.clear()  # 清除无效session
+            return jsonify({'success': False, 'error': '用户信息不存在'}), 404
+
+    except Exception as e:
+        logger.error(f"Get user info error: {e}")
+        return jsonify({'success': False, 'error': '获取用户信息失败'}), 500
+
+
+@app.route('/api/auth/check', methods=['GET'])
+def api_check_auth() -> Response:
+    """检查用户登录状态"""
+    try:
+        if session.get('user_id'):
+            return jsonify({
+                'success': True,
+                'authenticated': True,
+                'user': {
+                    'user_id': session.get('user_id'),
+                    'username': session.get('username')
+                }
+            })
+        else:
+            return jsonify({
+                'success': True,
+                'authenticated': False
+            })
+
+    except Exception as e:
+        logger.error(f"Check auth error: {e}")
+        return jsonify({'success': False, 'error': '检查登录状态失败'}), 500
+
+
 @app.route('/api/file_options', methods=['GET'])
+@login_required
 def api_file_options() -> Response:
     """Get available question bank files with progress information."""
     subjects_data: Dict[str, List[Dict[str, Any]]] = {}
@@ -478,6 +649,7 @@ def api_file_options() -> Response:
 
 
 @app.route('/api/start_practice', methods=['POST'])
+@login_required
 def api_start_practice() -> Response:
     """Start a new practice session."""
     try:

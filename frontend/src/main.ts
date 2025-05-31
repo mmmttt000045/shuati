@@ -7,6 +7,7 @@ import 'vue-toastification/dist/index.css'
 
 import App from './App.vue'
 import router from './router'
+import { useAuthStore } from './stores/auth'
 
 const app = createApp(App)
 
@@ -43,4 +44,18 @@ app.config.warnHandler = (msg, vm, trace) => {
   console.warn('Trace:', trace)
 }
 
-app.mount('#app')
+// Initialize authentication on app startup
+async function initApp() {
+  const authStore = useAuthStore()
+  
+  try {
+    // Check if user is already authenticated
+    await authStore.checkAuth()
+  } catch (error) {
+    console.error('Failed to check authentication status:', error)
+  }
+  
+  app.mount('#app')
+}
+
+initApp()

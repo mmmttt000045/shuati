@@ -1,357 +1,361 @@
 <template>
-  <div class="container practice-container">
-    <!-- 标题区域 -->
-    <div class="practice-title">
-      <h1>{{ fileDisplayName }}</h1>
-    </div>
-
-    <div class="practice-layout">
-      <!-- 左侧主要内容区域 -->
-      <div class="practice-main">
-        <div class="page-header">
-          <button class="btn btn-navigate-back" @click="goBackToIndexPage">
-            <span class="arrow">←</span> 返回首页
-          </button>
-          <div v-if="progress" class="progress-bar-wrapper">
-            <div class="progress-bar-text">
-              第 {{ progress.round }} 轮 - 题目 {{ progress.current }} / {{ progress.total }}
-            </div>
-            <div class="progress-bar-visual">
-              <div
-                :style="{ width: (progress.current / progress.total) * 100 + '%' }"
-                class="progress-bar-inner"
-              ></div>
-            </div>
-          </div>
+  <div class="practice-page-wrapper">
+    <div class="container">
+      <div class="practice-container">
+        <!-- 标题区域 -->
+        <div class="practice-title">
+          <h1>{{ fileDisplayName }}</h1>
         </div>
 
-        <ul v-if="messages.length > 0" class="flash-messages">
-          <li v-for="(message, index) in messages" :key="index" :class="message.category">
-            {{ message.text }}
-          </li>
-        </ul>
-
-        <!-- 友好提示 -->
-        <div v-if="!initializing && displayMode === 'question'" class="session-info">
-          <div class="session-info-content">
-            <span class="info-icon">💡</span>
-            <span class="info-text">提示：刷新页面后练习进度会自动保存和恢复</span>
-          </div>
-        </div>
-
-        <!-- 题目和反馈区域的过渡容器 -->
-        <transition name="content-fade" mode="out-in">
-          <!-- Question Display Mode -->
-          <div v-if="displayMode === 'question' && question" key="question" class="question-section card">
-            <div class="question-header">
-              <div class="question-content">
-                <div class="question-text">
-                  <span
-                    class="question-type-badge"
-                    :class="{
-                      'multiple-choice-badge': question.type === '多选题',
-                      'single-choice-badge': question.type === '单选题',
-                      'true-false-badge': question.type === '判断题'
-                    }"
-                  >
-                    {{ getQuestionTypeDisplay(question) }}
-                  </span>
-                  <span class="question-text-content">{{ question.question }}</span>
+        <div class="practice-layout">
+          <!-- 左侧主要内容区域 -->
+          <div class="practice-main">
+            <div class="page-header">
+              <button class="btn btn-navigate-back" @click="goBackToIndexPage">
+                <span class="arrow">←</span> 返回首页
+              </button>
+              <div v-if="progress" class="progress-bar-wrapper">
+                <div class="progress-bar-text">
+                  第 {{ progress.round }} 轮 - 题目 {{ progress.current }} / {{ progress.total }}
+                </div>
+                <div class="progress-bar-visual">
+                  <div
+                    :style="{ width: (progress.current / progress.total) * 100 + '%' }"
+                    class="progress-bar-inner"
+                  ></div>
                 </div>
               </div>
             </div>
 
-            <div class="question-content">
-              <!-- 移除了原来的revealed-answer-notice，因为现在直接切换到feedback模式 -->
-            </div>
+            <ul v-if="messages.length > 0" class="flash-messages">
+              <li v-for="(message, index) in messages" :key="index" :class="message.category">
+                {{ message.text }}
+              </li>
+            </ul>
 
-            <form
-              class="answer-form"
-              @submit.prevent="submitAnswer()"
-            >
-              <div class="options-grid">
-                <!-- 选择题 (单选/多选) -->
-                <template v-if="question.type !== '判断题' && question.options_for_practice && Object.keys(shuffledMcqOptions).length > 0">
-                  <label
-                    v-for="(option_text, original_key) in shuffledMcqOptions"
-                    :key="original_key"
-                    :class="{
-                      'option-label': true,
-                      'selected': question.is_multiple_choice
-                        ? selectedAnswers.has(original_key)
-                        : selectedAnswer === original_key,
-                      'multiple-choice-option': question.is_multiple_choice
-                    }"
-                    class="card-hover"
-                  >
-                    <input
-                      :checked="question.is_multiple_choice ? selectedAnswers.has(original_key) : selectedAnswer === original_key"
-                      :disabled="displayMode === 'feedback'"
-                      :name="question.is_multiple_choice ? `answer_mcq_${original_key}` : 'answer_scq'"
-                      :type="question.is_multiple_choice ? 'checkbox' : 'radio'"
-                      :value="original_key"
-                      @change="handleOptionSelect(original_key)"
-                      class="option-input"
-                    />
-                    <span v-if="question.is_multiple_choice" class="checkbox-custom-display" :class="{'checked': selectedAnswers.has(original_key)}"></span>
-                    <span v-else class="radio-custom-display" :class="{'checked': selectedAnswer === original_key}"></span>
-                    <span class="option-key">{{ original_key }}</span>
-                    <span class="option-text">{{ option_text }}</span>
-                  </label>
-                </template>
-                <p v-else-if="question.type !== '判断题' && (!question.options_for_practice || Object.keys(shuffledMcqOptions).length === 0)" class="empty-state-message">
-                  此选择题没有可显示的选项。
-                </p>
-
-                <!-- 判断题 -->
-                <template v-else-if="question.type === '判断题'">
-                  <label
-                    v-for="(option, key) in tfOptions"
-                    :key="key"
-                    :class="{
-                      'option-label': true,
-                      'selected': selectedAnswer === key
-                    }"
-                    class="card-hover"
-                  >
-                    <input
-                      :checked="selectedAnswer === key"
-                      :disabled="displayMode === 'feedback'"
-                      name="answer_tf"
-                      type="radio"
-                      :value="key"
-                      @change="handleOptionSelect(key)"
-                      class="option-input"
-                      required
-                    />
-                    <span class="radio-custom-display" :class="{'checked': selectedAnswer === key}"></span>
-                    <span class="option-text">{{ option.text }}</span>
-                  </label>
-                </template>
-                <p v-else class="empty-state-message">
-                   题目数据不完整或类型无法识别。
-                </p>
+            <!-- 友好提示 -->
+            <div v-if="!initializing && displayMode === 'question'" class="session-info">
+              <div class="session-info-content">
+                <span class="info-icon">💡</span>
+                <span class="info-text">提示：刷新页面后练习进度会自动保存和恢复</span>
               </div>
-
-              <div class="action-buttons">
-                <button
-                  :disabled="loadingSubmit ||
-                             (displayMode === 'question' && question.type !== '判断题' && question.is_multiple_choice && selectedAnswers.size === 0) ||
-                             (displayMode === 'question' && question.type !== '判断题' && !question.is_multiple_choice && !selectedAnswer) ||
-                             (displayMode === 'question' && question.type === '判断题' && !selectedAnswer)"
-                  class="btn btn-submit"
-                  type="submit"
-                >
-                  提交答案
-                </button>
-                <button
-                  :disabled="loadingSubmit || loadingReveal || displayMode === 'feedback'"
-                  :class="['btn', 'btn-reveal', { 'loading': loadingReveal }]"
-                  type="button"
-                  @click="revealAnswer"
-                >
-                  <span v-if="!loadingReveal">查看答案</span>
-                  <span v-else>正在加载</span>
-                </button>
-              </div>
-            </form>
-          </div>
-
-          <!-- Feedback Display Mode -->
-          <div
-            v-else-if="displayMode === 'feedback' && currentFeedback && question"
-            key="feedback"
-            class="feedback-section card"
-          >
-            <!-- 查看历史记录的标识 -->
-            <div v-if="isViewingHistory" class="history-notice">
-              <span class="history-icon">📋</span>
-              <span class="history-text">查看答题历史记录</span>
             </div>
 
-            <div
-              :class="currentFeedback.is_correct ? 'feedback-correct' : 'feedback-incorrect'"
-              class="feedback-banner"
-            >
-              <span class="feedback-icon">{{ currentFeedback.is_correct ? '🎉' : '❌' }}</span>
-              {{ currentFeedback.is_correct ? '回答正确！' : '回答错误。' }}
-            </div>
-
-            <div class="question-review-content">
-              <h4>题目回顾：</h4>
-              <p class="question-text-review">{{ question.question }}</p>
-
-              <div class="answer-comparison">
-                <!-- 选择题的选项展示 -->
-                <div v-if="question.type !== '判断题' && question.options_for_practice" class="options-review">
-                  <strong>所有选项：</strong>
-                  <div class="options-grid review-mode">
-                    <div
-                      v-for="(option_text, key) in question.options_for_practice"
-                      :key="key"
-                      :class="{
-                        'option-review': true,
-                        'option-correct': question.answer.includes(key),
-                        'option-incorrect': !currentFeedback.is_correct &&
-                                         (currentFeedback.user_answer_display.startsWith(key) ||
-                                          currentFeedback.user_answer_display.includes(' + ' + key + '.'))
-                      }"
-                    >
-                      <span class="option-key">{{ key }}</span>
-                      <span class="option-text">{{ option_text }}</span>
+            <!-- 题目和反馈区域的过渡容器 -->
+            <transition name="content-fade" mode="out-in">
+              <!-- Question Display Mode -->
+              <div v-if="displayMode === 'question' && question" key="question" class="question-section card">
+                <div class="question-header">
+                  <div class="question-content">
+                    <div class="question-text">
+                      <span
+                        class="question-type-badge"
+                        :class="{
+                          'multiple-choice-badge': question.type === '多选题',
+                          'single-choice-badge': question.type === '单选题',
+                          'true-false-badge': question.type === '判断题'
+                        }"
+                      >
+                        {{ getQuestionTypeDisplay(question) }}
+                      </span>
+                      <span class="question-text-content">{{ question.question }}</span>
                     </div>
                   </div>
                 </div>
 
-                <!-- 只在答错时显示答案比较 -->
-                <template v-if="!currentFeedback.is_correct">
-                  <div class="answer-item">
-                    <strong>你的答案：</strong>
-                    <span class="user-answer-text-incorrect">{{ currentFeedback.user_answer_display }}</span>
-                  </div>
-
-                  <div class="answer-item">
-                    <strong>正确答案：</strong>
-                    <span class="correct-answer-text">{{ currentFeedback.correct_answer_display }}</span>
-                  </div>
-                </template>
-
-                <div v-if="question.analysis" class="answer-item">
-                  <strong>题目分析：</strong>
-                  <p>{{ question.analysis }}</p>
+                <div class="question-content">
+                  <!-- 移除了原来的revealed-answer-notice，因为现在直接切换到feedback模式 -->
                 </div>
 
-                <div v-if="question.knowledge_points && question.knowledge_points.length > 0" class="answer-item">
-                  <strong>知识点：</strong>
-                  <div class="knowledge-points">
-                    <span v-for="(point, index) in question.knowledge_points"
-                          :key="index"
-                          class="knowledge-point-tag">
-                      {{ point }}
-                    </span>
+                <form
+                  class="answer-form"
+                  @submit.prevent="submitAnswer()"
+                >
+                  <div class="options-grid">
+                    <!-- 选择题 (单选/多选) -->
+                    <template v-if="question.type !== '判断题' && question.options_for_practice && Object.keys(shuffledMcqOptions).length > 0">
+                      <label
+                        v-for="(option_text, original_key) in shuffledMcqOptions"
+                        :key="original_key"
+                        :class="{
+                          'option-label': true,
+                          'selected': question.is_multiple_choice
+                            ? selectedAnswers.has(original_key)
+                            : selectedAnswer === original_key,
+                          'multiple-choice-option': question.is_multiple_choice
+                        }"
+                        class="card-hover"
+                      >
+                        <input
+                          :checked="question.is_multiple_choice ? selectedAnswers.has(original_key) : selectedAnswer === original_key"
+                          :disabled="displayMode === 'feedback'"
+                          :name="question.is_multiple_choice ? `answer_mcq_${original_key}` : 'answer_scq'"
+                          :type="question.is_multiple_choice ? 'checkbox' : 'radio'"
+                          :value="original_key"
+                          @change="handleOptionSelect(original_key)"
+                          class="option-input"
+                        />
+                        <span v-if="question.is_multiple_choice" class="checkbox-custom-display" :class="{'checked': selectedAnswers.has(original_key)}"></span>
+                        <span v-else class="radio-custom-display" :class="{'checked': selectedAnswer === original_key}"></span>
+                        <span class="option-key">{{ original_key }}</span>
+                        <span class="option-text">{{ option_text }}</span>
+                      </label>
+                    </template>
+                    <p v-else-if="question.type !== '判断题' && (!question.options_for_practice || Object.keys(shuffledMcqOptions).length === 0)" class="empty-state-message">
+                      此选择题没有可显示的选项。
+                    </p>
+
+                    <!-- 判断题 -->
+                    <template v-else-if="question.type === '判断题'">
+                      <label
+                        v-for="(option, key) in tfOptions"
+                        :key="key"
+                        :class="{
+                          'option-label': true,
+                          'selected': selectedAnswer === key
+                        }"
+                        class="card-hover"
+                      >
+                        <input
+                          :checked="selectedAnswer === key"
+                          :disabled="displayMode === 'feedback'"
+                          name="answer_tf"
+                          type="radio"
+                          :value="key"
+                          @change="handleOptionSelect(key)"
+                          class="option-input"
+                          required
+                        />
+                        <span class="radio-custom-display" :class="{'checked': selectedAnswer === key}"></span>
+                        <span class="option-text">{{ option.text }}</span>
+                      </label>
+                    </template>
+                    <p v-else class="empty-state-message">
+                       题目数据不完整或类型无法识别。
+                    </p>
+                  </div>
+
+                  <div class="action-buttons">
+                    <button
+                      :disabled="loadingSubmit ||
+                                 (displayMode === 'question' && question.type !== '判断题' && question.is_multiple_choice && selectedAnswers.size === 0) ||
+                                 (displayMode === 'question' && question.type !== '判断题' && !question.is_multiple_choice && !selectedAnswer) ||
+                                 (displayMode === 'question' && question.type === '判断题' && !selectedAnswer)"
+                      class="btn btn-submit"
+                      type="submit"
+                    >
+                      提交答案
+                    </button>
+                    <button
+                      :disabled="loadingSubmit || loadingReveal || displayMode === 'feedback'"
+                      :class="['btn', 'btn-reveal', { 'loading': loadingReveal }]"
+                      type="button"
+                      @click="revealAnswer"
+                    >
+                      <span v-if="!loadingReveal">查看答案</span>
+                      <span v-else>正在加载</span>
+                    </button>
+                  </div>
+                </form>
+              </div>
+
+              <!-- Feedback Display Mode -->
+              <div
+                v-else-if="displayMode === 'feedback' && currentFeedback && question"
+                key="feedback"
+                class="feedback-section card"
+              >
+                <!-- 查看历史记录的标识 -->
+                <div v-if="isViewingHistory" class="history-notice">
+                  <span class="history-icon">📋</span>
+                  <span class="history-text">查看答题历史记录</span>
+                </div>
+
+                <div
+                  :class="currentFeedback.is_correct ? 'feedback-correct' : 'feedback-incorrect'"
+                  class="feedback-banner"
+                >
+                  <span class="feedback-icon">{{ currentFeedback.is_correct ? '🎉' : '❌' }}</span>
+                  {{ currentFeedback.is_correct ? '回答正确！' : '回答错误。' }}
+                </div>
+
+                <div class="question-review-content">
+                  <h4>题目回顾：</h4>
+                  <p class="question-text-review">{{ question.question }}</p>
+
+                  <div class="answer-comparison">
+                    <!-- 选择题的选项展示 -->
+                    <div v-if="question.type !== '判断题' && question.options_for_practice" class="options-review">
+                      <strong>所有选项：</strong>
+                      <div class="options-grid review-mode">
+                        <div
+                          v-for="(option_text, key) in question.options_for_practice"
+                          :key="key"
+                          :class="{
+                            'option-review': true,
+                            'option-correct': question.answer.includes(key),
+                            'option-incorrect': !currentFeedback.is_correct &&
+                                             (currentFeedback.user_answer_display.startsWith(key) ||
+                                              currentFeedback.user_answer_display.includes(' + ' + key + '.'))
+                          }"
+                        >
+                          <span class="option-key">{{ key }}</span>
+                          <span class="option-text">{{ option_text }}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- 只在答错时显示答案比较 -->
+                    <template v-if="!currentFeedback.is_correct">
+                      <div class="answer-item">
+                        <strong>你的答案：</strong>
+                        <span class="user-answer-text-incorrect">{{ currentFeedback.user_answer_display }}</span>
+                      </div>
+
+                      <div class="answer-item">
+                        <strong>正确答案：</strong>
+                        <span class="correct-answer-text">{{ currentFeedback.correct_answer_display }}</span>
+                      </div>
+                    </template>
+
+                    <div v-if="question.analysis" class="answer-item">
+                      <strong>题目分析：</strong>
+                      <p>{{ question.analysis }}</p>
+                    </div>
+
+                    <div v-if="question.knowledge_points && question.knowledge_points.length > 0" class="answer-item">
+                      <strong>知识点：</strong>
+                      <div class="knowledge-points">
+                        <span v-for="(point, index) in question.knowledge_points"
+                              :key="index"
+                              class="knowledge-point-tag">
+                          {{ point }}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div v-if="currentFeedback.explanation" class="answer-item">
+                      <strong>解释：</strong>
+                      <p>{{ currentFeedback.explanation }}</p>
+                    </div>
                   </div>
                 </div>
 
-                <div v-if="currentFeedback.explanation" class="answer-item">
-                  <strong>解释：</strong>
-                  <p>{{ currentFeedback.explanation }}</p>
+                <div class="feedback-actions">
+                  <button v-if="!isViewingHistory" class="btn-continue" @click="handleContinueAfterReveal">
+                    继续练习
+                  </button>
+                  <button v-else class="btn-continue" @click="backToCurrentQuestion">
+                    返回当前题目
+                  </button>
                 </div>
               </div>
+            </transition>
+
+            <div v-if="loading && displayMode === 'question'" class="loading-indicator-fullscreen">
+              <p>题目正在加载中，请稍候...</p>
             </div>
 
-            <div class="feedback-actions">
-              <button v-if="!isViewingHistory" class="btn-continue" @click="handleContinueAfterReveal">
-                继续练习
-              </button>
-              <button v-else class="btn-continue" @click="backToCurrentQuestion">
-                返回当前题目
-              </button>
+            <div v-if="initializing" class="loading-indicator-fullscreen">
+              <p>正在初始化练习会话，请稍候...</p>
             </div>
-          </div>
-        </transition>
 
-        <div v-if="loading && displayMode === 'question'" class="loading-indicator-fullscreen">
-          <p>题目正在加载中，请稍候...</p>
-        </div>
-
-        <div v-if="initializing" class="loading-indicator-fullscreen">
-          <p>正在初始化练习会话，请稍候...</p>
-        </div>
-
-        <div
-          v-if="!loading && !initializing && !question && displayMode === 'question'"
-          class="empty-state-message card"
-        >
-          <p>当前没有题目可以练习，或题目加载失败。</p>
-        </div>
-      </div>
-
-      <!-- 右侧答题卡 -->
-      <div class="answer-card-panel" :class="{ 'history-mode': isViewingHistory }">
-        <div class="answer-card-header">
-          <div class="answer-card-title">
-            <h3>答题卡</h3>
-            <button
-              class="btn-toggle"
-              @click="isAnswerCardExpanded = !isAnswerCardExpanded"
-              :title="isAnswerCardExpanded ? '收起答题卡' : '展开答题卡'"
+            <div
+              v-if="!loading && !initializing && !question && displayMode === 'question'"
+              class="empty-state-message card"
             >
-              {{ isAnswerCardExpanded ? '↑' : '↓' }}
-            </button>
+              <p>当前没有题目可以练习，或题目加载失败。</p>
+            </div>
           </div>
 
-          <!-- 在查看历史时显示提示 -->
-          <div v-if="isViewingHistory" class="history-navigation-tip">
-            <span class="tip-icon">💡</span>
-            <span class="tip-text">点击答题卡可查看其他题目</span>
-          </div>
+          <!-- 右侧答题卡 -->
+          <div class="answer-card-panel" :class="{ 'history-mode': isViewingHistory }">
+            <div class="answer-card-header">
+              <div class="answer-card-title">
+                <h3>答题卡</h3>
+                <button
+                  class="btn-toggle"
+                  @click="isAnswerCardExpanded = !isAnswerCardExpanded"
+                  :title="isAnswerCardExpanded ? '收起答题卡' : '展开答题卡'"
+                >
+                  {{ isAnswerCardExpanded ? '↑' : '↓' }}
+                </button>
+              </div>
 
-          <div class="answer-card-legend" v-if="isAnswerCardExpanded">
-            <span class="legend-item">
-              <span class="status-dot current"></span> 当前题目
-            </span>
-            <span class="legend-item">
-              <span class="status-dot correct"></span> 已答对
-            </span>
-            <span class="legend-item">
-              <span class="status-dot wrong"></span> 已答错
-            </span>
-            <span class="legend-item">
-              <span class="status-dot"></span> 未作答
-            </span>
+              <!-- 在查看历史时显示提示 -->
+              <div v-if="isViewingHistory" class="history-navigation-tip">
+                <span class="tip-icon">💡</span>
+                <span class="tip-text">点击答题卡可查看其他题目</span>
+              </div>
+
+              <div class="answer-card-legend" v-if="isAnswerCardExpanded">
+                <span class="legend-item">
+                  <span class="status-dot current"></span> 当前题目
+                </span>
+                <span class="legend-item">
+                  <span class="status-dot correct"></span> 已答对
+                </span>
+                <span class="legend-item">
+                  <span class="status-dot wrong"></span> 已答错
+                </span>
+                <span class="legend-item">
+                  <span class="status-dot"></span> 未作答
+                </span>
+              </div>
+            </div>
+            <div
+              class="answer-card-grid-container"
+              :class="{
+                'expanded': isAnswerCardExpanded,
+                'has-left-overflow': hasLeftOverflow,
+                'has-right-overflow': hasRightOverflow
+              }"
+            >
+              <div class="answer-card-grid">
+                <template v-if="isAnswerCardExpanded">
+                  <!-- 展开状态：显示所有题目 -->
+                  <button
+                    v-for="(status, index) in questionStatuses"
+                    :key="index"
+                    class="question-number-btn"
+                    :class="{
+                      current: index === currentQuestionIndex,
+                      correct: status === 'correct',
+                      wrong: status === 'wrong',
+                      unanswered: status === 'unanswered'
+                    }"
+                    @click="jumpToQuestion(index)"
+                    :disabled="!canJumpToQuestion"
+                  >
+                    {{ index + 1 }}
+                  </button>
+                </template>
+                <template v-else>
+                  <!-- 折叠状态：只显示部分题目 -->
+                  <button
+                    v-for="item in visibleQuestions"
+                    :key="item.number"
+                    class="question-number-btn"
+                    :class="{
+                      current: item.isCurrent,
+                      correct: item.status === 'correct',
+                      wrong: item.status === 'wrong',
+                      unanswered: item.status === 'unanswered'
+                    }"
+                    @click="jumpToQuestion(item.number - 1)"
+                    :disabled="!canJumpToQuestion"
+                  >
+                    {{ item.number }}
+                  </button>
+                </template>
+              </div>
+            </div>
           </div>
         </div>
-        <div
-          class="answer-card-grid-container"
-          :class="{
-            'expanded': isAnswerCardExpanded,
-            'has-left-overflow': hasLeftOverflow,
-            'has-right-overflow': hasRightOverflow
-          }"
-        >
-          <div class="answer-card-grid">
-            <template v-if="isAnswerCardExpanded">
-              <!-- 展开状态：显示所有题目 -->
-              <button
-                v-for="(status, index) in questionStatuses"
-                :key="index"
-                class="question-number-btn"
-                :class="{
-                  current: index === currentQuestionIndex,
-                  correct: status === 'correct',
-                  wrong: status === 'wrong',
-                  unanswered: status === 'unanswered'
-                }"
-                @click="jumpToQuestion(index)"
-                :disabled="!canJumpToQuestion"
-              >
-                {{ index + 1 }}
-              </button>
-            </template>
-            <template v-else>
-              <!-- 折叠状态：只显示部分题目 -->
-              <button
-                v-for="item in visibleQuestions"
-                :key="item.number"
-                class="question-number-btn"
-                :class="{
-                  current: item.isCurrent,
-                  correct: item.status === 'correct',
-                  wrong: item.status === 'wrong',
-                  unanswered: item.status === 'unanswered'
-                }"
-                @click="jumpToQuestion(item.number - 1)"
-                :disabled="!canJumpToQuestion"
-              >
-                {{ item.number }}
-              </button>
-            </template>
-          </div>
-        </div>
+
+        <div class="footer-credit">Created by MingTai</div>
       </div>
     </div>
-
-    <div class="footer-credit">Created by MingTai</div>
   </div>
 </template>
 
@@ -914,13 +918,38 @@ const hasRightOverflow = computed(() => {
 </script>
 
 <style scoped>
-.practice-container {
-  max-width: 1600px;
-  margin: 2rem auto;
-  padding: 2rem;
+/* 让背景撑满整个屏幕 */
+.practice-page-wrapper {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100vw;
+  height: 100vh;
   background: linear-gradient(to bottom right, #ffffff, #f8f9fa);
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* 确保内容容器在wrapper内部正确布局 */
+.practice-page-wrapper .container {
+  position: relative;
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: var(--space-8);
+  min-height: 100vh;
+  box-sizing: border-box;
+}
+
+.practice-container {
+  background: white;
   border-radius: 16px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+  width: 100%;
+  margin: 0 auto;
+  padding: var(--space-6);
 }
 
 .practice-layout {
@@ -2402,4 +2431,27 @@ const hasRightOverflow = computed(() => {
 }
 
 /* 响应式设计优化 */
+
+/* 移动设备响应式优化 */
+@media (max-width: 768px) {
+  .practice-page-wrapper .container {
+    padding: var(--space-4);
+  }
+  
+  .practice-container {
+    padding: var(--space-4);
+    border-radius: 12px;
+  }
+}
+
+@media (max-width: 576px) {
+  .practice-page-wrapper .container {
+    padding: var(--space-3);
+  }
+  
+  .practice-container {
+    padding: var(--space-3);
+    border-radius: 8px;
+  }
+}
 </style>

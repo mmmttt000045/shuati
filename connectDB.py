@@ -1,5 +1,9 @@
 import mysql.connector
 from mysql.connector import Error
+import hashlib
+import secrets
+from datetime import datetime, timedelta
+from typing import Optional, Dict, Any
 
 def connect_and_validate_mysql(host_name, user_name, user_password, db_name, target_username_to_check=None):
     """
@@ -85,6 +89,250 @@ def connect_and_validate_mysql(host_name, user_name, user_password, db_name, tar
         if connection and connection.is_connected():
             connection.close()
             print("MySQL 连接已关闭。")
+
+def get_db_connection():
+    """获取数据库连接"""
+    try:
+        connection = mysql.connector.connect(
+            host="14.103.133.62",
+            user="shuati",
+            password="fxTWMaTLFyMMcKfh",
+            database="shuati",
+            port=3306
+        )
+        return connection
+    except Error as e:
+        print(f"数据库连接错误: {e}")
+        return None
+
+def hash_password(password: str) -> str:
+    """对密码进行哈希处理"""
+    return hashlib.sha256(password.encode()).hexdigest()
+
+def verify_invitation_code(invitation_code: str) -> Optional[int]:
+    """
+    验证邀请码是否有效
+    返回邀请码ID，如果无效返回None
+    """
+    connection = get_db_connection()
+    if not connection:
+        return None
+    
+    try:
+        cursor = connection.cursor()
+        # 检查邀请码是否存在、未使用且未过期
+        query = """
+        SELECT id FROM invitation_codes 
+        WHERE code = %s AND is_used = FALSE 
+        AND (expires_at IS NULL OR expires_at > NOW())
+        """
+        cursor.execute(query, (invitation_code,))
+        result = cursor.fetchone()
+        
+        if result:
+            return result[0]  # 返回邀请码ID
+        return None
+        
+    except Error as e:
+        print(f"验证邀请码时出错: {e}")
+        return None
+    finally:
+        if cursor:
+            cursor.close()
+        if connection.is_connected():
+            connection.close()
+
+def create_user(username: str, password: str, invitation_code_id: int) -> Dict[str, Any]:
+    """
+    创建新用户
+    返回包含成功/失败信息的字典
+    """
+    connection = get_db_connection()
+    if not connection:
+        return {"success": False, "error": "数据库连接失败"}
+    
+    try:
+        cursor = connection.cursor()
+        
+        # 检查用户名是否已存在
+        cursor.execute("SELECT id FROM user_accounts WHERE username = %s", (username,))
+        if cursor.fetchone():
+            return {"success": False, "error": "用户名已存在"}
+        
+        # 对密码进行哈希处理
+        password_hash = hash_password(password)
+        
+        # 开始事务
+        connection.start_transaction()
+        
+        # 插入新用户
+        insert_user_query = """
+        INSERT INTO user_accounts (username, password_hash, used_invitation_code_id)
+        VALUES (%s, %s, %s)
+        """
+        cursor.execute(insert_user_query, (username, password_hash, invitation_code_id))
+        user_id = cursor.lastrowid
+        
+        # 标记邀请码为已使用
+        update_invitation_query = """
+        UPDATE invitation_codes 
+        SET is_used = TRUE, used_by_user_id = %s 
+        WHERE id = %s
+        """
+        cursor.execute(update_invitation_query, (user_id, invitation_code_id))
+        
+        # 提交事务
+        connection.commit()
+        
+        return {
+            "success": True, 
+            "user_id": user_id,
+            "message": "用户创建成功"
+        }
+        
+    except Error as e:
+        # 回滚事务
+        connection.rollback()
+        print(f"创建用户时出错: {e}")
+        return {"success": False, "error": f"创建用户失败: {str(e)}"}
+    finally:
+        if cursor:
+            cursor.close()
+        if connection.is_connected():
+            connection.close()
+
+def authenticate_user(username: str, password: str) -> Dict[str, Any]:
+    """
+    验证用户登录
+    返回包含用户信息或错误信息的字典
+    """
+    connection = get_db_connection()
+    if not connection:
+        return {"success": False, "error": "数据库连接失败"}
+    
+    try:
+        cursor = connection.cursor()
+        
+        # 查询用户信息
+        query = """
+        SELECT id, username, password_hash, is_enabled 
+        FROM user_accounts 
+        WHERE username = %s
+        """
+        cursor.execute(query, (username,))
+        user_record = cursor.fetchone()
+        
+        if not user_record:
+            return {"success": False, "error": "用户名或密码错误"}
+        
+        user_id, db_username, stored_password_hash, is_enabled = user_record
+        
+        # 检查账户是否启用
+        if not is_enabled:
+            return {"success": False, "error": "账户已被禁用"}
+        
+        # 验证密码
+        input_password_hash = hash_password(password)
+        if input_password_hash != stored_password_hash:
+            return {"success": False, "error": "用户名或密码错误"}
+        
+        return {
+            "success": True,
+            "user_id": user_id,
+            "username": db_username,
+            "message": "登录成功"
+        }
+        
+    except Error as e:
+        print(f"用户认证时出错: {e}")
+        return {"success": False, "error": f"登录失败: {str(e)}"}
+    finally:
+        if cursor:
+            cursor.close()
+        if connection.is_connected():
+            connection.close()
+
+def get_user_info(user_id: int) -> Optional[Dict[str, Any]]:
+    """
+    根据用户ID获取用户信息
+    """
+    connection = get_db_connection()
+    if not connection:
+        return None
+    
+    try:
+        cursor = connection.cursor()
+        query = """
+        SELECT id, username, is_enabled, created_at 
+        FROM user_accounts 
+        WHERE id = %s
+        """
+        cursor.execute(query, (user_id,))
+        user_record = cursor.fetchone()
+        
+        if user_record:
+            user_id, username, is_enabled, created_at = user_record
+            return {
+                "user_id": user_id,
+                "username": username,
+                "is_enabled": is_enabled,
+                "created_at": created_at
+            }
+        return None
+        
+    except Error as e:
+        print(f"获取用户信息时出错: {e}")
+        return None
+    finally:
+        if cursor:
+            cursor.close()
+        if connection.is_connected():
+            connection.close()
+
+def create_invitation_code(code: str, expires_days: Optional[int] = None) -> Dict[str, Any]:
+    """
+    创建邀请码
+    """
+    connection = get_db_connection()
+    if not connection:
+        return {"success": False, "error": "数据库连接失败"}
+    
+    try:
+        cursor = connection.cursor()
+        
+        # 检查邀请码是否已存在
+        cursor.execute("SELECT id FROM invitation_codes WHERE code = %s", (code,))
+        if cursor.fetchone():
+            return {"success": False, "error": "邀请码已存在"}
+        
+        # 计算过期时间
+        expires_at = None
+        if expires_days:
+            expires_at = datetime.now() + timedelta(days=expires_days)
+        
+        # 插入邀请码
+        insert_query = """
+        INSERT INTO invitation_codes (code, expires_at)
+        VALUES (%s, %s)
+        """
+        cursor.execute(insert_query, (code, expires_at))
+        connection.commit()
+        
+        return {
+            "success": True,
+            "code": code,
+            "expires_at": expires_at,
+            "message": "邀请码创建成功"
+        }
+        
+    except Error as e:
+        print(f"创建邀请码时出错: {e}")
+        return {"success": False, "error": f"创建邀请码失败: {str(e)}"}
+    finally:
+        if cursor:
+            cursor.close()
+        if connection.is_connected():
+            connection.close()
 
 if __name__ == "__main__":
     # --- 请根据你的云服务器 MySQL 配置修改以下变量 ---

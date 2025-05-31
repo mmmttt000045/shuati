@@ -44,7 +44,11 @@
             <!-- 题目和反馈区域的过渡容器 -->
             <transition name="content-fade" mode="out-in">
               <!-- Question Display Mode -->
-              <div v-if="displayMode === 'question' && question" key="question" class="question-section card">
+              <div
+                v-if="displayMode === 'question' && question"
+                key="question"
+                class="question-section card"
+              >
                 <div class="question-header">
                   <div class="question-content">
                     <div class="question-text">
@@ -53,7 +57,7 @@
                         :class="{
                           'multiple-choice-badge': question.type === '多选题',
                           'single-choice-badge': question.type === '单选题',
-                          'true-false-badge': question.type === '判断题'
+                          'true-false-badge': question.type === '判断题',
                         }"
                       >
                         {{ getQuestionTypeDisplay(question) }}
@@ -67,41 +71,67 @@
                   <!-- 移除了原来的revealed-answer-notice，因为现在直接切换到feedback模式 -->
                 </div>
 
-                <form
-                  class="answer-form"
-                  @submit.prevent="submitAnswer()"
-                >
+                <form class="answer-form" @submit.prevent="submitAnswer()">
                   <div class="options-grid">
                     <!-- 选择题 (单选/多选) -->
-                    <template v-if="question.type !== '判断题' && question.options_for_practice && Object.keys(shuffledMcqOptions).length > 0">
+                    <template
+                      v-if="
+                        question.type !== '判断题' &&
+                        question.options_for_practice &&
+                        Object.keys(shuffledMcqOptions).length > 0
+                      "
+                    >
                       <label
                         v-for="(option_text, original_key) in shuffledMcqOptions"
                         :key="original_key"
                         :class="{
                           'option-label': true,
-                          'selected': question.is_multiple_choice
+                          selected: question.is_multiple_choice
                             ? selectedAnswers.has(original_key)
                             : selectedAnswer === original_key,
-                          'multiple-choice-option': question.is_multiple_choice
+                          'multiple-choice-option': question.is_multiple_choice,
                         }"
                         class="card-hover"
                       >
                         <input
-                          :checked="question.is_multiple_choice ? selectedAnswers.has(original_key) : selectedAnswer === original_key"
+                          :checked="
+                            question.is_multiple_choice
+                              ? selectedAnswers.has(original_key)
+                              : selectedAnswer === original_key
+                          "
                           :disabled="displayMode !== 'question'"
-                          :name="question.is_multiple_choice ? `answer_mcq_${original_key}` : 'answer_scq'"
+                          :name="
+                            question.is_multiple_choice
+                              ? `answer_mcq_${original_key}`
+                              : 'answer_scq'
+                          "
                           :type="question.is_multiple_choice ? 'checkbox' : 'radio'"
                           :value="original_key"
                           @change="handleOptionSelect(original_key)"
                           class="option-input"
                         />
-                        <span v-if="question.is_multiple_choice" class="checkbox-custom-display" :class="{'checked': selectedAnswers.has(original_key)}"></span>
-                        <span v-else class="radio-custom-display" :class="{'checked': selectedAnswer === original_key}"></span>
+                        <span
+                          v-if="question.is_multiple_choice"
+                          class="checkbox-custom-display"
+                          :class="{ checked: selectedAnswers.has(original_key) }"
+                        ></span>
+                        <span
+                          v-else
+                          class="radio-custom-display"
+                          :class="{ checked: selectedAnswer === original_key }"
+                        ></span>
                         <span class="option-key">{{ original_key }}</span>
                         <span class="option-text">{{ option_text }}</span>
                       </label>
                     </template>
-                    <p v-else-if="question.type !== '判断题' && (!question.options_for_practice || Object.keys(shuffledMcqOptions).length === 0)" class="empty-state-message">
+                    <p
+                      v-else-if="
+                        question.type !== '判断题' &&
+                        (!question.options_for_practice ||
+                          Object.keys(shuffledMcqOptions).length === 0)
+                      "
+                      class="empty-state-message"
+                    >
                       此选择题没有可显示的选项。
                     </p>
 
@@ -112,7 +142,7 @@
                         :key="key"
                         :class="{
                           'option-label': true,
-                          'selected': selectedAnswer === key
+                          selected: selectedAnswer === key,
                         }"
                         class="card-hover"
                       >
@@ -126,21 +156,32 @@
                           class="option-input"
                           required
                         />
-                        <span class="radio-custom-display" :class="{'checked': selectedAnswer === key}"></span>
+                        <span
+                          class="radio-custom-display"
+                          :class="{ checked: selectedAnswer === key }"
+                        ></span>
                         <span class="option-text">{{ option.text }}</span>
                       </label>
                     </template>
-                    <p v-else class="empty-state-message">
-                       题目数据不完整或类型无法识别。
-                    </p>
+                    <p v-else class="empty-state-message">题目数据不完整或类型无法识别。</p>
                   </div>
 
                   <div class="action-buttons">
                     <button
-                      :disabled="loadingSubmit ||
-                                 (displayMode === 'question' && question.type !== '判断题' && question.is_multiple_choice && selectedAnswers.size === 0) ||
-                                 (displayMode === 'question' && question.type !== '判断题' && !question.is_multiple_choice && !selectedAnswer) ||
-                                 (displayMode === 'question' && question.type === '判断题' && !selectedAnswer)"
+                      :disabled="
+                        loadingSubmit ||
+                        (displayMode === 'question' &&
+                          question.type !== '判断题' &&
+                          question.is_multiple_choice &&
+                          selectedAnswers.size === 0) ||
+                        (displayMode === 'question' &&
+                          question.type !== '判断题' &&
+                          !question.is_multiple_choice &&
+                          !selectedAnswer) ||
+                        (displayMode === 'question' &&
+                          question.type === '判断题' &&
+                          !selectedAnswer)
+                      "
                       class="btn btn-submit"
                       type="submit"
                     >
@@ -148,7 +189,7 @@
                     </button>
                     <button
                       :disabled="loadingSubmit || loadingReveal || displayMode !== 'question'"
-                      :class="['btn', 'btn-reveal', { 'loading': loadingReveal }]"
+                      :class="['btn', 'btn-reveal', { loading: loadingReveal }]"
                       type="button"
                       @click="revealAnswer"
                     >
@@ -171,12 +212,21 @@
                   <span class="history-text">查看答题历史记录</span>
                 </div>
 
-                <div
-                  :class="currentFeedback.is_correct ? 'feedback-correct' : 'feedback-incorrect'"
-                  class="feedback-banner"
-                >
-                  <span class="feedback-icon">{{ currentFeedback.is_correct ? '🎉' : '❌' }}</span>
-                  {{ currentFeedback.is_correct ? '回答正确！' : '回答错误。' }}
+                <!--                <div-->
+                <!--                  :class="currentFeedback.is_correct ? 'feedback-correct' : 'feedback-incorrect'"-->
+                <!--                  class="feedback-banner"-->
+                <!--                >-->
+                <!--                  <span class="feedback-icon">{{ currentFeedback.is_correct ? '🎉' : '❌' }}</span>-->
+                <!--                  {{ currentFeedback.is_correct ? '回答正确！' : '回答错误。' }}-->
+                <!--                </div>-->
+
+                <!-- 自动跳转提示 -->
+                <div v-if="showAutoNextHint && !isViewingHistory" class="auto-next-hint">
+                  <span class="hint-icon">⏱️</span>
+                  <span class="hint-text"
+                    >{{ Math.ceil(autoNextCountdown) }}秒后自动进入下一题</span
+                  >
+                  <button class="btn-cancel-auto" @click="clearAutoNextTimer">取消</button>
                 </div>
 
                 <div class="question-review-content">
@@ -185,7 +235,10 @@
 
                   <div class="answer-comparison">
                     <!-- 选择题的选项展示 -->
-                    <div v-if="question.type !== '判断题' && question.options_for_practice" class="options-review">
+                    <div
+                      v-if="question.type !== '判断题' && question.options_for_practice"
+                      class="options-review"
+                    >
                       <strong>所有选项：</strong>
                       <div class="options-grid review-mode">
                         <div
@@ -194,9 +247,10 @@
                           :class="{
                             'option-review': true,
                             'option-correct': question.answer.includes(key),
-                            'option-incorrect': !currentFeedback.is_correct &&
-                                             (currentFeedback.user_answer_display.startsWith(key) ||
-                                              currentFeedback.user_answer_display.includes(' + ' + key + '.'))
+                            'option-incorrect':
+                              !currentFeedback.is_correct &&
+                              (currentFeedback.user_answer_display.startsWith(key) ||
+                                currentFeedback.user_answer_display.includes(' + ' + key + '.')),
                           }"
                         >
                           <span class="option-key">{{ key }}</span>
@@ -205,16 +259,42 @@
                       </div>
                     </div>
 
+                    <!-- 判断题的选项展示 -->
+                    <div v-else-if="question.type === '判断题'" class="options-review">
+                      <strong>判断选项：</strong>
+                      <div class="options-grid review-mode">
+                        <div
+                          v-for="(option, key) in tfOptions"
+                          :key="key"
+                          :class="{
+                            'option-review': true,
+                            'option-correct': question.answer === key,
+                            'option-incorrect':
+                              !currentFeedback.is_correct &&
+                              getUserAnswerFromTFDisplay(currentFeedback.user_answer_display) ===
+                                key,
+                          }"
+                        >
+                          <span class="option-key">{{ key }}</span>
+                          <span class="option-text">{{ option.text }}</span>
+                        </div>
+                      </div>
+                    </div>
+
                     <!-- 只在答错时显示答案比较 -->
                     <template v-if="!currentFeedback.is_correct">
                       <div class="answer-item">
                         <strong>你的答案：</strong>
-                        <span class="user-answer-text-incorrect">{{ currentFeedback.user_answer_display }}</span>
+                        <span class="user-answer-text-incorrect">{{
+                          currentFeedback.user_answer_display
+                        }}</span>
                       </div>
 
                       <div class="answer-item">
                         <strong>正确答案：</strong>
-                        <span class="correct-answer-text">{{ currentFeedback.correct_answer_display }}</span>
+                        <span class="correct-answer-text">{{
+                          currentFeedback.correct_answer_display
+                        }}</span>
                       </div>
                     </template>
 
@@ -223,12 +303,17 @@
                       <p>{{ question.analysis }}</p>
                     </div>
 
-                    <div v-if="question.knowledge_points && question.knowledge_points.length > 0" class="answer-item">
+                    <div
+                      v-if="question.knowledge_points && question.knowledge_points.length > 0"
+                      class="answer-item"
+                    >
                       <strong>知识点：</strong>
                       <div class="knowledge-points">
-                        <span v-for="(point, index) in question.knowledge_points"
-                              :key="index"
-                              class="knowledge-point-tag">
+                        <span
+                          v-for="(point, index) in question.knowledge_points"
+                          :key="index"
+                          class="knowledge-point-tag"
+                        >
                           {{ point }}
                         </span>
                       </div>
@@ -242,7 +327,11 @@
                 </div>
 
                 <div class="feedback-actions">
-                  <button v-if="!isViewingHistory" class="btn-continue" @click="handleContinueAfterReveal">
+                  <button
+                    v-if="!isViewingHistory"
+                    class="btn-continue"
+                    @click="handleContinueAfterReveal"
+                  >
                     继续练习
                   </button>
                   <button v-else class="btn-continue" @click="backToCurrentQuestion">
@@ -289,26 +378,18 @@
               </div>
 
               <div class="answer-card-legend" v-if="isAnswerCardExpanded">
-                <span class="legend-item">
-                  <span class="status-dot current"></span> 当前题目
-                </span>
-                <span class="legend-item">
-                  <span class="status-dot correct"></span> 已答对
-                </span>
-                <span class="legend-item">
-                  <span class="status-dot wrong"></span> 已答错
-                </span>
-                <span class="legend-item">
-                  <span class="status-dot"></span> 未作答
-                </span>
+                <span class="legend-item"> <span class="status-dot current"></span> 当前题目 </span>
+                <span class="legend-item"> <span class="status-dot correct"></span> 已答对 </span>
+                <span class="legend-item"> <span class="status-dot wrong"></span> 已答错 </span>
+                <span class="legend-item"> <span class="status-dot"></span> 未作答 </span>
               </div>
             </div>
             <div
               class="answer-card-grid-container"
               :class="{
-                'expanded': isAnswerCardExpanded,
+                expanded: isAnswerCardExpanded,
                 'has-left-overflow': hasLeftOverflow,
-                'has-right-overflow': hasRightOverflow
+                'has-right-overflow': hasRightOverflow,
               }"
             >
               <div class="answer-card-grid">
@@ -322,7 +403,7 @@
                       current: index === currentQuestionIndex,
                       correct: isCorrectStatus(status),
                       wrong: isWrongStatus(status),
-                      unanswered: isUnansweredStatus(status)
+                      unanswered: isUnansweredStatus(status),
                     }"
                     @click="jumpToQuestion(index)"
                     :disabled="!canJumpToQuestion || loadingSubmit"
@@ -337,10 +418,10 @@
                     :key="item.number"
                     :class="{
                       'question-number-btn': true,
-                      'current': item.isCurrent,
+                      current: item.isCurrent,
                       correct: isCorrectStatus(item.status),
                       wrong: isWrongStatus(item.status),
-                      unanswered: isUnansweredStatus(item.status)
+                      unanswered: isUnansweredStatus(item.status),
                     }"
                     @click="jumpToQuestion(item.number - 1)"
                     :disabled="!canJumpToQuestion || loadingSubmit"
@@ -349,6 +430,47 @@
                   </button>
                 </template>
               </div>
+            </div>
+
+            <!-- 答题卡操作按钮区域 -->
+            <div class="answer-card-actions">
+              <template v-if="!isViewingHistory && progress">
+                <!-- 正常练习模式：显示上一题和下一题 -->
+                <div class="navigation-buttons">
+                  <button
+                    class="btn-answer-card-action btn-navigation"
+                    @click="goToPreviousQuestion"
+                    :disabled="loadingSubmit || currentQuestionIndex <= 0"
+                    :title="currentQuestionIndex <= 0 ? '已是第一题' : '跳转到上一题'"
+                  >
+                    <span class="action-icon">←</span>
+                    上一题
+                  </button>
+                  <button
+                    class="btn-answer-card-action btn-navigation"
+                    @click="goToNextQuestion"
+                    :disabled="loadingSubmit || currentQuestionIndex >= progress.total - 1"
+                    :title="
+                      currentQuestionIndex >= progress.total - 1 ? '已是最后一题' : '跳转到下一题'
+                    "
+                  >
+                    <span class="action-icon">→</span>
+                    下一题
+                  </button>
+                </div>
+              </template>
+              <template v-else-if="isViewingHistory">
+                <!-- 历史查看模式：显示返回当前题 -->
+                <button
+                  class="btn-answer-card-action btn-return"
+                  @click="backToCurrentQuestion"
+                  :disabled="loadingSubmit"
+                  title="返回到当前正在练习的题目"
+                >
+                  <span class="action-icon">↩</span>
+                  返回当前题
+                </button>
+              </template>
             </div>
           </div>
         </div>
@@ -360,304 +482,360 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed, watch } from 'vue';
-import { useRouter } from 'vue-router';
-import { useToast } from 'vue-toastification';
+import { ref, onMounted, computed, watch, reactive, toRefs, onBeforeUnmount } from 'vue'
+import { useRouter } from 'vue-router'
+import { useToast } from 'vue-toastification'
 import type {
   Question,
   Progress,
   FlashMessage,
   Feedback,
-  QuestionStatus as QuestionStatusType
-} from '@/types';
+  QuestionStatus as QuestionStatusType,
+} from '@/types'
 import {
   QUESTION_STATUS,
   getStatusName,
   isCorrectStatus,
   isWrongStatus,
-  isUnansweredStatus
-} from '@/types';
-import { apiService } from '@/services/api';
-import { useAuthStore } from '@/stores/auth';
+  isUnansweredStatus,
+} from '@/types'
+import { apiService } from '@/services/api'
+import { useAuthStore } from '@/stores/auth'
 
 interface QuestionStatus {
-  status: QuestionStatusType;  // 使用新的数字状态类型
-  number: number;
-  isCurrent: boolean;
+  status: QuestionStatusType // 使用新的数字状态类型
+  number: number
+  isCurrent: boolean
 }
 
 const props = defineProps<{
-  subject: string;
-  fileName: string;
-  order?: string;
-}>();
+  subject: string
+  fileName: string
+  order?: string
+}>()
 
-const router = useRouter();
-const toast = useToast();
-const fileDisplayName = ref<string>('');
-const question = ref<Question | null>(null);
-const progress = ref<Progress | null>(null);
-const messages = ref<FlashMessage[]>([]);
-const displayMode = ref<'question' | 'feedback'>('question');
-const currentFeedback = ref<Feedback | null>(null);
-const loadingSubmit = ref(false);
-const loading = ref(false);
-const initializing = ref(true);
-const loadingReveal = ref(false);
-const selectedAnswer = ref<string>('');
-const selectedAnswers = ref<Set<string>>(new Set());
-const shuffledMcqOptions = ref<Record<string, string>>({});
+const router = useRouter()
+const toast = useToast()
+const fileDisplayName = ref<string>('')
+const question = ref<Question | null>(null)
+const progress = ref<Progress | null>(null)
+const messages = ref<FlashMessage[]>([])
+const displayMode = ref<'question' | 'feedback'>('question')
+const currentFeedback = ref<Feedback | null>(null)
+const loadingSubmit = ref(false)
+const loading = ref(false)
+const initializing = ref(true)
+const loadingReveal = ref(false)
+const selectedAnswer = ref<string>('')
+const selectedAnswers = ref<Set<string>>(new Set())
+const shuffledMcqOptions = ref<Record<string, string>>({})
+
+// 添加自动跳转相关状态
+const autoNextTimer = ref<number | null>(null)
+const autoNextCountdown = ref(0)
+const showAutoNextHint = ref(false)
 
 const tfOptions = {
-  'T': { text: '正确' },
-  'F': { text: '错误' }
-};
+  T: { text: '正确' },
+  F: { text: '错误' },
+}
 
 // 添加是否为查看历史的状态
-const isViewingHistory = ref(false);
+const isViewingHistory = ref(false)
 
-const authStore = useAuthStore();
+const authStore = useAuthStore()
+
+// 将文件路径转换为显示名称的工具函数
+const getDisplayNameFromFilePath = (filePath: string): string => {
+  try {
+    // 规范化路径分隔符
+    const normalizedPath = filePath.replace(/\\/g, '/')
+    const pathParts = normalizedPath.split('/')
+
+    if (pathParts.length === 0) {
+      return filePath
+    }
+
+    // 获取文件名（最后一部分）
+    const filenameWithExt = pathParts[pathParts.length - 1]
+
+    // 移除文件扩展名
+    const displayName = filenameWithExt.replace(/\.(xlsx|xls)$/i, '')
+
+    return displayName || filePath
+  } catch (error) {
+    console.error('Error extracting display name from file path:', error)
+    return filePath
+  }
+}
 
 onMounted(async () => {
   try {
     // 首先确保用户已认证
     if (!authStore.isAuthenticated) {
-      await authStore.checkAuth();
+      await authStore.checkAuth()
       if (!authStore.isAuthenticated) {
         toast.error('用户认证已过期，请重新登录', {
-          timeout: 3000
-        });
-        router.push('/login');
-        return;
+          timeout: 3000,
+        })
+        router.push('/login')
+        return
       }
     }
 
     // 首先检查是否已有活跃的练习会话
-    const sessionStatus = await apiService.checkSessionStatus();
+    const sessionStatus = await apiService.checkSessionStatus()
 
     if (sessionStatus.active) {
       // 检查会话是否已完成
       if (sessionStatus.completed) {
-        router.push('/completed');
-        return;
+        router.push('/completed')
+        return
       }
 
       // 检查会话文件是否与当前请求的文件匹配
       if (sessionStatus.file_info && sessionStatus.file_info.key === props.fileName) {
         // 设置文件显示名称
-        fileDisplayName.value = sessionStatus.file_info.display || props.fileName;
+        fileDisplayName.value = sessionStatus.file_info.display || props.fileName
 
         // 显示恢复会话的提示信息
         if (sessionStatus.progress) {
           // 使用 toast 进行即时通知
-          toast.info(`已恢复练习进度：第${sessionStatus.progress.round}轮，第${sessionStatus.progress.current}/${sessionStatus.progress.total}题`, {
-            timeout: 4000
-          });
+          toast.info(
+            `已恢复练习进度：第${sessionStatus.progress.round}轮，第${sessionStatus.progress.current}/${sessionStatus.progress.total}题`,
+            {
+              timeout: 4000,
+            },
+          )
 
           // 同时在页面上显示持久信息
           messages.value.push({
             category: 'info',
-            text: `练习进度已恢复：第${sessionStatus.progress.round}轮`
-          });
+            text: `练习进度已恢复：第${sessionStatus.progress.round}轮`,
+          })
         }
 
         // 恢复答题卡状态 - 修复：确保状态数组正确初始化
         if (sessionStatus.question_statuses && sessionStatus.question_statuses.length > 0) {
-          questionStatuses.value = [...sessionStatus.question_statuses];
-          console.log('从会话状态恢复答题卡状态：', questionStatuses.value);
+          questionStatuses.value = [...sessionStatus.question_statuses]
+          console.log('从会话状态恢复答题卡状态：', questionStatuses.value)
         } else if (sessionStatus.progress) {
           // 如果没有状态数组，根据进度创建默认状态数组
-          const defaultStatuses = new Array(sessionStatus.progress.total).fill(QUESTION_STATUS.UNANSWERED);
-          questionStatuses.value = defaultStatuses;
-          console.log('创建默认答题卡状态：', questionStatuses.value);
+          const defaultStatuses = new Array(sessionStatus.progress.total).fill(
+            QUESTION_STATUS.UNANSWERED,
+          )
+          questionStatuses.value = defaultStatuses
+          console.log('创建默认答题卡状态：', questionStatuses.value)
         }
 
         // 直接加载当前题目，无需重新开始练习
-        await loadQuestion();
+        await loadQuestion()
 
         // 加载完成后立即同步状态，确保一致性
-        await syncQuestionStatuses();
-        return;
+        await syncQuestionStatuses()
+        return
       } else if (sessionStatus.file_info) {
         // 显示切换题库的提示信息
         toast.info(`已从《${sessionStatus.file_info.display}》切换到当前题库`, {
-          timeout: 3000
-        });
+          timeout: 3000,
+        })
 
         // 当前有其他文件的会话，需要强制重新开始
-        const shuffleQuestions = props.order !== 'sequential'; // 默认为随机，除非明确指定为顺序
-        const startResponse = await apiService.startPractice(props.subject, props.fileName, true, shuffleQuestions);
+        const shuffleQuestions = props.order !== 'sequential' // 默认为随机，除非明确指定为顺序
+        const startResponse = await apiService.startPractice(
+          props.subject,
+          props.fileName,
+          true,
+          shuffleQuestions,
+        )
         if (!startResponse.success) {
-          throw new Error(startResponse.message);
+          throw new Error(startResponse.message)
         }
         // 设置文件显示名称
-        fileDisplayName.value = props.fileName;
+        fileDisplayName.value = getDisplayNameFromFilePath(props.fileName)
       }
     } else {
       // 没有活跃会话，开始新的练习
-      const shuffleQuestions = props.order !== 'sequential'; // 默认为随机，除非明确指定为顺序
-      const startResponse = await apiService.startPractice(props.subject, props.fileName, false, shuffleQuestions);
+      const shuffleQuestions = props.order !== 'sequential' // 默认为随机，除非明确指定为顺序
+      const startResponse = await apiService.startPractice(
+        props.subject,
+        props.fileName,
+        false,
+        shuffleQuestions,
+      )
       if (!startResponse.success) {
-        throw new Error(startResponse.message);
+        throw new Error(startResponse.message)
       }
       // 设置文件显示名称
-      fileDisplayName.value = props.fileName;
+      fileDisplayName.value = getDisplayNameFromFilePath(props.fileName)
     }
 
     // 加载第一题或当前题目
-    await loadQuestion();
+    await loadQuestion()
 
     // 确保答题卡状态正确同步
-    await syncQuestionStatuses();
-
+    await syncQuestionStatuses()
   } catch (error) {
-    console.error('Error initializing practice:', error);
+    console.error('Error initializing practice:', error)
     toast.error(error instanceof Error ? error.message : '练习会话初始化失败', {
-      timeout: 5000
-    });
+      timeout: 5000,
+    })
     setTimeout(() => {
-      router.push('/');
-    }, 3000);
+      router.push('/')
+    }, 3000)
   } finally {
-    initializing.value = false;  // 初始化完成
+    initializing.value = false // 初始化完成
   }
-});
+})
 
 const loadQuestion = async () => {
-  loading.value = true;
+  loading.value = true
   try {
-    const response = await apiService.getCurrentQuestion();
+    const response = await apiService.getCurrentQuestion()
 
     if (response.redirect_to_completed) {
-      router.push('/completed');
-      return;
+      router.push('/completed')
+      return
     }
 
     if (response.question) {
-      question.value = response.question;
-      progress.value = response.progress;
-      messages.value = response.flash_messages || [];
-      displayMode.value = 'question';
-      isViewingHistory.value = false;  // 重置查看历史状态
-      selectedAnswer.value = '';
-      selectedAnswers.value = new Set();
-      currentFeedback.value = null;
+      question.value = response.question
+      progress.value = response.progress
+      messages.value = response.flash_messages || []
+      displayMode.value = 'question'
+      isViewingHistory.value = false // 重置查看历史状态
+      selectedAnswer.value = ''
+      selectedAnswers.value = new Set()
+      currentFeedback.value = null
 
       // 确保答题卡状态数组长度与当前轮次题目数量匹配
       if (progress.value && questionStatuses.value.length !== progress.value.total) {
         if (questionStatuses.value.length < progress.value.total) {
           // 如果答题卡状态数组长度不够，用UNANSWERED(0)填充
-          const additionalStatuses = new Array(progress.value.total - questionStatuses.value.length).fill(QUESTION_STATUS.UNANSWERED);
-          questionStatuses.value = [...questionStatuses.value, ...additionalStatuses];
+          const additionalStatuses = new Array(
+            progress.value.total - questionStatuses.value.length,
+          ).fill(QUESTION_STATUS.UNANSWERED)
+          questionStatuses.value = [...questionStatuses.value, ...additionalStatuses]
         } else {
           // 如果答题卡状态数组过长，截取到正确长度
-          questionStatuses.value = questionStatuses.value.slice(0, progress.value.total);
+          questionStatuses.value = questionStatuses.value.slice(0, progress.value.total)
         }
       }
 
       // 重置选项
       if (question.value.options_for_practice) {
-        shuffledMcqOptions.value = JSON.parse(JSON.stringify(question.value.options_for_practice));
+        shuffledMcqOptions.value = JSON.parse(JSON.stringify(question.value.options_for_practice))
       } else {
-        shuffledMcqOptions.value = {};
+        shuffledMcqOptions.value = {}
       }
     } else {
-      throw new Error('Failed to load question data');
+      throw new Error('Failed to load question data')
     }
   } catch (error) {
-    console.error('Error loading question:', error);
+    console.error('Error loading question:', error)
     toast.error(error instanceof Error ? error.message : '题目加载失败', {
-      timeout: 4000
-    });
+      timeout: 4000,
+    })
   } finally {
-    loading.value = false;
+    loading.value = false
   }
-};
+}
 
 const handleOptionSelect = (key: string) => {
-  if (!question.value) return;
+  if (!question.value) return
 
   if (question.value.is_multiple_choice) {
     if (selectedAnswers.value.has(key)) {
-      selectedAnswers.value.delete(key);
+      selectedAnswers.value.delete(key)
     } else {
-      selectedAnswers.value.add(key);
+      selectedAnswers.value.add(key)
     }
   } else {
-    selectedAnswer.value = key;
+    selectedAnswer.value = key
   }
-};
+}
 
 const submitAnswer = async () => {
-  if (!question.value || loadingSubmit.value) return;
+  if (!question.value || loadingSubmit.value) return
 
-  loadingSubmit.value = true;
+  // 清除可能存在的自动跳转定时器
+  clearAutoNextTimer()
+
+  loadingSubmit.value = true
   try {
     const answer = question.value.is_multiple_choice
       ? Array.from(selectedAnswers.value).sort().join('')
-      : selectedAnswer.value;
+      : selectedAnswer.value
 
     const feedback = await apiService.submitAnswer(
       answer,
       question.value.id,
       false, // 未查看答案
-      false  // 不是复习模式
-    );
+      false, // 不是复习模式
+    )
 
-    currentFeedback.value = feedback;
-    displayMode.value = 'feedback';
-    isViewingHistory.value = false;  // 正常答题，不是查看历史
+    currentFeedback.value = feedback
+    displayMode.value = 'feedback'
+    isViewingHistory.value = false // 正常答题，不是查看历史
 
     // 显示答题结果通知
     if (feedback.is_correct) {
       toast.success('回答正确！🎉', {
-        timeout: 2000
-      });
+        timeout: 2000,
+      })
+
+      // 启动自动跳转到下一题（如果不是最后一题）
+      if (progress.value && currentQuestionIndex.value < progress.value.total - 1) {
+        startAutoNextTimer()
+      }
     } else {
       toast.warning('回答错误，查看解析学习一下吧 📚', {
-        timeout: 3000
-      });
+        timeout: 3000,
+      })
     }
 
     // 更新答题卡状态
-    if (currentQuestionIndex.value >= 0 && currentQuestionIndex.value < questionStatuses.value.length) {
-      updateQuestionStatus(currentQuestionIndex.value, feedback.is_correct);
+    if (
+      currentQuestionIndex.value >= 0 &&
+      currentQuestionIndex.value < questionStatuses.value.length
+    ) {
+      updateQuestionStatus(currentQuestionIndex.value, feedback.is_correct)
     }
 
     // 同步后端状态，确保一致性
     setTimeout(async () => {
-      await syncQuestionStatuses();
-    }, 100); // 短暂延迟确保后端已更新
+      await syncQuestionStatuses()
+    }, 100) // 短暂延迟确保后端已更新
   } catch (error) {
-    console.error('Error submitting answer:', error);
+    console.error('Error submitting answer:', error)
     toast.error(error instanceof Error ? error.message : '答案提交失败', {
-      timeout: 4000
-    });
+      timeout: 4000,
+    })
   } finally {
-    loadingSubmit.value = false;
+    loadingSubmit.value = false
   }
-};
+}
 
 const revealAnswer = async () => {
-  if (!question.value || loadingReveal.value) return;
+  if (!question.value || loadingReveal.value) return
 
-  loadingReveal.value = true;
+  loadingReveal.value = true
 
   try {
     // 先准备所有需要的数据，避免多次状态切换
-    const questionId = question.value.id;
-    const currentIndex = currentQuestionIndex.value;
+    const questionId = question.value.id
+    const currentIndex = currentQuestionIndex.value
 
     // 提交查看答案的请求
     const feedback = await apiService.submitAnswer(
-      '',  // 空答案
+      '', // 空答案
       questionId,
       true, // 标记为已查看答案
-      false // 不是复习模式
-    );
+      false, // 不是复习模式
+    )
 
     // 获取题目解析
-    const analysisResponse = await apiService.getQuestionAnalysis(questionId);
+    const analysisResponse = await apiService.getQuestionAnalysis(questionId)
 
     // 准备反馈数据
     const feedbackData: Feedback = {
@@ -666,81 +844,86 @@ const revealAnswer = async () => {
       correct_answer_display: formatAnswerWithOptions(
         question.value.answer,
         question.value.options_for_practice,
-        question.value.is_multiple_choice
+        question.value.is_multiple_choice,
       ),
       question_id: questionId,
-      current_index: currentIndex
-    };
+      current_index: currentIndex,
+    }
 
     // 如果获取到解析，更新题目数据
     if (analysisResponse.success) {
       question.value = {
         ...question.value,
         analysis: analysisResponse.analysis,
-        knowledge_points: analysisResponse.knowledge_points
-      };
+        knowledge_points: analysisResponse.knowledge_points,
+      }
     }
 
     // 一次性更新所有状态，避免多次重渲染
-    currentFeedback.value = feedbackData;
+    currentFeedback.value = feedbackData
 
     // 标记当前题目为错误（用于答题卡显示）
     if (currentIndex >= 0 && currentIndex < questionStatuses.value.length) {
-      updateQuestionStatus(currentIndex, false);
+      updateQuestionStatus(currentIndex, false)
     }
 
     // 最后切换到反馈模式
-    displayMode.value = 'feedback';
-    isViewingHistory.value = true;
-
+    displayMode.value = 'feedback'
+    isViewingHistory.value = true
   } catch (error) {
-    console.error('Error revealing answer:', error);
+    console.error('Error revealing answer:', error)
     toast.error(error instanceof Error ? error.message : '查看答案失败', {
-      timeout: 4000
-    });
+      timeout: 4000,
+    })
   } finally {
-    loadingReveal.value = false;
+    loadingReveal.value = false
   }
-};
+}
 
 const handleContinueAfterReveal = async () => {
   try {
+    // 清除自动跳转定时器
+    clearAutoNextTimer()
+
     // 重置状态
-    selectedAnswer.value = '';
-    selectedAnswers.value = new Set();
-    currentFeedback.value = null;
-    displayMode.value = 'question';
+    selectedAnswer.value = ''
+    selectedAnswers.value = new Set()
+    currentFeedback.value = null
+    displayMode.value = 'question'
 
     // 加载下一题
-    await loadQuestion();
+    await loadQuestion()
 
     // 同步答题卡状态，确保与后端一致
-    await syncQuestionStatuses();
+    await syncQuestionStatuses()
   } catch (error) {
-    console.error('Error continuing to next question:', error);
+    console.error('Error continuing to next question:', error)
     toast.error(error instanceof Error ? error.message : '加载下一题失败', {
-      timeout: 4000
-    });
+      timeout: 4000,
+    })
   }
-};
+}
 
 const backToCurrentQuestion = async () => {
   try {
+    // 清除自动跳转定时器
+    clearAutoNextTimer()
+
     // 重置状态
-    selectedAnswer.value = '';
-    selectedAnswers.value = new Set();
-    currentFeedback.value = null;
-    displayMode.value = 'question';
+    selectedAnswer.value = ''
+    selectedAnswers.value = new Set()
+    currentFeedback.value = null
+    displayMode.value = 'question'
 
     // 加载当前题目
-    await loadQuestion();
+    await loadQuestion()
   } catch (error) {
-    console.error('Error returning to current question:', error);
+    console.error('Error returning to current question:', error)
     toast.error(error instanceof Error ? error.message : '返回当前题目失败', {
-      timeout: 4000
-    });
+      timeout: 4000,
+    })
   }
-};
+}
 
 const goBackToIndexPage = async () => {
   try {
@@ -748,283 +931,375 @@ const goBackToIndexPage = async () => {
     const savingToast = toast.info('正在保存练习进度...', {
       timeout: false, // 不自动消失
       closeOnClick: false,
-      pauseOnHover: false
-    });
-    
+      pauseOnHover: false,
+    })
+
     // 在返回首页之前保存当前session进度
-    await apiService.saveSession();
-    console.log('Session progress saved successfully');
-    
+    await apiService.saveSession()
+    console.log('Session progress saved successfully')
+
     // 关闭保存中的提示
-    toast.dismiss(savingToast);
-    
+    toast.dismiss(savingToast)
+
     // 显示保存成功的提示
     toast.success('练习进度已保存 💾', {
-      timeout: 2000
-    });
-    
+      timeout: 2000,
+    })
+
     // 返回首页
-    router.push('/');
+    router.push('/')
   } catch (error) {
-    console.error('Failed to save session progress:', error);
-    
+    console.error('Failed to save session progress:', error)
+
     // 即使保存失败也要提示用户，但仍然可以继续使用
     toast.warning('保存进度失败，但可以继续使用 ⚠️', {
-      timeout: 3000
-    });
-    
-    // 仍然返回首页
-    router.push('/');
-  }
-};
+      timeout: 3000,
+    })
 
-const formatAnswerWithOptions = (answer: string, options?: Record<string, string>, isMultipleChoice = false) => {
-  if (!options) return answer;
+    // 仍然返回首页
+    router.push('/')
+  }
+}
+
+const formatAnswerWithOptions = (
+  answer: string,
+  options?: Record<string, string>,
+  isMultipleChoice = false,
+) => {
+  if (!options) return answer
 
   if (isMultipleChoice) {
-    return answer.split('').map(key => `${key}. ${options[key] || ''}`).join(' + ');
+    return answer
+      .split('')
+      .map((key) => `${key}. ${options[key] || ''}`)
+      .join(' + ')
   }
-  return `${answer}. ${options[answer] || ''}`;
-};
+  return `${answer}. ${options[answer] || ''}`
+}
 
 const getQuestionTypeDisplay = (q: Question): string => {
-  return q.type;
-};
+  return q.type
+}
 
 // Answer Card State
-const isAnswerCardExpanded = ref(false);
-const questionStatuses = ref<Array<QuestionStatusType>>([]);
-const currentQuestionIndex = computed(() => (progress.value ? progress.value.current - 1 : 0));
+const isAnswerCardExpanded = ref(false)
+const questionStatuses = ref<Array<QuestionStatusType>>([])
+const currentQuestionIndex = computed(() => (progress.value ? progress.value.current - 1 : 0))
 
 // 修复：更宽松的跳转权限，允许跳转到任何题目
 const canJumpToQuestion = computed(() => {
-  return (displayMode.value === 'question' || isViewingHistory.value) && !loadingSubmit.value;
-});
+  return (displayMode.value === 'question' || isViewingHistory.value) && !loadingSubmit.value
+})
 
 const visibleQuestions = computed<QuestionStatus[]>(() => {
-  if (!progress.value) return []; // Guard against progress being null
-  const totalActualQuestions = progress.value.total; // This should be total in current round
+  if (!progress.value) return [] // Guard against progress being null
+  const totalActualQuestions = progress.value.total // This should be total in current round
 
   // If questionStatuses hasn't caught up with totalActualQuestions, initialize/resize it
   if (questionStatuses.value.length !== totalActualQuestions && totalActualQuestions > 0) {
     // This is a temporary fix. Ideally, questionStatuses is always in sync or derived differently.
     // For now, we fill with unanswered if it's out of sync.
-    const newStatuses = new Array(totalActualQuestions).fill(QUESTION_STATUS.UNANSWERED);
+    const newStatuses = new Array(totalActualQuestions).fill(QUESTION_STATUS.UNANSWERED)
     // Preserve existing statuses if possible (e.g. if total decreased, this won't happen often)
     for (let i = 0; i < Math.min(questionStatuses.value.length, totalActualQuestions); i++) {
-      newStatuses[i] = questionStatuses.value[i];
+      newStatuses[i] = questionStatuses.value[i]
     }
     // eslint-disable-next-line vue/no-side-effects-in-computed-properties
-    questionStatuses.value = newStatuses;
+    questionStatuses.value = newStatuses
   }
 
-  const statusesToDisplay = questionStatuses.value.slice(0, totalActualQuestions);
+  const statusesToDisplay = questionStatuses.value.slice(0, totalActualQuestions)
 
   if (isAnswerCardExpanded.value) {
     return statusesToDisplay.map((status, index) => ({
       status,
       number: index + 1,
-      isCurrent: index === currentQuestionIndex.value
-    }));
+      isCurrent: index === currentQuestionIndex.value,
+    }))
   }
 
-  const currentIndex = currentQuestionIndex.value;
-  const displayCount = 15; // Number of items to show when collapsed
-  const halfDisplay = Math.floor(displayCount / 2);
+  const currentIndex = currentQuestionIndex.value
+  const displayCount = 15 // Number of items to show when collapsed
+  const halfDisplay = Math.floor(displayCount / 2)
 
-  let startIndex = Math.max(0, currentIndex - halfDisplay);
-  const endIndex = Math.min(totalActualQuestions, startIndex + displayCount);
+  let startIndex = Math.max(0, currentIndex - halfDisplay)
+  const endIndex = Math.min(totalActualQuestions, startIndex + displayCount)
 
   if (endIndex - startIndex < displayCount && totalActualQuestions >= displayCount) {
-    startIndex = Math.max(0, endIndex - displayCount);
+    startIndex = Math.max(0, endIndex - displayCount)
   }
 
   return statusesToDisplay.slice(startIndex, endIndex).map((status, index) => ({
     status,
     number: startIndex + index + 1,
-    isCurrent: (startIndex + index) === currentIndex
-  }));
-});
+    isCurrent: startIndex + index === currentIndex,
+  }))
+})
 
 const initializeQuestionStatuses = (totalQuestions: number) => {
   if (totalQuestions > 0) {
-    questionStatuses.value = new Array(totalQuestions).fill(QUESTION_STATUS.UNANSWERED);
+    questionStatuses.value = new Array(totalQuestions).fill(QUESTION_STATUS.UNANSWERED)
   }
-};
+}
 
 const updateQuestionStatus = (index: number, isCorrect: boolean) => {
   if (index >= 0 && index < questionStatuses.value.length) {
-    questionStatuses.value[index] = isCorrect ? QUESTION_STATUS.CORRECT : QUESTION_STATUS.WRONG;
+    questionStatuses.value[index] = isCorrect ? QUESTION_STATUS.CORRECT : QUESTION_STATUS.WRONG
   }
-};
+}
 
 // Watch for changes in total questions to initialize/reset statuses
-watch(() => progress.value?.total, (newTotal) => {
-  if (newTotal && newTotal > 0) {
-    // Only initialize if the number of statuses doesn't match or is empty
-    // This prevents re-initializing on round changes if total is coincidentally the same
-    if (questionStatuses.value.length !== newTotal) {
-      initializeQuestionStatuses(newTotal);
+watch(
+  () => progress.value?.total,
+  (newTotal) => {
+    if (newTotal && newTotal > 0) {
+      // Only initialize if the number of statuses doesn't match or is empty
+      // This prevents re-initializing on round changes if total is coincidentally the same
+      if (questionStatuses.value.length !== newTotal) {
+        initializeQuestionStatuses(newTotal)
+      }
+    } else {
+      questionStatuses.value = [] // Clear statuses if no questions
     }
-  } else {
-    questionStatuses.value = []; // Clear statuses if no questions
-  }
-}, { immediate: true }); // Immediate true to run on mount if progress is already there
+  },
+  { immediate: true },
+) // Immediate true to run on mount if progress is already there
 
 // 修复jumpToQuestion函数，优化历史记录获取和跳转逻辑
 const jumpToQuestion = async (index: number) => {
-  loading.value = true;
+  // 清除自动跳转定时器
+  clearAutoNextTimer()
+
+  loading.value = true
 
   try {
     // 检查索引有效性
     if (index < 0 || index >= questionStatuses.value.length) {
-      toast.error('题目索引无效', { timeout: 3000 });
-      return;
+      toast.error('题目索引无效', { timeout: 3000 })
+      return
     }
 
     // 获取题目状态
-    const questionStatus = questionStatuses.value[index];
-    const isAnswered = !isUnansweredStatus(questionStatus);
+    const questionStatus = questionStatuses.value[index]
+    const isAnswered = !isUnansweredStatus(questionStatus)
 
     // 如果是已答题目，优先尝试获取历史记录
     if (isAnswered) {
-      console.log(`题目 ${index + 1} 已作答，尝试获取历史记录...`);
+      console.log(`题目 ${index + 1} 已作答，尝试获取历史记录...`)
 
       try {
-        const historyResponse = await apiService.getQuestionHistory(index);
+        const historyResponse = await apiService.getQuestionHistory(index)
 
         if (historyResponse.success && historyResponse.question && historyResponse.feedback) {
-          console.log(`成功获取题目 ${index + 1} 的历史记录`);
+          console.log(`成功获取题目 ${index + 1} 的历史记录`)
 
           // 设置题目和反馈数据
-          question.value = historyResponse.question;
-          currentFeedback.value = historyResponse.feedback;
+          question.value = historyResponse.question
+          currentFeedback.value = historyResponse.feedback
 
           // 更新进度信息
           if (progress.value) {
-            progress.value.current = index + 1;
+            progress.value.current = index + 1
           }
 
           // 切换到反馈模式，标记为查看历史
-          displayMode.value = 'feedback';
-          isViewingHistory.value = true;
+          displayMode.value = 'feedback'
+          isViewingHistory.value = true
 
           // 重置选择状态
-          selectedAnswer.value = '';
-          selectedAnswers.value = new Set();
+          selectedAnswer.value = ''
+          selectedAnswers.value = new Set()
 
-          console.log(`已切换到题目 ${index + 1} 的历史记录显示`);
-          return;
+          console.log(`已切换到题目 ${index + 1} 的历史记录显示`)
+          return
         } else {
-          console.warn(`获取题目 ${index + 1} 历史记录失败:`, historyResponse.message);
+          console.warn(`获取题目 ${index + 1} 历史记录失败:`, historyResponse.message)
           // 如果获取历史失败，继续正常跳转流程
         }
       } catch (error) {
-        console.error(`获取题目 ${index + 1} 历史记录时出错:`, error);
+        console.error(`获取题目 ${index + 1} 历史记录时出错:`, error)
         // 如果获取历史出错，继续正常跳转流程
       }
     }
 
     // 对于未答题目或获取历史失败的情况，执行正常跳转
-    console.log(`正常跳转到题目 ${index + 1}...`);
+    console.log(`正常跳转到题目 ${index + 1}...`)
 
     // 如果当前在查看历史，先清除查看历史状态
     if (isViewingHistory.value) {
-      isViewingHistory.value = false;
+      isViewingHistory.value = false
     }
 
     // 调用后端API跳转
-    const response = await apiService.jumpToQuestion(index);
+    const response = await apiService.jumpToQuestion(index)
     if (response.success) {
-      console.log(`成功跳转到题目 ${index + 1}`);
+      console.log(`成功跳转到题目 ${index + 1}`)
       // 重新加载当前题目
-      await loadQuestion();
+      await loadQuestion()
     } else {
-      console.error(`跳转到题目 ${index + 1} 失败:`, response.message);
+      console.error(`跳转到题目 ${index + 1} 失败:`, response.message)
       toast.error(response.message || '跳转失败', {
-        timeout: 3000
-      });
+        timeout: 3000,
+      })
     }
   } catch (error) {
-    console.error('Error jumping to question:', error);
+    console.error('Error jumping to question:', error)
     toast.error(error instanceof Error ? error.message : '跳转失败', {
-      timeout: 4000
-    });
+      timeout: 4000,
+    })
   } finally {
-    loading.value = false;
+    loading.value = false
   }
-};
+}
 
 // 同步答题卡状态 - 增加调试信息
 const syncQuestionStatuses = async () => {
   try {
-    const statusResponse = await apiService.getQuestionStatuses();
+    const statusResponse = await apiService.getQuestionStatuses()
     if (statusResponse.success && statusResponse.statuses.length > 0) {
       // 只有当状态不同时才更新，避免不必要的重渲染
-      const currentStatusStr = JSON.stringify(questionStatuses.value);
-      const newStatusStr = JSON.stringify(statusResponse.statuses);
+      const currentStatusStr = JSON.stringify(questionStatuses.value)
+      const newStatusStr = JSON.stringify(statusResponse.statuses)
 
       if (currentStatusStr !== newStatusStr) {
-        questionStatuses.value = [...statusResponse.statuses];
+        questionStatuses.value = [...statusResponse.statuses]
       }
     }
   } catch (error) {
-    console.warn('同步答题卡状态失败:', error);
+    console.warn('同步答题卡状态失败:', error)
     // 静默处理同步错误，不影响用户体验
   }
-};
+}
 
 const hasLeftOverflow = computed(() => {
-  if (isAnswerCardExpanded.value || !progress.value) return false;
-  const currentIndex = currentQuestionIndex.value;
-  const displayCount = 15;
-  const halfDisplay = Math.floor(displayCount / 2);
-  const startIndex = Math.max(0, currentIndex - halfDisplay);
-  return startIndex > 0;
-});
+  if (isAnswerCardExpanded.value || !progress.value) return false
+  const currentIndex = currentQuestionIndex.value
+  const displayCount = 15
+  const halfDisplay = Math.floor(displayCount / 2)
+  const startIndex = Math.max(0, currentIndex - halfDisplay)
+  return startIndex > 0
+})
 
 const hasRightOverflow = computed(() => {
-  if (isAnswerCardExpanded.value || !progress.value) return false;
-  const currentIndex = currentQuestionIndex.value;
-  const totalQuestions = progress.value.total;
-  const displayCount = 15;
-  const halfDisplay = Math.floor(displayCount / 2);
-  let startIndex = Math.max(0, currentIndex - halfDisplay);
-  const endIndex = Math.min(totalQuestions, startIndex + displayCount);
+  if (isAnswerCardExpanded.value || !progress.value) return false
+  const currentIndex = currentQuestionIndex.value
+  const totalQuestions = progress.value.total
+  const displayCount = 15
+  const halfDisplay = Math.floor(displayCount / 2)
+  let startIndex = Math.max(0, currentIndex - halfDisplay)
+  const endIndex = Math.min(totalQuestions, startIndex + displayCount)
 
   if (endIndex - startIndex < displayCount && totalQuestions >= displayCount) {
-    startIndex = Math.max(0, endIndex - displayCount);
+    startIndex = Math.max(0, endIndex - displayCount)
   }
 
-  return endIndex < totalQuestions;
-});
+  return endIndex < totalQuestions
+})
 
 const showQuestionHistory = async (index: number) => {
   try {
-    const historyResponse = await apiService.getQuestionHistory(index);
+    const historyResponse = await apiService.getQuestionHistory(index)
 
     if (historyResponse.success && historyResponse.question && historyResponse.feedback) {
       // 设置题目和反馈数据
-      question.value = historyResponse.question;
-      currentFeedback.value = historyResponse.feedback;
-      displayMode.value = 'feedback';
-      isViewingHistory.value = true;  // 标记为查看历史状态
+      question.value = historyResponse.question
+      currentFeedback.value = historyResponse.feedback
+      displayMode.value = 'feedback'
+      isViewingHistory.value = true // 标记为查看历史状态
 
       // 重置选择状态（历史记录不需要选择）
-      selectedAnswer.value = '';
-      selectedAnswers.value = new Set();
+      selectedAnswer.value = ''
+      selectedAnswers.value = new Set()
     } else {
       toast.error('无法获取该题的答题记录', {
-        timeout: 3000
-      });
+        timeout: 3000,
+      })
     }
   } catch (error) {
     toast.error('获取答题历史失败', {
-      timeout: 3000
-    });
+      timeout: 3000,
+    })
   }
-};
+}
 
+const getUserAnswerFromTFDisplay = (display: string): string => {
+  // 从判断题用户答案显示中提取实际答案
+  // 可能的格式：
+  // - "T" 或 "F" (直接答案)
+  // - "T. 正确" 或 "F. 错误" (带选项文本)
+  // - "正确" 或 "错误" (只有文本)
+  // - "未作答（直接查看答案）"
+
+  if (!display) return ''
+
+  // 如果包含"未作答"，返回空
+  if (display.includes('未作答')) return ''
+
+  // 如果显示内容包含"正确"，返回T
+  if (display.includes('正确')) return 'T'
+
+  // 如果显示内容包含"错误"，返回F
+  if (display.includes('错误')) return 'F'
+
+  // 如果是单个字母T或F，直接返回
+  const trimmed = display.trim().toUpperCase()
+  if (trimmed === 'T' || trimmed === 'F') return trimmed
+
+  // 如果格式是"T. xxx"或"F. xxx"，提取第一个字母
+  const match = display.match(/^([TF])\./)
+  if (match) return match[1]
+
+  return ''
+}
+
+const goToNextQuestion = () => {
+  if (progress.value && currentQuestionIndex.value < progress.value.total - 1) {
+    jumpToQuestion(currentQuestionIndex.value + 1)
+  }
+}
+
+const goToPreviousQuestion = () => {
+  if (progress.value && currentQuestionIndex.value > 0) {
+    jumpToQuestion(currentQuestionIndex.value - 1)
+  }
+}
+
+// 自动跳转相关函数
+const startAutoNextTimer = () => {
+  showAutoNextHint.value = true
+  autoNextCountdown.value = 2
+
+  const countdownInterval = setInterval(() => {
+    autoNextCountdown.value -= 0.1
+    if (autoNextCountdown.value <= 0) {
+      clearInterval(countdownInterval)
+      executeAutoNext()
+    }
+  }, 100)
+
+  autoNextTimer.value = countdownInterval
+}
+
+const clearAutoNextTimer = () => {
+  if (autoNextTimer.value) {
+    clearInterval(autoNextTimer.value)
+    autoNextTimer.value = null
+  }
+  showAutoNextHint.value = false
+  autoNextCountdown.value = 0
+}
+
+const executeAutoNext = () => {
+  clearAutoNextTimer()
+  if (progress.value && currentQuestionIndex.value < progress.value.total - 1) {
+    goToNextQuestion()
+  }
+}
+
+// 在组件卸载时清理定时器
+onBeforeUnmount(() => {
+  clearAutoNextTimer()
+})
 </script>
 
 <style scoped>
@@ -1179,15 +1454,15 @@ const showQuestionHistory = async (index: number) => {
 }
 
 .question-type-badge.multiple-choice-badge {
-  background: linear-gradient(135deg, #8B5CF6, #C084FC);
+  background: linear-gradient(135deg, #8b5cf6, #c084fc);
 }
 
 .question-type-badge.single-choice-badge {
-  background: linear-gradient(135deg, #3B82F6, #60A5FA);
+  background: linear-gradient(135deg, #3b82f6, #60a5fa);
 }
 
 .question-type-badge.true-false-badge {
-  background: linear-gradient(135deg, #10B981, #34D399);
+  background: linear-gradient(135deg, #10b981, #34d399);
 }
 
 .options-grid {
@@ -1461,7 +1736,11 @@ const showQuestionHistory = async (index: number) => {
 }
 
 @keyframes bounce {
-  0%, 20%, 50%, 80%, 100% {
+  0%,
+  20%,
+  50%,
+  80%,
+  100% {
     transform: translateY(0);
   }
   40% {
@@ -1692,12 +1971,22 @@ const showQuestionHistory = async (index: number) => {
 /* 当同时有左右溢出时，加强遮罩效果 */
 .answer-card-grid-container:not(.expanded).has-left-overflow.has-right-overflow::before {
   width: 25px;
-  background: linear-gradient(to right, rgba(255, 255, 255, 0.98), rgba(255, 255, 255, 0.6), transparent);
+  background: linear-gradient(
+    to right,
+    rgba(255, 255, 255, 0.98),
+    rgba(255, 255, 255, 0.6),
+    transparent
+  );
 }
 
 .answer-card-grid-container:not(.expanded).has-left-overflow.has-right-overflow::after {
   width: 25px;
-  background: linear-gradient(to left, rgba(255, 255, 255, 0.98), rgba(255, 255, 255, 0.6), transparent);
+  background: linear-gradient(
+    to left,
+    rgba(255, 255, 255, 0.98),
+    rgba(255, 255, 255, 0.6),
+    transparent
+  );
 }
 
 .answer-card-grid {
@@ -1824,12 +2113,12 @@ const showQuestionHistory = async (index: number) => {
 }
 
 .empty-state-message {
-    padding: 1rem;
-    text-align: center;
-    color: #6b7280;
-    background-color: #f3f4f6;
-    border-radius: 8px;
-    margin-top: 1rem;
+  padding: 1rem;
+  text-align: center;
+  color: #6b7280;
+  background-color: #f3f4f6;
+  border-radius: 8px;
+  margin-top: 1rem;
 }
 
 .knowledge-points {
@@ -2519,12 +2808,22 @@ const showQuestionHistory = async (index: number) => {
 
   .answer-card-grid-container:not(.expanded).has-left-overflow.has-right-overflow::before {
     width: 15px;
-    background: linear-gradient(to right, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.5), transparent);
+    background: linear-gradient(
+      to right,
+      rgba(255, 255, 255, 0.95),
+      rgba(255, 255, 255, 0.5),
+      transparent
+    );
   }
 
   .answer-card-grid-container:not(.expanded).has-left-overflow.has-right-overflow::after {
     width: 15px;
-    background: linear-gradient(to left, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.5), transparent);
+    background: linear-gradient(
+      to left,
+      rgba(255, 255, 255, 0.95),
+      rgba(255, 255, 255, 0.5),
+      transparent
+    );
   }
 
   .practice-title h1 {
@@ -2563,5 +2862,216 @@ const showQuestionHistory = async (index: number) => {
     padding: var(--space-3);
     border-radius: 8px;
   }
+}
+
+/* 答题卡操作按钮区域 */
+.answer-card-actions {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid #e5e7eb;
+}
+
+.navigation-buttons {
+  display: flex;
+  gap: 1rem;
+}
+
+.btn-answer-card-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  background: linear-gradient(135deg, #3b82f6, #60a5fa);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  min-height: 44px;
+  flex: 1;
+}
+
+.btn-answer-card-action:hover:not(:disabled) {
+  background: linear-gradient(135deg, #2563eb, #3b82f6);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.25);
+}
+
+.btn-answer-card-action:disabled {
+  background: #9ca3af;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.btn-answer-card-action .action-icon {
+  font-size: 1.1rem;
+  font-weight: bold;
+}
+
+/* 返回当前题按钮的特殊样式 */
+.btn-return {
+  width: 100%;
+}
+
+.btn-return .action-icon {
+  color: #e0f2fe;
+}
+
+/* 移动端响应式优化 */
+@media (max-width: 768px) {
+  .practice-container {
+    margin: 0.5rem auto;
+    padding: 1rem;
+    border-radius: 12px;
+  }
+
+  .practice-layout {
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .answer-card-panel {
+    order: -1;
+    position: static;
+    width: 100%;
+    border-radius: 12px;
+    padding: 1rem;
+    margin-bottom: 0;
+  }
+
+  .answer-card-grid-container {
+    height: auto;
+    max-height: none;
+  }
+
+  .answer-card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(42px, 1fr));
+    gap: 0.5rem;
+    padding: 0.5rem 0;
+  }
+
+  .navigation-buttons {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .btn-answer-card-action {
+    padding: 0.625rem 0.875rem;
+    font-size: 0.85rem;
+    min-height: 40px;
+  }
+
+  .page-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 1rem;
+  }
+
+  .progress-bar-wrapper {
+    min-width: unset;
+    width: 100%;
+  }
+
+  .question-section,
+  .feedback-section {
+    padding: 1.25rem;
+  }
+
+  .question-text {
+    font-size: 1.1rem;
+    padding: 1rem;
+    flex-direction: column;
+    gap: 0.75rem;
+    align-items: flex-start;
+  }
+
+  .option-label {
+    padding: 0.875rem;
+    padding-left: 2.75rem;
+  }
+
+  .action-buttons {
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .btn {
+    width: 100%;
+    padding: 0.875rem 1.25rem;
+  }
+
+  .answer-card-title h3 {
+    font-size: 1.125rem;
+  }
+
+  .answer-card-legend {
+    justify-content: center;
+    gap: 1rem;
+  }
+
+  .question-number-btn {
+    height: 42px;
+    font-size: 0.85rem;
+  }
+}
+
+.auto-next-hint {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 1rem 1.5rem;
+  background: linear-gradient(135deg, #f0f9ff, #e0f2fe);
+  border: 1px solid #0ea5e9;
+  border-radius: 8px;
+  margin: 1rem 0;
+  animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.auto-next-hint .hint-icon {
+  font-size: 1.25rem;
+}
+
+.auto-next-hint .hint-text {
+  font-size: 0.95rem;
+  color: #0369a1;
+  font-weight: 500;
+  flex: 1;
+  text-align: center;
+}
+
+.btn-cancel-auto {
+  background: linear-gradient(135deg, #3b82f6, #60a5fa);
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  min-width: 60px;
+}
+
+.btn-cancel-auto:hover {
+  background: linear-gradient(135deg, #2563eb, #3b82f6);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.25);
 }
 </style>

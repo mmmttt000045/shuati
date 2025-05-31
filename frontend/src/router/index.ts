@@ -5,6 +5,7 @@ import PracticePage from '@/components/PracticePage.vue';
 import CompletedPage from '@/components/CompletedPage.vue';
 import LoginPage from '@/components/LoginPage.vue';
 import RegisterPage from '@/components/RegisterPage.vue';
+import NotFoundPage from '@/components/NotFoundPage.vue';
 import { useAuthStore } from '@/stores/auth';
 
 const routes: RouteRecordRaw[] = [
@@ -67,8 +68,22 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/404',
+    name: 'notFound',
+    component: NotFoundPage,
+    meta: {
+      title: '页面未找到',
+      requiresAuth: false
+    }
+  },
+  {
     path: '/:pathMatch(.*)*',
-    redirect: '/'
+    name: 'catchAll',
+    component: NotFoundPage,
+    meta: {
+      title: '页面未找到',
+      requiresAuth: false
+    }
   }
 ];
 

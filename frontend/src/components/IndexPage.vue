@@ -59,9 +59,10 @@
             <button class="back-button" @click="goBackToSubjects">
               <span class="back-arrow">←</span> 返回科目列表
             </button>
+            <h2 class="selected-subject-title">{{ selectedSubject }}</h2>
           </div>
 
-          <h2 class="selected-subject-title">{{ selectedSubject }}</h2>
+
 
           <!-- 题目顺序选择 -->
           <div class="order-selection">

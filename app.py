@@ -1049,7 +1049,13 @@ def format_answer_display(answer: str, options: dict, is_multiple_choice: bool) 
     格式化答案显示
     """
     if not options:
-        return answer
+        # 判断题的特殊处理
+        if answer.upper() == 'T':
+            return 'T. 正确'
+        elif answer.upper() == 'F':
+            return 'F. 错误'
+        else:
+            return answer
 
     if is_multiple_choice:
         # 多选题显示格式：A. 选项1 + B. 选项2

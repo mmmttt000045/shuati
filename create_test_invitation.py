@@ -7,7 +7,7 @@ from connectDB import create_invitation_code
 
 def main():
     # 创建一个测试邀请码，有效期30天
-    invitation_code = "TEST2024"
+    invitation_code = "guoyuan"
     expires_days = 30
     
     print(f"正在创建邀请码: {invitation_code}")

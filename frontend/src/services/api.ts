@@ -61,6 +61,23 @@ export interface SubjectFile {
   modified_time?: string;
 }
 
+export interface Pagination {
+  page: number;
+  per_page: number;
+  total: number;
+  total_pages: number;
+  has_prev: boolean;
+  has_next: boolean;
+}
+
+export interface UserSearchParams {
+  search?: string;
+  order_by?: string;
+  order_dir?: 'asc' | 'desc';
+  page?: number;
+  per_page?: number;
+}
+
 export interface ApiService {
   getFileOptions(): Promise<SubjectsResponse>;
   startPractice(subject: string, fileName: string, forceRestart?: boolean, shuffleQuestions?: boolean): Promise<{ message: string; success: boolean; resumed?: boolean }>;
@@ -113,7 +130,7 @@ export interface ApiService {
   // 管理员API
   admin: {
     getStats(): Promise<{ success: boolean; stats?: AdminStats; message?: string }>;
-    getUsers(): Promise<{ success: boolean; users?: AdminUser[]; message?: string }>;
+    getUsers(params?: UserSearchParams): Promise<{ success: boolean; users?: AdminUser[]; pagination?: Pagination; message?: string }>;
     toggleUser(userId: number): Promise<{ success: boolean; is_enabled?: boolean; message?: string }>;
     updateUserModel(userId: number, model: number): Promise<{ success: boolean; model?: number; message?: string }>;
     getInvitations(): Promise<{ success: boolean; invitations?: AdminInvitation[]; message?: string }>;
@@ -326,9 +343,10 @@ class ApiServiceImpl implements ApiService {
       return this.handleResponse<{ success: boolean; stats?: AdminStats; message?: string }>(response);
     },
 
-    getUsers: async (): Promise<{ success: boolean; users?: AdminUser[]; message?: string }> => {
-      const response = await this.fetchWithCredentials(`${API_BASE}/admin/users`);
-      return this.handleResponse<{ success: boolean; users?: AdminUser[]; message?: string }>(response);
+    getUsers: async (params?: UserSearchParams): Promise<{ success: boolean; users?: AdminUser[]; pagination?: Pagination; message?: string }> => {
+      const queryParams = new URLSearchParams(params as any).toString();
+      const response = await this.fetchWithCredentials(`${API_BASE}/admin/users?${queryParams}`);
+      return this.handleResponse<{ success: boolean; users?: AdminUser[]; pagination?: Pagination; message?: string }>(response);
     },
 
     toggleUser: async (userId: number): Promise<{ success: boolean; is_enabled?: boolean; message?: string }> => {

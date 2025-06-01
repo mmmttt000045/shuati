@@ -5,7 +5,7 @@ import random
 import threading  # 用于后台线程
 import time  # 用于定期任务
 import traceback  # 用于更详细的错误打印
-from datetime import timedelta
+from datetime import timedelta, datetime
 from typing import List, Dict, Optional, Union, Any
 from functools import wraps
 
@@ -1099,21 +1099,63 @@ def api_admin_get_users():
     try:
         from connectDB import get_db_connection
         
+        # 获取查询参数
+        search = request.args.get('search', '').strip()
+        order_by = request.args.get('order_by', 'id')
+        order_dir = request.args.get('order_dir', 'desc')
+        page = max(1, int(request.args.get('page', 1)))
+        per_page = min(100, max(10, int(request.args.get('per_page', 20))))
+        
+        # 验证排序字段
+        valid_order_fields = ['id', 'username', 'created_at', 'last_time_login', 'model']
+        if order_by not in valid_order_fields:
+            order_by = 'id'
+        
+        # 验证排序方向
+        if order_dir.lower() not in ['asc', 'desc']:
+            order_dir = 'desc'
+        
         connection = get_db_connection()
         if not connection:
             raise Exception("数据库连接失败")
         
         cursor = connection.cursor()
         
-        query = """
+        # 构建查询条件
+        where_conditions = []
+        query_params = []
+        
+        if search:
+            where_conditions.append("u.username LIKE %s")
+            query_params.append(f"%{search}%")
+        
+        where_clause = "WHERE " + " AND ".join(where_conditions) if where_conditions else ""
+        
+        # 计算总数
+        count_query = f"""
+        SELECT COUNT(*) as total
+        FROM user_accounts u
+        {where_clause}
+        """
+        cursor.execute(count_query, query_params)
+        total_count = cursor.fetchone()[0]
+        
+        # 计算分页信息
+        total_pages = (total_count + per_page - 1) // per_page
+        offset = (page - 1) * per_page
+        
+        # 获取用户列表
+        query = f"""
         SELECT 
             u.id, u.username, u.is_enabled, u.created_at, u.last_time_login, u.model,
             i.code as invitation_code
         FROM user_accounts u
         LEFT JOIN invitation_codes i ON u.used_invitation_code_id = i.id
-        ORDER BY u.created_at DESC
+        {where_clause}
+        ORDER BY u.{order_by} {order_dir.upper()}
+        LIMIT %s OFFSET %s
         """
-        cursor.execute(query)
+        cursor.execute(query, query_params + [per_page, offset])
         users_data = cursor.fetchall()
         
         users = []
@@ -1129,7 +1171,19 @@ def api_admin_get_users():
                 'invitation_code': invitation_code
             })
         
-        return create_response(True, data={'users': users})
+        pagination = {
+            'page': page,
+            'per_page': per_page,
+            'total': total_count,
+            'total_pages': total_pages,
+            'has_prev': page > 1,
+            'has_next': page < total_pages
+        }
+        
+        return create_response(True, data={
+            'users': users,
+            'pagination': pagination
+        })
         
     except Exception as e:
         logger.error(f"Error getting users: {e}")

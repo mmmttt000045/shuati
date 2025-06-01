@@ -57,10 +57,47 @@
       <div class="section-header">
         <h2 class="section-title">👥 用户管理</h2>
         <div class="section-actions">
-          <button class="refresh-btn" @click="loadUsers" :disabled="loading">
+          <button class="refresh-btn" @click="() => loadUsers()" :disabled="loading">
             <span class="btn-icon">🔄</span>
             刷新列表
           </button>
+        </div>
+      </div>
+
+      <!-- 搜索和筛选区域 -->
+      <div class="search-controls">
+        <div class="search-group">
+          <div class="search-input-wrapper">
+            <input
+              type="text"
+              class="search-input"
+              placeholder="搜索用户名..."
+              :value="userSearchParams.search"
+              @input="handleSearch(($event.target as HTMLInputElement).value)"
+            >
+            <button 
+              v-if="userSearchParams.search"
+              class="clear-search-btn"
+              @click="clearSearch"
+              title="清除搜索"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+        
+        <div class="filter-group">
+          <label class="filter-label">每页显示:</label>
+          <select 
+            class="page-size-select" 
+            :value="userSearchParams.per_page"
+            @change="changePageSize(parseInt(($event.target as HTMLSelectElement).value))"
+          >
+            <option value="10">10条</option>
+            <option value="20">20条</option>
+            <option value="50">50条</option>
+            <option value="100">100条</option>
+          </select>
         </div>
       </div>
 
@@ -68,19 +105,44 @@
 
       <div v-else-if="users.length === 0" class="empty-state">
         <div class="empty-icon">👤</div>
-        <p>暂无用户数据</p>
+        <p>{{ userSearchParams.search ? '没有找到匹配的用户' : '暂无用户数据' }}</p>
       </div>
 
       <div v-else class="users-table-container">
         <table class="users-table">
           <thead>
             <tr>
-              <th>ID</th>
-              <th>用户名</th>
-              <th>权限等级</th>
+              <th class="sortable-header" @click="handleSort('id')">
+                ID
+                <span class="sort-indicator" v-if="userSearchParams.order_by === 'id'">
+                  {{ userSearchParams.order_dir === 'asc' ? '↑' : '↓' }}
+                </span>
+              </th>
+              <th class="sortable-header" @click="handleSort('username')">
+                用户名
+                <span class="sort-indicator" v-if="userSearchParams.order_by === 'username'">
+                  {{ userSearchParams.order_dir === 'asc' ? '↑' : '↓' }}
+                </span>
+              </th>
+              <th class="sortable-header" @click="handleSort('model')">
+                权限等级
+                <span class="sort-indicator" v-if="userSearchParams.order_by === 'model'">
+                  {{ userSearchParams.order_dir === 'asc' ? '↑' : '↓' }}
+                </span>
+              </th>
               <th>状态</th>
-              <th>注册时间</th>
-              <th>最后登录</th>
+              <th class="sortable-header" @click="handleSort('created_at')">
+                注册时间
+                <span class="sort-indicator" v-if="userSearchParams.order_by === 'created_at'">
+                  {{ userSearchParams.order_dir === 'asc' ? '↑' : '↓' }}
+                </span>
+              </th>
+              <th class="sortable-header" @click="handleSort('last_time_login')">
+                最后登录
+                <span class="sort-indicator" v-if="userSearchParams.order_by === 'last_time_login'">
+                  {{ userSearchParams.order_dir === 'asc' ? '↑' : '↓' }}
+                </span>
+              </th>
               <th>邀请码</th>
               <th>操作</th>
             </tr>
@@ -129,6 +191,58 @@
             </tr>
           </tbody>
         </table>
+
+        <!-- 分页控件 -->
+        <div v-if="userPagination" class="pagination-container">
+          <div class="pagination-info">
+            显示第 {{ (userPagination.page - 1) * userPagination.per_page + 1 }} - 
+            {{ Math.min(userPagination.page * userPagination.per_page, userPagination.total) }} 条，
+            共 {{ userPagination.total }} 条记录
+          </div>
+          
+          <div class="pagination-controls">
+            <button 
+              class="pagination-btn"
+              @click="goToPage(1)"
+              :disabled="!userPagination.has_prev"
+            >
+              首页
+            </button>
+            <button 
+              class="pagination-btn"
+              @click="goToPage(userPagination.page - 1)"
+              :disabled="!userPagination.has_prev"
+            >
+              上一页
+            </button>
+            
+            <div class="page-numbers">
+              <button
+                v-for="page in getPageNumbers()"
+                :key="page"
+                :class="['page-number', { active: page === userPagination.page }]"
+                @click="goToPage(page)"
+              >
+                {{ page }}
+              </button>
+            </div>
+            
+            <button 
+              class="pagination-btn"
+              @click="goToPage(userPagination.page + 1)"
+              :disabled="!userPagination.has_next"
+            >
+              下一页
+            </button>
+            <button 
+              class="pagination-btn"
+              @click="goToPage(userPagination.total_pages)"
+              :disabled="!userPagination.has_next"
+            >
+              末页
+            </button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -295,7 +409,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { useToast } from 'vue-toastification'
 import { useAuthStore } from '@/stores/auth'
-import { apiService } from '@/services/api'
+import { apiService, type UserSearchParams, type Pagination } from '@/services/api'
 import Loading from '@/components/Loading.vue'
 
 const toast = useToast()
@@ -308,6 +422,17 @@ const stats = ref<any>(null)
 const users = ref<any[]>([])
 const invitations = ref<any[]>([])
 const subjectFiles = ref<any[]>([])
+
+// 用户搜索和分页参数
+const userSearchParams = ref<UserSearchParams>({
+  search: '',
+  order_by: 'id',
+  order_dir: 'desc',
+  page: 1,
+  per_page: 20
+})
+const userPagination = ref<Pagination | null>(null)
+const searchTimeout = ref<number | null>(null)
 
 // 创建邀请码对话框
 const showCreateInvitationDialog = ref(false)
@@ -347,12 +472,17 @@ const loadStats = async () => {
 }
 
 // 用户管理相关函数
-const loadUsers = async () => {
+const loadUsers = async (resetPage = false) => {
+  if (resetPage) {
+    userSearchParams.value.page = 1
+  }
+  
   loading.value = true
   try {
-    const response = await apiService.admin.getUsers()
+    const response = await apiService.admin.getUsers(userSearchParams.value)
     if (response.success) {
       users.value = response.users || []
+      userPagination.value = response.pagination || null
     } else {
       toast.error(response.message || '获取用户列表失败')
     }
@@ -544,6 +674,70 @@ const formatFileSize = (bytes: number) => {
   const sizes = ['B', 'KB', 'MB', 'GB']
   const i = Math.floor(Math.log(bytes) / Math.log(k))
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
+}
+
+// 搜索相关方法
+const handleSearch = (searchTerm: string) => {
+  userSearchParams.value.search = searchTerm
+  
+  // 清除之前的定时器
+  if (searchTimeout.value) {
+    clearTimeout(searchTimeout.value)
+  }
+  
+  // 设置新的定时器，延迟搜索
+  searchTimeout.value = setTimeout(() => {
+    loadUsers(true)
+  }, 500) as unknown as number
+}
+
+const clearSearch = () => {
+  userSearchParams.value.search = ''
+  loadUsers(true)
+}
+
+// 排序相关方法
+const handleSort = (field: string) => {
+  if (userSearchParams.value.order_by === field) {
+    // 如果是同一个字段，切换排序方向
+    userSearchParams.value.order_dir = userSearchParams.value.order_dir === 'asc' ? 'desc' : 'asc'
+  } else {
+    // 如果是新字段，默认降序
+    userSearchParams.value.order_by = field
+    userSearchParams.value.order_dir = 'desc'
+  }
+  loadUsers(true)
+}
+
+// 分页相关方法
+const goToPage = (page: number) => {
+  if (page >= 1 && userPagination.value && page <= userPagination.value.total_pages) {
+    userSearchParams.value.page = page
+    loadUsers()
+  }
+}
+
+const changePageSize = (size: number) => {
+  userSearchParams.value.per_page = size
+  loadUsers(true)
+}
+
+// 计算分页显示的页码
+const getPageNumbers = () => {
+  if (!userPagination.value) return []
+  
+  const { page, total_pages } = userPagination.value
+  const pages: number[] = []
+  
+  // 显示当前页前后2页
+  const start = Math.max(1, page - 2)
+  const end = Math.min(total_pages, page + 2)
+  
+  for (let i = start; i <= end; i++) {
+    pages.push(i)
+  }
+  
+  return pages
 }
 
 // 组件挂载时加载数据
@@ -813,6 +1007,87 @@ onMounted(async () => {
   opacity: 0.5;
 }
 
+/* 搜索和筛选控件样式 */
+.search-controls {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  padding: 1.5rem;
+  background: #f8fafc;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+}
+
+.search-group {
+  flex: 1;
+  max-width: 400px;
+}
+
+.search-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.search-input {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  padding-right: 2.5rem;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  transition: all 0.2s ease;
+  background: white;
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.clear-search-btn {
+  position: absolute;
+  right: 0.5rem;
+  background: none;
+  border: none;
+  color: #6b7280;
+  cursor: pointer;
+  font-size: 1rem;
+  padding: 0.25rem;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+}
+
+.clear-search-btn:hover {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+.filter-group {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.filter-label {
+  font-size: 0.9rem;
+  color: #374151;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.page-size-select {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: white;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
 /* 表格样式 */
 .users-table-container, .invitations-table-container, .files-table-container {
   overflow-x: auto;
@@ -834,6 +1109,101 @@ onMounted(async () => {
   text-align: left;
   border-bottom: 2px solid #e2e8f0;
   white-space: nowrap;
+}
+
+/* 可排序表头样式 */
+.sortable-header {
+  cursor: pointer;
+  user-select: none;
+  position: relative;
+  transition: all 0.2s ease;
+}
+
+.sortable-header:hover {
+  background: #f1f5f9;
+  color: #1e293b;
+}
+
+.sort-indicator {
+  margin-left: 0.5rem;
+  font-size: 0.8rem;
+  color: #3b82f6;
+  font-weight: bold;
+}
+
+/* 分页样式 */
+.pagination-container {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 1.5rem;
+  background: #f8fafc;
+  border-top: 1px solid #e2e8f0;
+  border-radius: 0 0 12px 12px;
+}
+
+.pagination-info {
+  font-size: 0.9rem;
+  color: #6b7280;
+}
+
+.pagination-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.pagination-btn {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #d1d5db;
+  background: white;
+  color: #374151;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.pagination-btn:hover:not(:disabled) {
+  background: #f3f4f6;
+  border-color: #9ca3af;
+}
+
+.pagination-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.page-numbers {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.page-number {
+  min-width: 2rem;
+  height: 2rem;
+  padding: 0.25rem;
+  border: 1px solid #d1d5db;
+  background: white;
+  color: #374151;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.page-number:hover {
+  background: #f3f4f6;
+  border-color: #9ca3af;
+}
+
+.page-number.active {
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  color: white;
+  border-color: #2563eb;
 }
 
 .users-table td, .invitations-table td, .files-table td {

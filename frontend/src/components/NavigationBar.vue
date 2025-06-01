@@ -138,22 +138,10 @@
           <div 
             v-show="showUserMenu" 
             class="user-menu"
+            :class="{ show: showUserMenu }"
             role="menu"
             @keydown.escape="closeUserMenu"
           >
-            <!-- 用户信息头部 -->
-            <div class="menu-user-header">
-              <div class="menu-user-avatar">
-                <span class="menu-avatar-text">{{ getUserInitial() }}</span>
-              </div>
-              <div class="menu-user-info">
-                <div class="menu-username">{{ authStore.user?.username }}</div>
-                <div class="menu-user-email">{{ getUserEmail() }}</div>
-                <UserBadge v-if="authStore.user" :model="authStore.user.model" />
-              </div>
-            </div>
-            
-            <div class="menu-divider"></div>
             
             <!-- 菜单项 -->
             <router-link 
@@ -297,6 +285,7 @@ const toggleTheme = () => {
   const newTheme = currentTheme === 'dark' ? 'light' : 'dark'
   document.documentElement.setAttribute('data-theme', newTheme)
   localStorage.setItem('theme', newTheme)
+  closeUserMenu() // 切换主题后关闭菜单
 }
 
 // 导航处理
@@ -319,19 +308,26 @@ const closeVipMenu = () => {
 
 // 用户菜单控制
 const toggleUserMenu = () => {
+  console.log('切换用户菜单，当前状态:', showUserMenu.value)
   showUserMenu.value = !showUserMenu.value
   if (showUserMenu.value) {
     showVipMenu.value = false
+    showMobileMenu.value = false
   }
 }
 
 const closeUserMenu = () => {
+  console.log('关闭用户菜单')
   showUserMenu.value = false
 }
 
 // 移动端菜单控制
 const toggleMobileMenu = () => {
   showMobileMenu.value = !showMobileMenu.value
+  if (showMobileMenu.value) {
+    showUserMenu.value = false
+    showVipMenu.value = false
+  }
   // 防止页面滚动
   if (showMobileMenu.value) {
     document.body.style.overflow = 'hidden'
@@ -785,8 +781,15 @@ router.afterEach(handleRouteChange)
   border: 1px solid rgba(0, 0, 0, 0.05);
   z-index: 1001;
   opacity: 0;
-  transform: translateY(-10px);
-  animation: fadeInDown 0.3s ease forwards;
+  transform: translateY(-10px) scale(0.95);
+  visibility: hidden;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.user-menu.show {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  visibility: visible;
 }
 
 .menu-user-header {
@@ -914,6 +917,17 @@ router.afterEach(handleRouteChange)
   }
   to {
     opacity: 1;
+  }
+}
+
+@keyframes fadeInDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
   }
 }
 

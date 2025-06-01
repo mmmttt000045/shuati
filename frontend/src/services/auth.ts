@@ -1,15 +1,8 @@
 import { AUTH_API_BASE_URL } from '@/config/api';
+import type { User, AuthResponse as BaseAuthResponse } from '@/types';
 
-interface AuthUser {
-  user_id: number;
-  username: string;
-}
-
-interface AuthResponse {
-  success: boolean;
-  message?: string;
+interface AuthResponse extends BaseAuthResponse {
   error?: string;
-  user?: AuthUser;
 }
 
 interface RegisterData {
@@ -26,7 +19,7 @@ interface LoginData {
 interface AuthCheckResponse {
   success: boolean;
   authenticated: boolean;
-  user?: AuthUser;
+  user?: User;
   error?: string;
 }
 
@@ -135,4 +128,4 @@ class AuthService {
 }
 
 export const authService = new AuthService();
-export type { AuthUser, AuthResponse, RegisterData, LoginData, AuthCheckResponse }; 
+export type { AuthResponse, RegisterData, LoginData, AuthCheckResponse }; 

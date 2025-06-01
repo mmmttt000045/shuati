@@ -142,6 +142,31 @@ def authenticate_user(username: str, password: str) -> Dict[str, Any]:
         if connection.is_connected():
             connection.close()
 
+def get_user_model(user_id: int) -> Optional[int]:
+    """获取用户模式 0是普通用户 5是vip用户 10是root用户"""
+    connection = get_db_connection()
+    if not connection:
+        return None
+    
+    try:
+        cursor = connection.cursor()
+        query = """
+        SELECT model
+        FROM user_accounts
+        WHERE id = %s
+        """
+        cursor.execute(query, (user_id,))
+        result = cursor.fetchone()
+        return result[0] if result else 0  # 默认返回0（普通用户）
+        
+    except Error:
+        return 0  # 发生错误时返回普通用户身份
+    finally:
+        if cursor:
+            cursor.close()
+        if connection.is_connected():
+            connection.close()
+
 def get_user_info(user_id: int) -> Optional[Dict[str, Any]]:
     """根据用户ID获取用户信息"""
     connection = get_db_connection()
@@ -151,7 +176,7 @@ def get_user_info(user_id: int) -> Optional[Dict[str, Any]]:
     try:
         cursor = connection.cursor()
         query = """
-        SELECT id, username, is_enabled, created_at 
+        SELECT id, username, is_enabled, created_at, model 
         FROM user_accounts 
         WHERE id = %s
         """
@@ -159,12 +184,13 @@ def get_user_info(user_id: int) -> Optional[Dict[str, Any]]:
         user_record = cursor.fetchone()
         
         if user_record:
-            user_id, username, is_enabled, created_at = user_record
+            user_id, username, is_enabled, created_at, model = user_record
             return {
                 "user_id": user_id,
                 "username": username,
                 "is_enabled": is_enabled,
-                "created_at": created_at
+                "created_at": created_at,
+                "model": model if model is not None else 0
             }
         return None
         

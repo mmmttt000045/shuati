@@ -7044,3 +7044,242 @@
 2025-05-31 21:14:37,692 - INFO - Server active. Requests in last 30s: 0
 2025-05-31 21:15:07,693 - INFO - Server active. Requests in last 30s: 0
 2025-05-31 21:15:12,665 - INFO - User logged out: mmmttt
+2025-06-01 03:02:46,836 - INFO - Scanning 'subject' directory for question banks
+2025-06-01 03:02:47,017 - INFO - Loaded 109 questions from 'subject/Java程序设计/判断题.xlsx'
+2025-06-01 03:02:47,025 - INFO - Loaded 20 questions from 'subject/Java程序设计/单项选择1.xlsx'
+2025-06-01 03:02:47,034 - INFO - Loaded 19 questions from 'subject/Java程序设计/单项选择2.xlsx'
+2025-06-01 03:02:47,061 - INFO - Loaded 81 questions from 'subject/Java程序设计/单项选择3.xlsx'
+2025-06-01 03:02:47,082 - INFO - Loaded 165 questions from 'subject/习近平新时代中国特色社会主义思想/导论习题库.xlsx'
+2025-06-01 03:02:47,082 - INFO - Loaded 5 question banks
+2025-06-01 03:02:47,087 - INFO - Starting Flask application on http://127.0.0.1:5051
+2025-06-01 03:02:47,156 - INFO - Using Waitress server
+2025-06-01 03:02:47,157 - INFO - Serving on http://127.0.0.1:5051
+2025-06-01 03:03:17,088 - INFO - Server active. Requests in last 30s: 36
+2025-06-01 03:03:47,088 - INFO - Server active. Requests in last 30s: 4
+2025-06-01 03:04:17,089 - INFO - Server active. Requests in last 30s: 31
+2025-06-01 03:04:47,089 - INFO - Server active. Requests in last 30s: 13
+2025-06-01 03:04:57,106 - INFO - User logged out: mmmttt
+2025-06-01 03:05:17,089 - INFO - Server active. Requests in last 30s: 8
+2025-06-01 03:05:45,839 - INFO - User logged in: mmmttt
+2025-06-01 03:05:47,090 - INFO - Server active. Requests in last 30s: 9
+2025-06-01 03:06:17,091 - INFO - Server active. Requests in last 30s: 27
+2025-06-01 03:06:40,826 - INFO - User logged in: mmmttt
+2025-06-01 03:06:47,092 - INFO - Server active. Requests in last 30s: 18
+2025-06-01 03:07:21,035 - INFO - Scanning 'subject' directory for question banks
+2025-06-01 03:07:21,213 - INFO - Loaded 109 questions from 'subject/Java程序设计/判断题.xlsx'
+2025-06-01 03:07:21,222 - INFO - Loaded 20 questions from 'subject/Java程序设计/单项选择1.xlsx'
+2025-06-01 03:07:21,231 - INFO - Loaded 19 questions from 'subject/Java程序设计/单项选择2.xlsx'
+2025-06-01 03:07:21,250 - INFO - Loaded 81 questions from 'subject/Java程序设计/单项选择3.xlsx'
+2025-06-01 03:07:21,269 - INFO - Loaded 165 questions from 'subject/习近平新时代中国特色社会主义思想/导论习题库.xlsx'
+2025-06-01 03:07:21,269 - INFO - Loaded 5 question banks
+2025-06-01 03:07:21,274 - INFO - Starting Flask application on http://127.0.0.1:5051
+2025-06-01 03:07:21,334 - INFO - Using Waitress server
+2025-06-01 03:07:21,336 - INFO - Serving on http://127.0.0.1:5051
+2025-06-01 03:07:49,815 - INFO - User logged in: mmmttt
+2025-06-01 03:07:51,275 - INFO - Server active. Requests in last 30s: 8
+2025-06-01 03:08:21,275 - INFO - Server active. Requests in last 30s: 26
+2025-06-01 03:08:51,276 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 03:09:21,277 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 11:34:06,876 - INFO - Scanning 'subject' directory for question banks
+2025-06-01 11:34:07,132 - INFO - Loaded 109 questions from 'subject/Java程序设计/判断题.xlsx'
+2025-06-01 11:34:07,142 - INFO - Loaded 20 questions from 'subject/Java程序设计/单项选择1.xlsx'
+2025-06-01 11:34:07,151 - INFO - Loaded 19 questions from 'subject/Java程序设计/单项选择2.xlsx'
+2025-06-01 11:34:07,172 - INFO - Loaded 81 questions from 'subject/Java程序设计/单项选择3.xlsx'
+2025-06-01 11:34:07,190 - INFO - Loaded 165 questions from 'subject/习近平新时代中国特色社会主义思想/导论习题库.xlsx'
+2025-06-01 11:34:07,190 - INFO - Loaded 5 question banks
+2025-06-01 11:34:07,197 - INFO - Starting Flask application on http://127.0.0.1:5051
+2025-06-01 11:34:07,257 - INFO - Using Waitress server
+2025-06-01 11:34:07,259 - INFO - Serving on http://127.0.0.1:5051
+2025-06-01 11:34:37,198 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 11:35:07,198 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 11:35:37,193 - INFO - User logged in: mmmttt
+2025-06-01 11:35:37,199 - INFO - Server active. Requests in last 30s: 5
+2025-06-01 11:36:07,199 - INFO - Server active. Requests in last 30s: 19
+2025-06-01 11:36:37,200 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 11:37:07,201 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 11:37:37,202 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 11:38:07,203 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 11:38:37,204 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 11:39:07,205 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 11:39:37,613 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 11:40:07,613 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 11:40:37,614 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 11:41:07,614 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 11:41:37,615 - INFO - Server active. Requests in last 30s: 16
+2025-06-01 11:42:07,616 - INFO - Server active. Requests in last 30s: 8
+2025-06-01 11:42:37,617 - INFO - Server active. Requests in last 30s: 8
+2025-06-01 11:43:07,617 - INFO - Server active. Requests in last 30s: 2
+2025-06-01 11:43:37,618 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 11:44:07,618 - INFO - Server active. Requests in last 30s: 10
+2025-06-01 11:44:38,001 - INFO - Server active. Requests in last 30s: 20
+2025-06-01 11:45:08,002 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 11:45:38,002 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 11:46:08,003 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 11:46:38,003 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 11:47:08,005 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 11:47:38,005 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 11:48:08,006 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 11:48:38,006 - INFO - Server active. Requests in last 30s: 5
+2025-06-01 11:49:08,007 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 11:49:38,404 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 11:50:08,405 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 11:50:38,406 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 11:51:08,407 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 11:51:38,408 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 11:52:08,410 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 11:52:38,410 - INFO - Server active. Requests in last 30s: 6
+2025-06-01 11:53:08,411 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 11:53:38,411 - INFO - Server active. Requests in last 30s: 6
+2025-06-01 11:54:08,412 - INFO - Server active. Requests in last 30s: 6
+2025-06-01 11:54:38,792 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 11:55:08,792 - INFO - Server active. Requests in last 30s: 2
+2025-06-01 11:55:38,793 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 11:56:08,793 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 11:56:38,794 - INFO - Server active. Requests in last 30s: 2
+2025-06-01 11:57:08,795 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 11:57:38,796 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 11:58:08,797 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 11:58:38,798 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 11:59:08,798 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 11:59:39,178 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:00:09,179 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:00:39,179 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:01:09,180 - INFO - Server active. Requests in last 30s: 5
+2025-06-01 12:01:39,181 - INFO - Server active. Requests in last 30s: 10
+2025-06-01 12:02:09,181 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:02:39,182 - INFO - Server active. Requests in last 30s: 5
+2025-06-01 12:03:09,183 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:03:39,184 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:04:06,700 - INFO - Scanning 'subject' directory for question banks
+2025-06-01 12:04:06,874 - INFO - Loaded 109 questions from 'subject/Java程序设计/判断题.xlsx'
+2025-06-01 12:04:06,882 - INFO - Loaded 20 questions from 'subject/Java程序设计/单项选择1.xlsx'
+2025-06-01 12:04:06,890 - INFO - Loaded 19 questions from 'subject/Java程序设计/单项选择2.xlsx'
+2025-06-01 12:04:06,915 - INFO - Loaded 81 questions from 'subject/Java程序设计/单项选择3.xlsx'
+2025-06-01 12:04:06,938 - INFO - Loaded 165 questions from 'subject/习近平新时代中国特色社会主义思想/导论习题库.xlsx'
+2025-06-01 12:04:06,938 - INFO - Loaded 5 question banks
+2025-06-01 12:04:06,943 - INFO - Starting Flask application on http://127.0.0.1:5051
+2025-06-01 12:04:07,049 - INFO - Using Waitress server
+2025-06-01 12:04:07,050 - INFO - Serving on http://127.0.0.1:5051
+2025-06-01 12:04:36,943 - INFO - Server active. Requests in last 30s: 6
+2025-06-01 12:05:06,944 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:05:36,944 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:06:06,945 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:06:36,946 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:07:06,947 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:07:36,948 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:08:06,949 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:08:36,950 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:09:06,950 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:09:37,345 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:10:07,345 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:10:37,346 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:11:07,346 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:11:37,347 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:12:07,348 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:12:37,349 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:13:07,350 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:13:37,350 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:14:07,351 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:14:37,735 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:15:07,736 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:15:37,736 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:16:07,737 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:16:37,739 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:17:07,739 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:17:37,740 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:18:07,741 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:18:37,742 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:19:07,743 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:19:38,113 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:20:08,114 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:20:38,115 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:21:08,115 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:21:38,116 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:22:08,116 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:22:38,117 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:23:08,117 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:23:38,118 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:24:08,119 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:24:38,535 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:25:08,535 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:25:38,536 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:26:08,537 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:26:38,538 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:27:08,539 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:27:38,540 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:28:08,541 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:28:38,541 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:29:08,542 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:29:38,937 - INFO - Server active. Requests in last 30s: 6
+2025-06-01 12:30:08,939 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:30:38,939 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:31:08,940 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:31:38,941 - INFO - Server active. Requests in last 30s: 12
+2025-06-01 12:32:08,942 - INFO - Server active. Requests in last 30s: 5
+2025-06-01 12:32:38,942 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:33:08,943 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:33:38,944 - INFO - Server active. Requests in last 30s: 6
+2025-06-01 12:34:08,944 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:34:39,342 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:35:09,344 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:35:39,345 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:36:09,345 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:36:39,346 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:37:09,346 - INFO - Server active. Requests in last 30s: 6
+2025-06-01 12:37:39,347 - INFO - Server active. Requests in last 30s: 9
+2025-06-01 12:38:09,348 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:38:39,348 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:39:09,350 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:39:39,745 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:40:09,748 - INFO - Server active. Requests in last 30s: 9
+2025-06-01 12:40:39,748 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:41:09,749 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:41:39,750 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:42:09,751 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:42:39,752 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:43:09,752 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:43:39,753 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:44:09,754 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:44:40,153 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:45:10,153 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:45:40,154 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:46:10,154 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:46:40,155 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:47:10,156 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:47:40,156 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:48:10,157 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:48:40,158 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:49:10,158 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:49:40,586 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:50:10,586 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:50:40,587 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:51:10,588 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:51:40,589 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:52:10,590 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:52:40,590 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:53:10,591 - INFO - Server active. Requests in last 30s: 12
+2025-06-01 12:53:40,591 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:54:10,592 - INFO - Server active. Requests in last 30s: 6
+2025-06-01 12:54:40,998 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:55:11,000 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:55:41,000 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:56:11,001 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:56:41,002 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:57:11,002 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:57:41,003 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:58:11,003 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:58:41,004 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:59:11,005 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 12:59:41,383 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 13:00:11,383 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 13:00:41,384 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 13:01:11,384 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 13:01:41,385 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 13:02:11,385 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 13:02:41,386 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 13:03:11,387 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 13:03:41,387 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 13:04:11,387 - INFO - Server active. Requests in last 30s: 0
+2025-06-01 13:04:41,790 - INFO - Server active. Requests in last 30s: 12
+2025-06-01 13:05:11,791 - INFO - Server active. Requests in last 30s: 4
+2025-06-01 13:05:41,792 - INFO - Server active. Requests in last 30s: 25

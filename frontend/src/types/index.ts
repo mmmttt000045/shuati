@@ -1,5 +1,38 @@
 export type QuestionType = '单选题' | '多选题' | '判断题' | '选择题';
 
+// 用户身份模型常量定义
+export const USER_MODEL = {
+  NORMAL: 0,    // 普通用户
+  VIP: 5,       // VIP用户
+  ROOT: 10      // 管理员
+} as const;
+
+// 用户身份类型
+export type UserModel = typeof USER_MODEL[keyof typeof USER_MODEL];
+
+// 用户身份名称映射
+export const USER_MODEL_NAMES = {
+  [USER_MODEL.NORMAL]: '普通用户',
+  [USER_MODEL.VIP]: 'VIP用户',
+  [USER_MODEL.ROOT]: '管理员'
+} as const;
+
+// 用户信息接口
+export interface User {
+  user_id: number;
+  username: string;
+  is_enabled?: boolean;
+  created_at?: string;
+  model: UserModel;
+}
+
+// 认证响应接口
+export interface AuthResponse {
+  success: boolean;
+  message?: string;
+  user?: User;
+}
+
 // 题目状态常量定义 (与后端保持一致)
 export const QUESTION_STATUS = {
   UNANSWERED: 0,  // 未作答

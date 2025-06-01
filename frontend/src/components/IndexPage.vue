@@ -13,6 +13,7 @@
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
               </svg>
               <span class="username">{{ authStore.user?.username }}</span>
+              <UserBadge v-if="authStore.user" :model="authStore.user.model" />
             </div>
             <button class="logout-btn" @click="handleLogout" :disabled="authStore.isLoading">
               <svg class="logout-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -61,8 +62,6 @@
             </button>
             <h2 class="selected-subject-title">{{ selectedSubject }}</h2>
           </div>
-
-
 
           <!-- 题目顺序选择 -->
           <div class="order-selection">
@@ -219,6 +218,7 @@ import { useToast } from 'vue-toastification'
 import { apiService } from '@/services/api'
 import { useAuthStore } from '@/stores/auth'
 import type { FlashMessage, SubjectFile } from '@/types'
+import UserBadge from '@/components/UserBadge.vue'
 
 const router = useRouter()
 const toast = useToast()
@@ -462,7 +462,7 @@ watch(questionOrder, (newOrder, oldOrder) => {
 .index-page-wrapper .container {
   position: relative;
   width: 100%;
-  max-width: 1200px;
+  max-width: 95%; /* 改为95%以充分利用空间 */
   margin: 0 auto;
   padding: var(--space-8);
   min-height: 100vh;
@@ -477,7 +477,7 @@ watch(questionOrder, (newOrder, oldOrder) => {
   margin-bottom: 2rem;
   padding: 1rem 2rem;
   width: 100%;
-  max-width: 1200px;
+  max-width: 95%; /* 改为95%以充分利用空间 */
   margin-left: auto;
   margin-right: auto;
 }
@@ -510,12 +510,19 @@ watch(questionOrder, (newOrder, oldOrder) => {
 .user-info {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 1rem;
+  gap: 0.75rem;
+  padding: 0.75rem 1.25rem;
   background-color: #f8fafc;
   border-radius: 999px;
   color: #475569;
   font-weight: 500;
+  border: 1px solid #e2e8f0;
+  transition: all 0.2s ease;
+}
+
+.user-info:hover {
+  background-color: #f1f5f9;
+  border-color: #cbd5e1;
 }
 
 .user-icon {
@@ -584,7 +591,7 @@ watch(questionOrder, (newOrder, oldOrder) => {
 
 .messages {
   margin-bottom: 2rem;
-  max-width: 1200px;
+  max-width: 95%; /* 改为95%以充分利用空间 */
   margin-left: auto;
   margin-right: auto;
 }
@@ -651,8 +658,9 @@ watch(questionOrder, (newOrder, oldOrder) => {
   gap: 2rem;
   width: 100%;
   padding: 1rem;
-  max-width: 1200px;
+  max-width: 95%; /* 改为95%以充分利用空间 */
   margin: 0 auto;
+  align-items: stretch; /* 确保所有卡片高度一致 */
 }
 
 .subject-card {
@@ -665,6 +673,11 @@ watch(questionOrder, (newOrder, oldOrder) => {
   border: 2px solid transparent;
   position: relative;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 160px; /* 设置最小高度确保统一 */
+  height: 100%; /* 让卡片填满网格单元格 */
 }
 
 .subject-card::before {
@@ -690,12 +703,28 @@ watch(questionOrder, (newOrder, oldOrder) => {
   opacity: 1;
 }
 
+.subject-title {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: #1e293b;
+  margin-bottom: 1rem; /* 增加标题的下边距，让分割线更靠下 */
+  line-height: 1.3;
+  min-height: 3rem; /* 为标题设置最小高度，约2行文字 */
+  display: -webkit-box;
+  -webkit-line-clamp: 2; /* 限制为最多2行 */
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  word-break: break-word;
+}
+
 .subject-info {
   display: flex;
   justify-content: space-between;
-  margin-top: 1.5rem;
-  padding-top: 1rem;
+  margin-top: auto; /* 推到底部 */
+  padding-top: 0.75rem; /* 调整为0.75rem，在分割线和内容间保持适当间距 */
   border-top: 1px solid #e2e8f0;
+  flex-shrink: 0; /* 防止压缩 */
 }
 
 .subject-count,
@@ -715,16 +744,9 @@ watch(questionOrder, (newOrder, oldOrder) => {
   color: #3b82f6;
 }
 
-.subject-title {
-  font-size: 1.5rem;
-  font-weight: 600;
-  color: #1e293b;
-  margin-bottom: 0.5rem;
-}
-
 .files-container {
   width: 100%;
-  max-width: 1200px;
+  max-width: 95%; /* 改为95%以充分利用空间 */
   margin: 0 auto;
   padding: 2rem;
   background-color: white;
@@ -861,6 +883,7 @@ watch(questionOrder, (newOrder, oldOrder) => {
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   gap: 2rem;
   margin-top: 1rem;
+  align-items: stretch; /* 确保所有卡片高度一致 */
 }
 
 .file-card {
@@ -873,6 +896,10 @@ watch(questionOrder, (newOrder, oldOrder) => {
   border: 2px solid transparent;
   position: relative;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 200px; /* 设置最小高度 */
+  height: 100%; /* 让卡片填满网格单元格 */
 }
 
 .file-card::before {
@@ -909,6 +936,14 @@ watch(questionOrder, (newOrder, oldOrder) => {
   font-size: 1.5rem;
   font-weight: 600;
   color: #1e293b;
+  line-height: 1.3;
+  min-height: 3rem; /* 为标题设置最小高度，约2行文字 */
+  display: -webkit-box;
+  -webkit-line-clamp: 2; /* 限制为最多2行 */
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  word-break: break-word;
 }
 
 .file-count-badge {
@@ -922,6 +957,10 @@ watch(questionOrder, (newOrder, oldOrder) => {
 
 .file-card-content {
   margin-bottom: 1.5rem;
+  flex: 1; /* 让内容区域占据剩余空间 */
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
 
 .progress-section {
@@ -1061,6 +1100,39 @@ watch(questionOrder, (newOrder, oldOrder) => {
   }
 }
 
+/* 超大屏幕优化（新增） */
+@media (min-width: 1920px) {
+  .subjects-list {
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 3rem;
+  }
+
+  .files-grid {
+    grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+    gap: 2.5rem;
+  }
+
+  .subject-card {
+    padding: 3rem;
+    min-height: 180px; /* 超大屏幕下增加最小高度 */
+  }
+
+  .file-card {
+    padding: 2.5rem;
+    min-height: 220px; /* 超大屏幕下增加最小高度 */
+  }
+
+  .files-container {
+    padding: 4rem;
+  }
+  
+  .subject-title,
+  .file-title {
+    font-size: 1.6rem; /* 超大屏幕下稍微增大字体 */
+    min-height: 2.8rem;
+  }
+}
+
 /* 大屏幕优化 */
 @media (min-width: 1400px) {
   .subjects-list {
@@ -1068,8 +1140,14 @@ watch(questionOrder, (newOrder, oldOrder) => {
     gap: 2.5rem;
   }
 
+  .files-grid {
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 2rem;
+  }
+
   .subject-card {
     padding: 2.5rem;
+    min-height: 170px; /* 大屏幕下调整最小高度 */
   }
 
   .files-container {
@@ -1078,6 +1156,7 @@ watch(questionOrder, (newOrder, oldOrder) => {
 
   .file-card {
     padding: 2rem;
+    min-height: 210px; /* 大屏幕下调整最小高度 */
   }
 }
 
@@ -1085,6 +1164,10 @@ watch(questionOrder, (newOrder, oldOrder) => {
 @media (min-width: 1200px) and (max-width: 1399px) {
   .subjects-list {
     grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  }
+  
+  .files-grid {
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   }
 }
 
@@ -1114,6 +1197,47 @@ watch(questionOrder, (newOrder, oldOrder) => {
 @media (max-width: 768px) {
   .container {
     padding: var(--space-4);
+  }
+
+  .user-nav {
+    padding: 0.75rem 1.5rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .nav-content {
+    flex-direction: column;
+    gap: 1rem;
+    align-items: stretch;
+  }
+
+  .nav-title {
+    font-size: 1.25rem;
+    text-align: center;
+  }
+
+  .nav-right {
+    flex-direction: column;
+    gap: 0.75rem;
+    align-items: center;
+  }
+
+  .user-info {
+    padding: 0.5rem 1rem;
+    gap: 0.5rem;
+    font-size: 0.875rem;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .username {
+    font-size: 0.875rem;
+  }
+
+  .logout-btn {
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+    width: 100%;
+    justify-content: center;
   }
 
   .page-title {

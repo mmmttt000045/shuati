@@ -128,12 +128,6 @@
                   <span class="history-text">查看答题历史记录</span>
                 </div>
 
-                <!-- 自动跳转提示 -->
-                <div v-if="showAutoNextHint && !isViewingHistory" class="auto-next-hint">
-                  <span class="hint-icon">⏱️</span>
-                  <span class="hint-text">{{ autoNextCountdownText }}</span>
-                  <button class="btn-cancel-auto" @click="clearAutoNextTimer">取消</button>
-                </div>
 
                 <div class="question-review-content">
                   <h4>题目回顾：</h4>
@@ -807,9 +801,18 @@ const jumpToQuestion = async (index: number) => {
             progress.value.current = index + 1
           }
 
+          // 更新选项数据以确保反馈模式正常显示
+          if (historyResponse.question.options_for_practice) {
+            shuffledMcqOptions.value = { ...historyResponse.question.options_for_practice }
+          } else {
+            shuffledMcqOptions.value = {}
+          }
+
           displayMode.value = 'feedback'
           isViewingHistory.value = true
-          resetState()
+          // 只清除选择状态，不重置反馈数据和显示模式
+          selectedAnswer.value = ''
+          selectedAnswers.value = new Set()
           return
         }
       } catch (error) {
@@ -1756,7 +1759,7 @@ onBeforeUnmount(() => {
 
 /* 答题卡 */
 .answer-card-panel {
-  width: 280px;
+  width: 320px;
   background: white;
   border-radius: 16px;
   padding: 1.5rem;
@@ -1766,11 +1769,17 @@ onBeforeUnmount(() => {
   flex-shrink: 0;
 }
 
-.answer-card-title {
+.answer-card-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   margin-bottom: 1rem;
+}
+
+.answer-card-title {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
 }
 
 .answer-card-title h3 {

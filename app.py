@@ -20,6 +20,7 @@ from connectDB import (
     create_user,
     verify_invitation_code,
     get_user_info,
+    get_user_model,
     create_invitation_code,
     save_user_session,
     load_user_session,
@@ -512,11 +513,15 @@ def api_login():
         load_session_from_db()
         update_session_timestamp(result['user_id'])
 
+        # 获取完整的用户信息，包括身份模型
+        user_info = get_user_info(result['user_id'])
+        
         logger.info(f"User logged in: {username}")
         return create_response(True, '登录成功', {
             'user': {
-                'user_id': result['user_id'],
-                'username': result['username']
+                'user_id': user_info['user_id'] if user_info else result['user_id'],
+                'username': user_info['username'] if user_info else result['username'],
+                'model': user_info.get('model', 0) if user_info else 0
             }
         })
     else:
@@ -551,7 +556,8 @@ def api_get_user_info():
                 'user_id': user_info['user_id'],
                 'username': user_info['username'],
                 'is_enabled': user_info['is_enabled'],
-                'created_at': user_info['created_at'].isoformat() if user_info['created_at'] else None
+                'created_at': user_info['created_at'].isoformat() if user_info['created_at'] else None,
+                'model': user_info.get('model', 0)
             }
         })
     else:
@@ -564,11 +570,16 @@ def api_get_user_info():
 def api_check_auth():
     """检查登录状态"""
     if session.get('user_id'):
+        # 获取完整的用户信息，包括身份模型
+        user_id = session.get('user_id')
+        user_info = get_user_info(user_id)
+        
         return create_response(True, data={
             'authenticated': True,
             'user': {
-                'user_id': session.get('user_id'),
-                'username': session.get('username')
+                'user_id': user_info['user_id'] if user_info else user_id,
+                'username': user_info['username'] if user_info else session.get('username'),
+                'model': user_info.get('model', 0) if user_info else 0
             }
         })
     else:

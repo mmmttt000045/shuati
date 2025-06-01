@@ -1,10 +1,10 @@
 import { ref, computed } from 'vue';
 import { defineStore } from 'pinia';
 import { authService } from '@/services/auth';
-import type { AuthUser } from '@/services/auth';
+import type { User } from '@/types';
 
 export const useAuthStore = defineStore('auth', () => {
-  const user = ref<AuthUser | null>(null);
+  const user = ref<User | null>(null);
   const isLoading = ref(false);
   const error = ref<string | null>(null);
 

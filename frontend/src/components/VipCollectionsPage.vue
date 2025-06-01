@@ -1,6 +1,8 @@
 <template>
   <div class="vip-collections-content">
-    <div class="container">
+    <Loading v-if="loading" text="正在加载错题集..." :fullScreen="true" />
+    
+    <div v-else class="container">
       <h1 class="page-title">错题集管理</h1>
       
       <div class="actions-bar">
@@ -149,7 +151,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
+import Loading from '@/components/Loading.vue'
 
 const searchQuery = ref('')
 const showCreateModal = ref(false)
@@ -161,6 +164,9 @@ const formData = ref({
   description: '',
   tags: [] as string[]
 })
+
+// 添加loading状态
+const loading = ref(true)
 
 // 模拟错题集数据
 const collections = ref([
@@ -298,6 +304,21 @@ const closeModal = () => {
   }
   tagInput.value = ''
 }
+
+// 在onMounted中添加数据加载逻辑
+onMounted(async () => {
+  loading.value = true
+  try {
+    // 模拟API调用延迟
+    await new Promise(resolve => setTimeout(resolve, 1200))
+    // 这里可以调用API获取真实的错题集数据
+    console.log('VIP Collections loaded')
+  } catch (error) {
+    console.error('加载错题集失败:', error)
+  } finally {
+    loading.value = false
+  }
+})
 </script>
 
 <style scoped>

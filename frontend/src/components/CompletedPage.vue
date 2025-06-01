@@ -14,9 +14,7 @@
         </div>
       </div>
 
-      <div v-if="loading" class="loading">
-        加载中...
-      </div>
+      <Loading v-if="loading" text="正在获取练习总结..." />
 
       <div v-else-if="summary" class="summary-card">
         <h2 class="summary-title">练习总结</h2>
@@ -55,6 +53,7 @@ import { useRouter } from 'vue-router';
 import { apiService } from '@/services/api';
 import type { CompletedSummary, FlashMessage } from '@/types';
 import NavigationBar from './NavigationBar.vue';
+import Loading from '@/components/Loading.vue';
 
 const router = useRouter();
 const summary = ref<CompletedSummary | null>(null);
@@ -131,12 +130,6 @@ const goToIndex = () => {
   background-color: #f0f9ff;
   color: #0369a1;
   border: 1px solid #bae6fd;
-}
-
-.loading {
-  text-align: center;
-  padding: 2rem;
-  color: #6b7280;
 }
 
 .summary-card {

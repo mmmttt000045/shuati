@@ -132,13 +132,18 @@
         </div>
       </div>
     </div>
+    
+    <!-- 全屏Loading -->
+    <Loading v-if="loading" :text="exportStatus" :fullScreen="true" />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import Loading from '@/components/Loading.vue'
 
 const loading = ref(false)
+const exportStatus = ref('正在导出...')
 
 const exportOptions = ref({
   includeAnswers: true,
@@ -214,12 +219,14 @@ const filteredQuestions = computed(() => {
 
 const exportToPDF = async () => {
   loading.value = true
+  exportStatus.value = '正在生成PDF文档...'
   try {
     // 模拟导出过程
     await new Promise(resolve => setTimeout(resolve, 2000))
-    alert('PDF 导出成功！')
+    // 这里应该是实际的导出逻辑
+    console.log('导出PDF')
   } catch (error) {
-    alert('导出失败，请重试')
+    console.error('导出失败:', error)
   } finally {
     loading.value = false
   }
@@ -227,11 +234,14 @@ const exportToPDF = async () => {
 
 const exportToExcel = async () => {
   loading.value = true
+  exportStatus.value = '正在生成Excel表格...'
   try {
-    await new Promise(resolve => setTimeout(resolve, 1500))
-    alert('Excel 导出成功！')
+    // 模拟导出过程
+    await new Promise(resolve => setTimeout(resolve, 2000))
+    // 这里应该是实际的导出逻辑
+    console.log('导出Excel')
   } catch (error) {
-    alert('导出失败，请重试')
+    console.error('导出失败:', error)
   } finally {
     loading.value = false
   }
@@ -239,11 +249,14 @@ const exportToExcel = async () => {
 
 const exportToWord = async () => {
   loading.value = true
+  exportStatus.value = '正在生成Word文档...'
   try {
-    await new Promise(resolve => setTimeout(resolve, 1800))
-    alert('Word 导出成功！')
+    // 模拟导出过程
+    await new Promise(resolve => setTimeout(resolve, 2000))
+    // 这里应该是实际的导出逻辑
+    console.log('导出Word')
   } catch (error) {
-    alert('导出失败，请重试')
+    console.error('导出失败:', error)
   } finally {
     loading.value = false
   }

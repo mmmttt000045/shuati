@@ -7,7 +7,7 @@
         </div>
       </div>
 
-      <div v-if="loading" class="loading">加载中...</div>
+      <Loading v-if="loading" text="正在加载题库..." />
 
       <div v-else-if="Object.keys(subjects).length === 0" class="empty-state">暂无可用的题目文件</div>
 
@@ -192,6 +192,7 @@ import { useToast } from 'vue-toastification'
 import { apiService } from '@/services/api'
 import { useAuthStore } from '@/stores/auth'
 import type { FlashMessage, SubjectFile } from '@/types'
+import Loading from '@/components/Loading.vue'
 
 const router = useRouter()
 const toast = useToast()
@@ -479,14 +480,6 @@ watch(questionOrder, (newOrder, oldOrder) => {
   background-color: #f0f9ff;
   color: #0369a1;
   border-left: 4px solid #0369a1;
-}
-
-.loading {
-  text-align: center;
-  padding: 4rem;
-  color: #64748b;
-  font-size: 1.2rem;
-  font-weight: 500;
 }
 
 .empty-state {

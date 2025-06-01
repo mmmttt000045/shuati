@@ -1,6 +1,8 @@
 <template>
   <div class="vip-stats-content">
-    <div class="container">
+    <Loading v-if="loading" text="正在加载学习统计..." :fullScreen="true" />
+    
+    <div v-else class="container">
       <h1 class="page-title">学习统计</h1>
       
       <div class="stats-grid">
@@ -64,6 +66,10 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import Loading from '@/components/Loading.vue'
+
+// 添加loading状态
+const loading = ref(true)
 
 // 模拟数据，实际应该从API获取
 const stats = ref({
@@ -97,9 +103,19 @@ const recentActivities = ref([
   }
 ])
 
-onMounted(() => {
-  // 这里可以调用API获取真实的统计数据
-  console.log('VIP Stats page loaded')
+onMounted(async () => {
+  // 模拟数据加载
+  loading.value = true
+  try {
+    // 模拟API调用延迟
+    await new Promise(resolve => setTimeout(resolve, 1500))
+    // 这里可以调用API获取真实的统计数据
+    console.log('VIP Stats page loaded')
+  } catch (error) {
+    console.error('加载统计数据失败:', error)
+  } finally {
+    loading.value = false
+  }
 })
 </script>
 

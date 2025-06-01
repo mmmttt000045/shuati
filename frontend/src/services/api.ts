@@ -78,6 +78,52 @@ export interface UserSearchParams {
   per_page?: number;
 }
 
+export interface SearchParams {
+  search?: string;
+  order_by?: string;
+  order_dir?: 'asc' | 'desc';
+  page?: number;
+  per_page?: number;
+}
+
+export interface Subject {
+  subject_id: number;
+  subject_name: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface TikuItem {
+  tiku_id: number;
+  subject_id: number;
+  subject_name: string;
+  tiku_name: string;
+  tiku_position: string;
+  tiku_nums: number;
+  file_size?: number;
+  file_hash?: string;
+  is_active: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface UsageSubjectStat {
+  subject_name: string;
+  used_count: number;
+}
+
+export interface UsageTikuStat {
+  tiku_name: string;
+  subject_name: string;
+  used_count: number;
+  tiku_position: string;
+}
+
+export interface UsageStats {
+  subject_stats: UsageSubjectStat[];
+  tiku_stats: UsageTikuStat[];
+}
+
 export interface ApiService {
   getFileOptions(): Promise<SubjectsResponse>;
   startPractice(subject: string, fileName: string, forceRestart?: boolean, shuffleQuestions?: boolean): Promise<{ message: string; success: boolean; resumed?: boolean }>;
@@ -133,9 +179,29 @@ export interface ApiService {
     getUsers(params?: UserSearchParams): Promise<{ success: boolean; users?: AdminUser[]; pagination?: Pagination; message?: string }>;
     toggleUser(userId: number): Promise<{ success: boolean; is_enabled?: boolean; message?: string }>;
     updateUserModel(userId: number, model: number): Promise<{ success: boolean; model?: number; message?: string }>;
-    getInvitations(): Promise<{ success: boolean; invitations?: AdminInvitation[]; message?: string }>;
+    getInvitations(params?: SearchParams): Promise<{ success: boolean; invitations?: AdminInvitation[]; pagination?: Pagination; message?: string }>;
     createInvitation(code?: string, expireDays?: number): Promise<{ success: boolean; invitation_code?: string; message?: string }>;
     getSubjectFiles(): Promise<{ success: boolean; files?: SubjectFile[]; message?: string }>;
+    
+    // 科目管理
+    getSubjects(params?: SearchParams): Promise<{ success: boolean; subjects?: Subject[]; pagination?: Pagination; message?: string }>;
+    createSubject(subjectName: string): Promise<{ success: boolean; subject_id?: number; message?: string }>;
+    updateSubject(subjectId: number, subjectName: string): Promise<{ success: boolean; message?: string }>;
+    deleteSubject(subjectId: number): Promise<{ success: boolean; message?: string }>;
+    
+    // 题库管理
+    getTiku(subjectId?: number, params?: SearchParams): Promise<{ success: boolean; tiku_list?: TikuItem[]; pagination?: Pagination; message?: string }>;
+    uploadTiku(file: File, subjectId: number, tikuName?: string): Promise<{ success: boolean; tiku_id?: number; question_count?: number; message?: string }>;
+    deleteTiku(tikuId: number): Promise<{ success: boolean; message?: string }>;
+    toggleTiku(tikuId: number): Promise<{ success: boolean; is_active?: boolean; message?: string }>;
+    
+    // 系统管理
+    syncFilesystem(): Promise<{ success: boolean; message?: string }>; // 已弃用 - 可能导致数据不一致
+    reloadBanks(): Promise<{ success: boolean; message?: string }>;
+    
+    // 使用统计
+    getUsageStats(): Promise<{ success: boolean; subject_stats?: UsageSubjectStat[]; tiku_stats?: UsageTikuStat[]; message?: string }>;
+    syncUsageStats(): Promise<{ success: boolean; message?: string }>;
   };
 }
 
@@ -175,13 +241,25 @@ class ApiServiceImpl implements ApiService {
       mode: 'cors'
     };
 
+    // 如果请求体是FormData，不设置Content-Type头让浏览器自动设置
+    const isFormData = options.body instanceof FormData;
+    
     const finalOptions: RequestInit = {
       ...defaultOptions,
       ...options,
-      headers: {
-        ...defaultOptions.headers,
-        ...(options.headers || {})
-      },
+      headers: isFormData 
+        ? {
+            // 对于FormData，只保留非Content-Type的头
+            'Accept': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest',
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache',
+            ...(options.headers || {})
+          }
+        : {
+            ...defaultOptions.headers,
+            ...(options.headers || {})
+          },
       credentials: 'include' as RequestCredentials
     };
 
@@ -364,9 +442,10 @@ class ApiServiceImpl implements ApiService {
       return this.handleResponse<{ success: boolean; model?: number; message?: string }>(response);
     },
 
-    getInvitations: async (): Promise<{ success: boolean; invitations?: AdminInvitation[]; message?: string }> => {
-      const response = await this.fetchWithCredentials(`${API_BASE}/admin/invitations`);
-      return this.handleResponse<{ success: boolean; invitations?: AdminInvitation[]; message?: string }>(response);
+    getInvitations: async (params?: SearchParams): Promise<{ success: boolean; invitations?: AdminInvitation[]; pagination?: Pagination; message?: string }> => {
+      const queryParams = new URLSearchParams(params as any).toString();
+      const response = await this.fetchWithCredentials(`${API_BASE}/admin/invitations?${queryParams}`);
+      return this.handleResponse<{ success: boolean; invitations?: AdminInvitation[]; pagination?: Pagination; message?: string }>(response);
     },
 
     createInvitation: async (code?: string, expireDays?: number): Promise<{ success: boolean; invitation_code?: string; message?: string }> => {
@@ -384,6 +463,90 @@ class ApiServiceImpl implements ApiService {
     getSubjectFiles: async (): Promise<{ success: boolean; files?: SubjectFile[]; message?: string }> => {
       const response = await this.fetchWithCredentials(`${API_BASE}/admin/subject-files`);
       return this.handleResponse<{ success: boolean; files?: SubjectFile[]; message?: string }>(response);
+    },
+    
+    // 科目管理
+    getSubjects: async (params?: SearchParams): Promise<{ success: boolean; subjects?: Subject[]; pagination?: Pagination; message?: string }> => {
+      const queryParams = new URLSearchParams(params as any).toString();
+      const response = await this.fetchWithCredentials(`${API_BASE}/admin/subjects?${queryParams}`);
+      return this.handleResponse<{ success: boolean; subjects?: Subject[]; pagination?: Pagination; message?: string }>(response);
+    },
+    createSubject: async (subjectName: string): Promise<{ success: boolean; subject_id?: number; message?: string }> => {
+      const response = await this.fetchWithCredentials(`${API_BASE}/admin/subjects`, {
+        method: 'POST',
+        body: JSON.stringify({ subject_name: subjectName })
+      });
+      return this.handleResponse<{ success: boolean; subject_id?: number; message?: string }>(response);
+    },
+    updateSubject: async (subjectId: number, subjectName: string): Promise<{ success: boolean; message?: string }> => {
+      const response = await this.fetchWithCredentials(`${API_BASE}/admin/subjects/${subjectId}`, {
+        method: 'PUT',
+        body: JSON.stringify({ subject_name: subjectName })
+      });
+      return this.handleResponse<{ success: boolean; message?: string }>(response);
+    },
+    deleteSubject: async (subjectId: number): Promise<{ success: boolean; message?: string }> => {
+      const response = await this.fetchWithCredentials(`${API_BASE}/admin/subjects/${subjectId}`, {
+        method: 'DELETE'
+      });
+      return this.handleResponse<{ success: boolean; message?: string }>(response);
+    },
+    
+    // 题库管理
+    getTiku: async (subjectId?: number, params?: SearchParams): Promise<{ success: boolean; tiku_list?: TikuItem[]; pagination?: Pagination; message?: string }> => {
+      const queryParams = new URLSearchParams(params as any).toString();
+      const response = await this.fetchWithCredentials(`${API_BASE}/admin/tiku?subject_id=${subjectId || ''}&${queryParams}`);
+      return this.handleResponse<{ success: boolean; tiku_list?: TikuItem[]; pagination?: Pagination; message?: string }>(response);
+    },
+    uploadTiku: async (file: File, subjectId: number, tikuName?: string): Promise<{ success: boolean; tiku_id?: number; question_count?: number; message?: string }> => {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('subject_id', subjectId.toString());
+      if (tikuName) formData.append('tiku_name', tikuName);
+
+      const response = await this.fetchWithCredentials(`${API_BASE}/admin/tiku/upload`, {
+        method: 'POST',
+        body: formData
+      });
+      return this.handleResponse<{ success: boolean; tiku_id?: number; question_count?: number; message?: string }>(response);
+    },
+    deleteTiku: async (tikuId: number): Promise<{ success: boolean; message?: string }> => {
+      const response = await this.fetchWithCredentials(`${API_BASE}/admin/tiku/${tikuId}`, {
+        method: 'DELETE'
+      });
+      return this.handleResponse<{ success: boolean; message?: string }>(response);
+    },
+    toggleTiku: async (tikuId: number): Promise<{ success: boolean; is_active?: boolean; message?: string }> => {
+      const response = await this.fetchWithCredentials(`${API_BASE}/admin/tiku/${tikuId}/toggle`, {
+        method: 'POST'
+      });
+      return this.handleResponse<{ success: boolean; is_active?: boolean; message?: string }>(response);
+    },
+    
+    // 系统管理
+    syncFilesystem: async (): Promise<{ success: boolean; message?: string }> => {
+      const response = await this.fetchWithCredentials(`${API_BASE}/admin/sync-filesystem`, {
+        method: 'POST'
+      });
+      return this.handleResponse<{ success: boolean; message?: string }>(response);
+    },
+    reloadBanks: async (): Promise<{ success: boolean; message?: string }> => {
+      const response = await this.fetchWithCredentials(`${API_BASE}/admin/reload-banks`, {
+        method: 'POST'
+      });
+      return this.handleResponse<{ success: boolean; message?: string }>(response);
+    },
+    
+    // 使用统计
+    getUsageStats: async (): Promise<{ success: boolean; subject_stats?: UsageSubjectStat[]; tiku_stats?: UsageTikuStat[]; message?: string }> => {
+      const response = await this.fetchWithCredentials(`${API_BASE}/admin/usage-stats`);
+      return this.handleResponse<{ success: boolean; subject_stats?: UsageSubjectStat[]; tiku_stats?: UsageTikuStat[]; message?: string }>(response);
+    },
+    syncUsageStats: async (): Promise<{ success: boolean; message?: string }> => {
+      const response = await this.fetchWithCredentials(`${API_BASE}/admin/sync-usage`, {
+        method: 'POST'
+      });
+      return this.handleResponse<{ success: boolean; message?: string }>(response);
     }
   };
 }

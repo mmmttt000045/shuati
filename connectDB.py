@@ -78,7 +78,7 @@ def create_user(username: str, password: str, invitation_code_id: int) -> Dict[s
         # 标记邀请码为已使用
         update_invitation_query = """
         UPDATE invitation_codes 
-        SET is_used = TRUE, used_by_user_id = %s 
+        SET is_used = TRUE, used_by_user_id = %s, used_time = NOW() 
         WHERE id = %s
         """
         cursor.execute(update_invitation_query, (user_id, invitation_code_id))
@@ -398,6 +398,446 @@ def test_connection():
     else:
         print("Failed to connect to database")
         return False
+
+# 科目和题库管理相关函数
+def get_all_subjects() -> list:
+    """获取所有科目"""
+    connection = get_db_connection()
+    if not connection:
+        return []
+    
+    try:
+        cursor = connection.cursor()
+        query = """
+        SELECT subject_id, subject_name, created_at, updated_at
+        FROM subject
+        ORDER BY subject_name
+        """
+        cursor.execute(query)
+        subjects = []
+        for row in cursor.fetchall():
+            subjects.append({
+                'subject_id': row[0],
+                'subject_name': row[1],
+                'created_at': row[2].isoformat() if row[2] else None,
+                'updated_at': row[3].isoformat() if row[3] else None
+            })
+        return subjects
+        
+    except Error as e:
+        print(f"Error getting subjects: {e}")
+        return []
+    finally:
+        if cursor:
+            cursor.close()
+        if connection.is_connected():
+            connection.close()
+
+def create_subject(subject_name: str) -> Dict[str, Any]:
+    """创建新科目"""
+    connection = get_db_connection()
+    if not connection:
+        return {"success": False, "error": "数据库连接失败"}
+    
+    try:
+        cursor = connection.cursor()
+        
+        # 检查科目名是否已存在
+        cursor.execute("SELECT subject_id FROM subject WHERE subject_name = %s", (subject_name,))
+        if cursor.fetchone():
+            return {"success": False, "error": "科目名已存在"}
+        
+        # 插入新科目
+        query = "INSERT INTO subject (subject_name) VALUES (%s)"
+        cursor.execute(query, (subject_name,))
+        connection.commit()
+        subject_id = cursor.lastrowid
+        
+        return {
+            "success": True,
+            "subject_id": subject_id,
+            "message": "科目创建成功"
+        }
+        
+    except Error as e:
+        return {"success": False, "error": f"创建科目失败: {str(e)}"}
+    finally:
+        if cursor:
+            cursor.close()
+        if connection.is_connected():
+            connection.close()
+
+def update_subject(subject_id: int, subject_name: str) -> Dict[str, Any]:
+    """更新科目信息"""
+    connection = get_db_connection()
+    if not connection:
+        return {"success": False, "error": "数据库连接失败"}
+    
+    try:
+        cursor = connection.cursor()
+        
+        # 检查科目是否存在
+        cursor.execute("SELECT subject_id FROM subject WHERE subject_id = %s", (subject_id,))
+        if not cursor.fetchone():
+            return {"success": False, "error": "科目不存在"}
+        
+        # 检查新名称是否已被其他科目使用
+        cursor.execute("SELECT subject_id FROM subject WHERE subject_name = %s AND subject_id != %s", 
+                      (subject_name, subject_id))
+        if cursor.fetchone():
+            return {"success": False, "error": "科目名已存在"}
+        
+        # 更新科目
+        query = "UPDATE subject SET subject_name = %s WHERE subject_id = %s"
+        cursor.execute(query, (subject_name, subject_id))
+        connection.commit()
+        
+        return {"success": True, "message": "科目更新成功"}
+        
+    except Error as e:
+        return {"success": False, "error": f"更新科目失败: {str(e)}"}
+    finally:
+        if cursor:
+            cursor.close()
+        if connection.is_connected():
+            connection.close()
+
+def delete_subject(subject_id: int) -> Dict[str, Any]:
+    """删除科目（级联删除相关题库）"""
+    connection = get_db_connection()
+    if not connection:
+        return {"success": False, "error": "数据库连接失败"}
+    
+    try:
+        cursor = connection.cursor()
+        
+        # 检查科目是否存在
+        cursor.execute("SELECT subject_id FROM subject WHERE subject_id = %s", (subject_id,))
+        if not cursor.fetchone():
+            return {"success": False, "error": "科目不存在"}
+        
+        # 获取相关题库文件路径（用于删除文件）
+        cursor.execute("SELECT tiku_position FROM tiku WHERE subject_id = %s", (subject_id,))
+        file_paths = [row[0] for row in cursor.fetchall()]
+        
+        # 开始事务
+        connection.start_transaction()
+        
+        # 删除相关题库记录
+        cursor.execute("DELETE FROM tiku WHERE subject_id = %s", (subject_id,))
+        
+        # 删除科目
+        cursor.execute("DELETE FROM subject WHERE subject_id = %s", (subject_id,))
+        
+        connection.commit()
+        
+        return {
+            "success": True,
+            "message": "科目删除成功",
+            "deleted_files": file_paths
+        }
+        
+    except Error as e:
+        connection.rollback()
+        return {"success": False, "error": f"删除科目失败: {str(e)}"}
+    finally:
+        if cursor:
+            cursor.close()
+        if connection.is_connected():
+            connection.close()
+
+def get_tiku_by_subject(subject_id: int = None) -> list:
+    """获取题库列表"""
+    connection = get_db_connection()
+    if not connection:
+        return []
+    
+    try:
+        cursor = connection.cursor()
+        
+        if subject_id:
+            query = """
+            SELECT t.tiku_id, t.subject_id, s.subject_name, t.tiku_name, 
+                   t.tiku_position, t.tiku_nums, t.file_size, t.file_hash,
+                   t.is_active, t.created_at, t.updated_at
+            FROM tiku t
+            JOIN subject s ON t.subject_id = s.subject_id
+            WHERE t.subject_id = %s
+            ORDER BY t.tiku_name
+            """
+            cursor.execute(query, (subject_id,))
+        else:
+            query = """
+            SELECT t.tiku_id, t.subject_id, s.subject_name, t.tiku_name, 
+                   t.tiku_position, t.tiku_nums, t.file_size, t.file_hash,
+                   t.is_active, t.created_at, t.updated_at
+            FROM tiku t
+            JOIN subject s ON t.subject_id = s.subject_id
+            ORDER BY s.subject_name, t.tiku_name
+            """
+            cursor.execute(query)
+        
+        tiku_list = []
+        for row in cursor.fetchall():
+            tiku_list.append({
+                'tiku_id': row[0],
+                'subject_id': row[1],
+                'subject_name': row[2],
+                'tiku_name': row[3],
+                'tiku_position': row[4],
+                'tiku_nums': row[5],
+                'file_size': row[6],
+                'file_hash': row[7],
+                'is_active': bool(row[8]),
+                'created_at': row[9].isoformat() if row[9] else None,
+                'updated_at': row[10].isoformat() if row[10] else None
+            })
+        return tiku_list
+        
+    except Error as e:
+        print(f"Error getting tiku: {e}")
+        return []
+    finally:
+        if cursor:
+            cursor.close()
+        if connection.is_connected():
+            connection.close()
+
+def create_or_update_tiku(subject_id: int, tiku_name: str, tiku_position: str, 
+                         tiku_nums: int, file_size: int = 0, file_hash: str = None) -> Dict[str, Any]:
+    """创建或更新题库信息"""
+    connection = get_db_connection()
+    if not connection:
+        return {"success": False, "error": "数据库连接失败"}
+    
+    try:
+        cursor = connection.cursor()
+        
+        # 检查科目是否存在
+        cursor.execute("SELECT subject_id FROM subject WHERE subject_id = %s", (subject_id,))
+        if not cursor.fetchone():
+            return {"success": False, "error": "科目不存在"}
+        
+        # 检查是否已存在相同路径的题库
+        cursor.execute("SELECT tiku_id FROM tiku WHERE tiku_position = %s", (tiku_position,))
+        existing_tiku = cursor.fetchone()
+        
+        if existing_tiku:
+            # 更新现有题库
+            query = """
+            UPDATE tiku SET subject_id = %s, tiku_name = %s, tiku_nums = %s, 
+                          file_size = %s, file_hash = %s, updated_at = CURRENT_TIMESTAMP
+            WHERE tiku_position = %s
+            """
+            cursor.execute(query, (subject_id, tiku_name, tiku_nums, file_size, file_hash, tiku_position))
+            tiku_id = existing_tiku[0]
+            action = "更新"
+        else:
+            # 创建新题库
+            query = """
+            INSERT INTO tiku (subject_id, tiku_name, tiku_position, tiku_nums, file_size, file_hash)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            """
+            cursor.execute(query, (subject_id, tiku_name, tiku_position, tiku_nums, file_size, file_hash))
+            tiku_id = cursor.lastrowid
+            action = "创建"
+        
+        connection.commit()
+        
+        return {
+            "success": True,
+            "tiku_id": tiku_id,
+            "message": f"题库{action}成功"
+        }
+        
+    except Error as e:
+        return {"success": False, "error": f"{action}题库失败: {str(e)}"}
+    finally:
+        if cursor:
+            cursor.close()
+        if connection.is_connected():
+            connection.close()
+
+def delete_tiku(tiku_id: int) -> Dict[str, Any]:
+    """删除题库"""
+    connection = get_db_connection()
+    if not connection:
+        return {"success": False, "error": "数据库连接失败"}
+    
+    try:
+        cursor = connection.cursor()
+        
+        # 获取题库信息
+        cursor.execute("SELECT tiku_position FROM tiku WHERE tiku_id = %s", (tiku_id,))
+        result = cursor.fetchone()
+        if not result:
+            return {"success": False, "error": "题库不存在"}
+        
+        file_path = result[0]
+        
+        # 删除题库记录
+        cursor.execute("DELETE FROM tiku WHERE tiku_id = %s", (tiku_id,))
+        connection.commit()
+        
+        return {
+            "success": True,
+            "message": "题库删除成功",
+            "file_path": file_path
+        }
+        
+    except Error as e:
+        return {"success": False, "error": f"删除题库失败: {str(e)}"}
+    finally:
+        if cursor:
+            cursor.close()
+        if connection.is_connected():
+            connection.close()
+
+def toggle_tiku_status(tiku_id: int) -> Dict[str, Any]:
+    """切换题库启用状态"""
+    connection = get_db_connection()
+    if not connection:
+        return {"success": False, "error": "数据库连接失败"}
+    
+    try:
+        cursor = connection.cursor()
+        
+        # 获取当前状态
+        cursor.execute("SELECT is_active FROM tiku WHERE tiku_id = %s", (tiku_id,))
+        result = cursor.fetchone()
+        if not result:
+            return {"success": False, "error": "题库不存在"}
+        
+        current_status = bool(result[0])
+        new_status = not current_status
+        
+        # 更新状态
+        cursor.execute("UPDATE tiku SET is_active = %s WHERE tiku_id = %s", (new_status, tiku_id))
+        connection.commit()
+        
+        return {
+            "success": True,
+            "is_active": new_status,
+            "message": f"题库已{'启用' if new_status else '禁用'}"
+        }
+        
+    except Error as e:
+        return {"success": False, "error": f"更新题库状态失败: {str(e)}"}
+    finally:
+        if cursor:
+            cursor.close()
+        if connection.is_connected():
+            connection.close()
+
+def batch_update_tiku_usage(usage_stats: dict) -> Dict[str, Any]:
+    """批量更新题库使用次数"""
+    connection = get_db_connection()
+    all_counts=0
+    if not connection:
+        return {"success": False, "error": "数据库连接失败"}
+    
+    try:
+        cursor = connection.cursor()
+        
+        # 开始事务
+        connection.start_transaction()
+        
+        updated_count = 0
+        updated_subjects = set()
+        
+        for tiku_position, usage_count in usage_stats.items():
+            # 更新题库使用次数
+            update_tiku_query = """
+            UPDATE tiku SET used_count = used_count + %s 
+            WHERE tiku_position = %s
+            """
+            cursor.execute(update_tiku_query, (usage_count, tiku_position))
+            all_counts += usage_count
+            
+            if cursor.rowcount > 0:
+                updated_count += 1
+                
+                # 获取对应的科目ID并更新科目使用次数
+                cursor.execute("SELECT subject_id FROM tiku WHERE tiku_position = %s", (tiku_position,))
+                result = cursor.fetchone()
+                if result:
+                    subject_id = result[0]
+                    updated_subjects.add(subject_id)
+        
+        # 更新科目使用次数
+        for subject_id in updated_subjects:
+            update_subject_query = """
+            UPDATE subject SET used_count = (
+                SELECT COALESCE(SUM(used_count), 0) FROM tiku WHERE subject_id = %s
+            ) WHERE subject_id = %s
+            """
+            cursor.execute(update_subject_query, (subject_id, subject_id))
+        
+        connection.commit()
+        
+        return {
+            "success": True,
+            "updated_tiku_count": updated_count,
+            "updated_subject_count": len(updated_subjects),
+            "message": f"成功更新{updated_count}个题库和{len(updated_subjects)}个科目的使用次数{all_counts}次"
+        }
+        
+    except Error as e:
+        connection.rollback()
+        return {"success": False, "error": f"批量更新使用次数失败: {str(e)}"}
+    finally:
+        if cursor:
+            cursor.close()
+        if connection.is_connected():
+            connection.close()
+
+def get_usage_statistics() -> Dict[str, Any]:
+    """获取使用统计信息"""
+    connection = get_db_connection()
+    if not connection:
+        return {"success": False, "error": "数据库连接失败"}
+    
+    try:
+        cursor = connection.cursor()
+        
+        # 获取科目使用统计
+        cursor.execute("""
+            SELECT subject_name, used_count 
+            FROM subject 
+            ORDER BY used_count DESC
+        """)
+        subject_stats = [{"subject_name": row[0], "used_count": row[1]} for row in cursor.fetchall()]
+        
+        # 获取题库使用统计（前20）
+        cursor.execute("""
+            SELECT t.tiku_name, s.subject_name, t.used_count, t.tiku_position
+            FROM tiku t
+            JOIN subject s ON t.subject_id = s.subject_id
+            ORDER BY t.used_count DESC
+            LIMIT 20
+        """)
+        tiku_stats = []
+        for row in cursor.fetchall():
+            tiku_stats.append({
+                "tiku_name": row[0],
+                "subject_name": row[1],
+                "used_count": row[2],
+                "tiku_position": row[3]
+            })
+        
+        return {
+            "success": True,
+            "subject_stats": subject_stats,
+            "tiku_stats": tiku_stats
+        }
+        
+    except Error as e:
+        return {"success": False, "error": f"获取使用统计失败: {str(e)}"}
+    finally:
+        if cursor:
+            cursor.close()
+        if connection.is_connected():
+            connection.close()
 
 if __name__ == "__main__":
     test_connection()

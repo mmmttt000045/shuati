@@ -201,9 +201,7 @@
             </transition>
 
             <!-- 加载状态 -->
-            <div v-if="showLoadingIndicator" class="loading-indicator-fullscreen">
-              <p>{{ loadingText }}</p>
-            </div>
+            <Loading v-if="showLoadingIndicator" :text="loadingText" :fullScreen="true" />
 
             <!-- 空状态 -->
             <div v-if="showEmptyState" class="empty-state-message card">
@@ -318,6 +316,7 @@ import { QUESTION_STATUS, isCorrectStatus, isWrongStatus, isUnansweredStatus } f
 import { apiService } from '@/services/api'
 import { useAuthStore } from '@/stores/auth'
 import NavigationBar from '@/components/NavigationBar.vue'
+import Loading from '@/components/Loading.vue'
 
 interface QuestionStatus {
   status: QuestionStatusType
@@ -1974,16 +1973,6 @@ onBeforeUnmount(() => {
 }
 
 /* 加载和空状态 */
-.loading-indicator-fullscreen {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 4rem 2rem;
-  text-align: center;
-  color: #6b7280;
-  font-size: 1.1rem;
-}
-
 .empty-state-message {
   padding: 2rem;
   text-align: center;

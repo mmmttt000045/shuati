@@ -1,47 +1,50 @@
 <template>
-  <div class="container">
-    <h1 class="page-title">练习完成</h1>
+  <div class="page-layout">
+    <NavigationBar />
+    <div class="container">
+      <h1 class="page-title">练习完成</h1>
 
-    <div v-if="messages.length > 0" class="messages">
-      <div
-        v-for="(message, index) in messages"
-        :key="index"
-        :class="['message', message.category]"
-      >
-        {{ message.text }}
-      </div>
-    </div>
-
-    <div v-if="loading" class="loading">
-      加载中...
-    </div>
-
-    <div v-else-if="summary" class="summary-card">
-      <h2 class="summary-title">练习总结</h2>
-      <div class="summary-content">
-        <p class="file-name">题库：{{ summary.completed_filename }}</p>
-        <div class="stats">
-          <div class="stat-item">
-            <span class="stat-label">总题数</span>
-            <span class="stat-value">{{ summary.initial_total }}</span>
-          </div>
-          <div class="stat-item">
-            <span class="stat-label">首次答对</span>
-            <span class="stat-value">{{ summary.correct_first_try }}</span>
-          </div>
-          <div class="stat-item">
-            <span class="stat-label">正确率</span>
-            <span class="stat-value">{{ summary.score_percent.toFixed(1) }}%</span>
-          </div>
+      <div v-if="messages.length > 0" class="messages">
+        <div
+          v-for="(message, index) in messages"
+          :key="index"
+          :class="['message', message.category]"
+        >
+          {{ message.text }}
         </div>
       </div>
-      <div class="actions">
-        <button class="btn-back" @click="goToIndex">返回首页</button>
-      </div>
-    </div>
 
-    <div v-else class="empty-state">
-      暂无练习总结信息
+      <div v-if="loading" class="loading">
+        加载中...
+      </div>
+
+      <div v-else-if="summary" class="summary-card">
+        <h2 class="summary-title">练习总结</h2>
+        <div class="summary-content">
+          <p class="file-name">题库：{{ summary.completed_filename }}</p>
+          <div class="stats">
+            <div class="stat-item">
+              <span class="stat-label">总题数</span>
+              <span class="stat-value">{{ summary.initial_total }}</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">首次答对</span>
+              <span class="stat-value">{{ summary.correct_first_try }}</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">正确率</span>
+              <span class="stat-value">{{ summary.score_percent.toFixed(1) }}%</span>
+            </div>
+          </div>
+        </div>
+        <div class="actions">
+          <button class="btn-back" @click="goToIndex">返回首页</button>
+        </div>
+      </div>
+
+      <div v-else class="empty-state">
+        暂无练习总结信息
+      </div>
     </div>
   </div>
 </template>
@@ -51,6 +54,7 @@ import { ref, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { apiService } from '@/services/api';
 import type { CompletedSummary, FlashMessage } from '@/types';
+import NavigationBar from './NavigationBar.vue';
 
 const router = useRouter();
 const summary = ref<CompletedSummary | null>(null);
@@ -90,6 +94,11 @@ const goToIndex = () => {
 </script>
 
 <style scoped>
+.page-layout {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+}
+
 .container {
   max-width: 800px;
   margin: 0 auto;

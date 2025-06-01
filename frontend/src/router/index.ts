@@ -6,7 +6,12 @@ import CompletedPage from '@/components/CompletedPage.vue';
 import LoginPage from '@/components/LoginPage.vue';
 import RegisterPage from '@/components/RegisterPage.vue';
 import NotFoundPage from '@/components/NotFoundPage.vue';
+import SystemControl from '@/components/SystemControl.vue';
+import VipStatsPage from '@/components/VipStatsPage.vue';
+import VipExportPage from '@/components/VipExportPage.vue';
+import VipCollectionsPage from '@/components/VipCollectionsPage.vue';
 import { useAuthStore } from '@/stores/auth';
+import { USER_MODEL } from '@/types';
 
 const routes: RouteRecordRaw[] = [
   {
@@ -67,6 +72,67 @@ const routes: RouteRecordRaw[] = [
       requiresAuth: true
     }
   },
+  // 管理员系统控制页面
+  {
+    path: '/admin',
+    name: 'admin',
+    component: SystemControl,
+    meta: {
+      title: '系统管理',
+      requiresAuth: true,
+      requiresAdmin: true
+    }
+  },
+  // VIP功能页面路由
+  {
+    path: '/vip/stats',
+    name: 'vip-stats',
+    component: VipStatsPage,
+    meta: {
+      title: '学习统计',
+      requiresAuth: true,
+      requiresVip: true
+    }
+  },
+  {
+    path: '/vip/export',
+    name: 'vip-export',
+    component: VipExportPage,
+    meta: {
+      title: '错题导出',
+      requiresAuth: true,
+      requiresVip: true
+    }
+  },
+  {
+    path: '/vip/collections',
+    name: 'vip-collections',
+    component: VipCollectionsPage,
+    meta: {
+      title: '错题集管理',
+      requiresAuth: true,
+      requiresVip: true
+    }
+  },
+  // 用户资料和设置页面 (暂时重定向到主页)
+  {
+    path: '/profile',
+    name: 'profile',
+    component: IndexPage, // 临时使用 IndexPage，后续替换为 ProfilePage
+    meta: {
+      title: '个人资料',
+      requiresAuth: true
+    }
+  },
+  {
+    path: '/settings',
+    name: 'settings',
+    component: IndexPage, // 临时使用 IndexPage，后续替换为 SettingsPage
+    meta: {
+      title: '设置',
+      requiresAuth: true
+    }
+  },
   {
     path: '/404',
     name: 'notFound',
@@ -108,6 +174,25 @@ router.beforeEach(async (to, from, next) => {
       // If still not authenticated, redirect to login
       if (!authStore.isAuthenticated) {
         next({ name: 'login' });
+        return;
+      }
+    }
+    
+    // Check VIP permission
+    if (to.meta.requiresVip) {
+      const userModel = authStore.user?.model;
+      if (userModel !== USER_MODEL.VIP && userModel !== USER_MODEL.ROOT) {
+        // 可以显示提示消息或重定向到升级页面
+        next({ name: 'index' });
+        return;
+      }
+    }
+    
+    // Check admin permission
+    if (to.meta.requiresAdmin) {
+      const userModel = authStore.user?.model;
+      if (userModel !== USER_MODEL.ROOT) {
+        next({ name: 'index' });
         return;
       }
     }

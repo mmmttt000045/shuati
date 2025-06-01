@@ -1,5 +1,8 @@
 <template>
   <div class="practice-page-wrapper">
+    <!-- 使用新的导航栏组件 -->
+    <NavigationBar />
+    
     <div class="container">
       <div class="practice-container">
         <!-- 标题区域 -->
@@ -34,7 +37,6 @@
                 {{ message.text }}
               </li>
             </ul>
-
 
             <!-- 主要内容区域 -->
             <transition name="content-fade" mode="out-in">
@@ -127,7 +129,6 @@
                   <span class="history-icon">📋</span>
                   <span class="history-text">查看答题历史记录</span>
                 </div>
-
 
                 <div class="question-review-content">
                   <h4>题目回顾：</h4>
@@ -224,10 +225,6 @@
                 </button>
               </div>
 
-              <div v-if="isViewingHistory" class="history-navigation-tip">
-                <span class="tip-icon">💡</span>
-                <span class="tip-text">点击答题卡可查看其他题目</span>
-              </div>
 
               <div v-if="isAnswerCardExpanded" class="answer-card-legend">
                 <span class="legend-item"> <span class="status-dot current"></span> 当前题目 </span>
@@ -320,6 +317,7 @@ import type {
 import { QUESTION_STATUS, isCorrectStatus, isWrongStatus, isUnansweredStatus } from '@/types'
 import { apiService } from '@/services/api'
 import { useAuthStore } from '@/stores/auth'
+import NavigationBar from '@/components/NavigationBar.vue'
 
 interface QuestionStatus {
   status: QuestionStatusType

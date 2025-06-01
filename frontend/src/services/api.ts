@@ -14,6 +14,53 @@ import router from '@/router';
 // 使用配置文件中的API基地址
 const API_BASE = API_BASE_URL;
 
+// 管理员API相关类型定义
+export interface AdminStats {
+  users: {
+    total: number;
+    active: number;
+    admins: number;
+    vips: number;
+  };
+  invitations: {
+    total: number;
+    unused: number;
+  };
+  subjects: {
+    total_questions: number;
+    total_files: number;
+  };
+}
+
+export interface AdminUser {
+  id: number;
+  username: string;
+  is_enabled: boolean;
+  created_at?: string;
+  last_time_login?: string;
+  model: number;
+  invitation_code?: string;
+}
+
+export interface AdminInvitation {
+  id: number;
+  code: string;
+  is_used: boolean;
+  created_at?: string;
+  expires_at?: string;
+  used_by_username?: string;
+}
+
+export interface SubjectFile {
+  subject: string;
+  filename: string;
+  display_name: string;
+  file_path: string;
+  question_count: number;
+  file_size: number;
+  modified_time?: string;
+}
+
 export interface ApiService {
   getFileOptions(): Promise<SubjectsResponse>;
   startPractice(subject: string, fileName: string, forceRestart?: boolean, shuffleQuestions?: boolean): Promise<{ message: string; success: boolean; resumed?: boolean }>;
@@ -63,6 +110,16 @@ export interface ApiService {
     success: boolean;
     message?: string;
   }>;
+  // 管理员API
+  admin: {
+    getStats(): Promise<{ success: boolean; stats?: AdminStats; message?: string }>;
+    getUsers(): Promise<{ success: boolean; users?: AdminUser[]; message?: string }>;
+    toggleUser(userId: number): Promise<{ success: boolean; is_enabled?: boolean; message?: string }>;
+    updateUserModel(userId: number, model: number): Promise<{ success: boolean; model?: number; message?: string }>;
+    getInvitations(): Promise<{ success: boolean; invitations?: AdminInvitation[]; message?: string }>;
+    createInvitation(code?: string, expireDays?: number): Promise<{ success: boolean; invitation_code?: string; message?: string }>;
+    getSubjectFiles(): Promise<{ success: boolean; files?: SubjectFile[]; message?: string }>;
+  };
 }
 
 class ApiServiceImpl implements ApiService {
@@ -244,18 +301,11 @@ class ApiServiceImpl implements ApiService {
     statuses: Array<QuestionStatus>;
     success: boolean;
   }> {
-    try {
-      const sessionStatus = await this.checkSessionStatus();
-      return {
-        statuses: sessionStatus.question_statuses || [],
-        success: sessionStatus.active
-      };
-    } catch (error) {
-      return {
-        statuses: [],
-        success: false
-      };
-    }
+    const response = await this.fetchWithCredentials(`${API_BASE}/practice/statuses`);
+    return this.handleResponse<{
+      statuses: Array<QuestionStatus>;
+      success: boolean;
+    }>(response);
   }
 
   async saveSession(): Promise<{
@@ -268,6 +318,56 @@ class ApiServiceImpl implements ApiService {
       message?: string;
     }>(response);
   }
+
+  // 管理员API
+  admin = {
+    getStats: async (): Promise<{ success: boolean; stats?: AdminStats; message?: string }> => {
+      const response = await this.fetchWithCredentials(`${API_BASE}/admin/stats`);
+      return this.handleResponse<{ success: boolean; stats?: AdminStats; message?: string }>(response);
+    },
+
+    getUsers: async (): Promise<{ success: boolean; users?: AdminUser[]; message?: string }> => {
+      const response = await this.fetchWithCredentials(`${API_BASE}/admin/users`);
+      return this.handleResponse<{ success: boolean; users?: AdminUser[]; message?: string }>(response);
+    },
+
+    toggleUser: async (userId: number): Promise<{ success: boolean; is_enabled?: boolean; message?: string }> => {
+      const response = await this.fetchWithCredentials(`${API_BASE}/admin/users/${userId}/toggle`, {
+        method: 'POST'
+      });
+      return this.handleResponse<{ success: boolean; is_enabled?: boolean; message?: string }>(response);
+    },
+
+    updateUserModel: async (userId: number, model: number): Promise<{ success: boolean; model?: number; message?: string }> => {
+      const response = await this.fetchWithCredentials(`${API_BASE}/admin/users/${userId}/model`, {
+        method: 'PUT',
+        body: JSON.stringify({ model })
+      });
+      return this.handleResponse<{ success: boolean; model?: number; message?: string }>(response);
+    },
+
+    getInvitations: async (): Promise<{ success: boolean; invitations?: AdminInvitation[]; message?: string }> => {
+      const response = await this.fetchWithCredentials(`${API_BASE}/admin/invitations`);
+      return this.handleResponse<{ success: boolean; invitations?: AdminInvitation[]; message?: string }>(response);
+    },
+
+    createInvitation: async (code?: string, expireDays?: number): Promise<{ success: boolean; invitation_code?: string; message?: string }> => {
+      const body: any = {};
+      if (code) body.code = code;
+      if (expireDays) body.expire_days = expireDays;
+
+      const response = await this.fetchWithCredentials(`${API_BASE}/admin/invitations`, {
+        method: 'POST',
+        body: JSON.stringify(body)
+      });
+      return this.handleResponse<{ success: boolean; invitation_code?: string; message?: string }>(response);
+    },
+
+    getSubjectFiles: async (): Promise<{ success: boolean; files?: SubjectFile[]; message?: string }> => {
+      const response = await this.fetchWithCredentials(`${API_BASE}/admin/subject-files`);
+      return this.handleResponse<{ success: boolean; files?: SubjectFile[]; message?: string }>(response);
+    }
+  };
 }
 
 export const apiService = new ApiServiceImpl();

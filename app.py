@@ -1005,6 +1005,381 @@ def api_get_question_history(question_index: int):
     })
 
 
+# --- 管理员功能相关路由 ---
+def admin_required(f):
+    """检查用户是否为管理员的装饰器"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        user_id = session.get('user_id')
+        if not user_id:
+            return create_response(False, '请先登录', status_code=401)
+        
+        user_model = get_user_model(user_id)
+        if user_model != 10:  # ROOT用户
+            return create_response(False, '权限不足，需要管理员权限', status_code=403)
+        
+        return f(*args, **kwargs)
+    return decorated_function
+
+
+@app.route('/api/admin/stats', methods=['GET'])
+@login_required
+@admin_required
+@handle_api_error
+def api_admin_get_stats():
+    """获取系统统计信息"""
+    try:
+        from connectDB import get_db_connection
+        
+        connection = get_db_connection()
+        if not connection:
+            raise Exception("数据库连接失败")
+        
+        cursor = connection.cursor()
+        
+        # 用户统计
+        cursor.execute("SELECT COUNT(*) FROM user_accounts")
+        total_users = cursor.fetchone()[0]
+        
+        cursor.execute("SELECT COUNT(*) FROM user_accounts WHERE is_enabled = TRUE")
+        active_users = cursor.fetchone()[0]
+        
+        cursor.execute("SELECT COUNT(*) FROM user_accounts WHERE model = 10")
+        admin_users = cursor.fetchone()[0]
+        
+        cursor.execute("SELECT COUNT(*) FROM user_accounts WHERE model = 5")
+        vip_users = cursor.fetchone()[0]
+        
+        # 邀请码统计
+        cursor.execute("SELECT COUNT(*) FROM invitation_codes")
+        total_invitations = cursor.fetchone()[0]
+        
+        cursor.execute("SELECT COUNT(*) FROM invitation_codes WHERE is_used = FALSE AND (expires_at IS NULL OR expires_at > NOW())")
+        unused_invitations = cursor.fetchone()[0]
+        
+        # 题库统计
+        total_questions = sum(len(questions) for questions in APP_WIDE_QUESTION_DATA.values() if questions)
+        total_files = len(APP_WIDE_QUESTION_DATA)
+        
+        stats = {
+            'users': {
+                'total': total_users,
+                'active': active_users,
+                'admins': admin_users,
+                'vips': vip_users
+            },
+            'invitations': {
+                'total': total_invitations,
+                'unused': unused_invitations
+            },
+            'subjects': {
+                'total_questions': total_questions,
+                'total_files': total_files
+            }
+        }
+        
+        return create_response(True, data={'stats': stats})
+        
+    except Exception as e:
+        logger.error(f"Error getting admin stats: {e}")
+        raise
+    finally:
+        if 'cursor' in locals():
+            cursor.close()
+        if 'connection' in locals() and connection.is_connected():
+            connection.close()
+
+
+@app.route('/api/admin/users', methods=['GET'])
+@login_required
+@admin_required
+@handle_api_error
+def api_admin_get_users():
+    """获取用户列表"""
+    try:
+        from connectDB import get_db_connection
+        
+        connection = get_db_connection()
+        if not connection:
+            raise Exception("数据库连接失败")
+        
+        cursor = connection.cursor()
+        
+        query = """
+        SELECT 
+            u.id, u.username, u.is_enabled, u.created_at, u.last_time_login, u.model,
+            i.code as invitation_code
+        FROM user_accounts u
+        LEFT JOIN invitation_codes i ON u.used_invitation_code_id = i.id
+        ORDER BY u.created_at DESC
+        """
+        cursor.execute(query)
+        users_data = cursor.fetchall()
+        
+        users = []
+        for user_data in users_data:
+            user_id, username, is_enabled, created_at, last_login, model, invitation_code = user_data
+            users.append({
+                'id': user_id,
+                'username': username,
+                'is_enabled': bool(is_enabled),
+                'created_at': created_at.isoformat() if created_at else None,
+                'last_time_login': last_login.isoformat() if last_login else None,
+                'model': model if model is not None else 0,
+                'invitation_code': invitation_code
+            })
+        
+        return create_response(True, data={'users': users})
+        
+    except Exception as e:
+        logger.error(f"Error getting users: {e}")
+        raise
+    finally:
+        if 'cursor' in locals():
+            cursor.close()
+        if 'connection' in locals() and connection.is_connected():
+            connection.close()
+
+
+@app.route('/api/admin/users/<int:user_id>/toggle', methods=['POST'])
+@login_required
+@admin_required
+@handle_api_error
+def api_admin_toggle_user(user_id):
+    """启用/禁用用户"""
+    try:
+        from connectDB import get_db_connection
+        
+        # 不能操作自己
+        current_user_id = session.get('user_id')
+        if user_id == current_user_id:
+            raise BadRequest("不能操作自己的账户")
+        
+        connection = get_db_connection()
+        if not connection:
+            raise Exception("数据库连接失败")
+        
+        cursor = connection.cursor()
+        
+        # 获取当前状态
+        cursor.execute("SELECT is_enabled FROM user_accounts WHERE id = %s", (user_id,))
+        result = cursor.fetchone()
+        if not result:
+            raise NotFound("用户不存在")
+        
+        current_status = result[0]
+        new_status = not current_status
+        
+        # 更新状态
+        cursor.execute("UPDATE user_accounts SET is_enabled = %s WHERE id = %s", (new_status, user_id))
+        connection.commit()
+        
+        action = "启用" if new_status else "禁用"
+        return create_response(True, f"用户已{action}", data={'is_enabled': new_status})
+        
+    except Exception as e:
+        logger.error(f"Error toggling user {user_id}: {e}")
+        raise
+    finally:
+        if 'cursor' in locals():
+            cursor.close()
+        if 'connection' in locals() and connection.is_connected():
+            connection.close()
+
+
+@app.route('/api/admin/users/<int:user_id>/model', methods=['PUT'])
+@login_required
+@admin_required
+@handle_api_error
+def api_admin_update_user_model(user_id):
+    """更新用户权限模型"""
+    try:
+        data = request.get_json()
+        if not data or 'model' not in data:
+            raise BadRequest("缺少模型参数")
+        
+        model = data['model']
+        if model not in [0, 5, 10]:
+            raise BadRequest("无效的用户模型")
+        
+        # 不能操作自己
+        current_user_id = session.get('user_id')
+        if user_id == current_user_id:
+            raise BadRequest("不能修改自己的权限")
+        
+        from connectDB import get_db_connection
+        
+        connection = get_db_connection()
+        if not connection:
+            raise Exception("数据库连接失败")
+        
+        cursor = connection.cursor()
+        
+        # 检查用户是否存在
+        cursor.execute("SELECT id FROM user_accounts WHERE id = %s", (user_id,))
+        if not cursor.fetchone():
+            raise NotFound("用户不存在")
+        
+        # 更新模型
+        cursor.execute("UPDATE user_accounts SET model = %s WHERE id = %s", (model, user_id))
+        connection.commit()
+        
+        model_names = {0: "普通用户", 5: "VIP用户", 10: "管理员"}
+        return create_response(True, f"用户权限已更新为{model_names[model]}", data={'model': model})
+        
+    except Exception as e:
+        logger.error(f"Error updating user model {user_id}: {e}")
+        raise
+    finally:
+        if 'cursor' in locals():
+            cursor.close()
+        if 'connection' in locals() and connection.is_connected():
+            connection.close()
+
+
+@app.route('/api/admin/invitations', methods=['GET'])
+@login_required
+@admin_required
+@handle_api_error
+def api_admin_get_invitations():
+    """获取邀请码列表"""
+    try:
+        from connectDB import get_db_connection
+        
+        connection = get_db_connection()
+        if not connection:
+            raise Exception("数据库连接失败")
+        
+        cursor = connection.cursor()
+        
+        query = """
+        SELECT 
+            i.id, i.code, i.is_used, i.created_at, i.expires_at,
+            u.username as used_by_username
+        FROM invitation_codes i
+        LEFT JOIN user_accounts u ON i.used_by_user_id = u.id
+        ORDER BY i.created_at DESC
+        """
+        cursor.execute(query)
+        invitations_data = cursor.fetchall()
+        
+        invitations = []
+        for invitation_data in invitations_data:
+            inv_id, code, is_used, created_at, expires_at, used_by_username = invitation_data
+            invitations.append({
+                'id': inv_id,
+                'code': code,
+                'is_used': bool(is_used),
+                'created_at': created_at.isoformat() if created_at else None,
+                'expires_at': expires_at.isoformat() if expires_at else None,
+                'used_by_username': used_by_username
+            })
+        
+        return create_response(True, data={'invitations': invitations})
+        
+    except Exception as e:
+        logger.error(f"Error getting invitations: {e}")
+        raise
+    finally:
+        if 'cursor' in locals():
+            cursor.close()
+        if 'connection' in locals() and connection.is_connected():
+            connection.close()
+
+
+@app.route('/api/admin/invitations', methods=['POST'])
+@login_required
+@admin_required
+@handle_api_error
+def api_admin_create_invitation():
+    """创建邀请码"""
+    try:
+        data = request.get_json() or {}
+        code = data.get('code', '').strip()
+        expire_days = data.get('expire_days')
+        
+        # 如果没有提供邀请码，生成一个
+        if not code:
+            import random
+            import string
+            code = ''.join(random.choices(string.ascii_letters + string.digits, k=12))
+        
+        # 验证邀请码格式
+        if not code or len(code) < 6 or len(code) > 64:
+            raise BadRequest("邀请码长度必须在6-64个字符之间")
+        
+        result = create_invitation_code(code, expire_days)
+        if result['success']:
+            return create_response(True, result['message'], data={'invitation_code': result['code']})
+        else:
+            raise BadRequest(result['error'])
+        
+    except Exception as e:
+        logger.error(f"Error creating invitation: {e}")
+        raise
+
+
+@app.route('/api/admin/subject-files', methods=['GET'])
+@login_required
+@admin_required
+@handle_api_error
+def api_admin_get_subject_files():
+    """获取题库文件信息"""
+    try:
+        files_info = []
+        
+        for filepath, questions in APP_WIDE_QUESTION_DATA.items():
+            try:
+                # 解析文件路径
+                path_parts = normalize_filepath(filepath).split('/')
+                filename = path_parts[-1]
+                display_name = filename.replace('.xlsx', '').replace('.xls', '')
+                subject = path_parts[1] if len(path_parts) > 2 and path_parts[0] == SUBJECT_DIRECTORY else "未分类"
+                
+                # 获取文件信息
+                file_size = 0
+                modified_time = None
+                if os.path.exists(filepath):
+                    stat = os.stat(filepath)
+                    file_size = stat.st_size
+                    modified_time = datetime.fromtimestamp(stat.st_mtime)
+                
+                files_info.append({
+                    'subject': subject,
+                    'filename': filename,
+                    'display_name': display_name,
+                    'file_path': filepath,
+                    'question_count': len(questions) if isinstance(questions, list) else 0,
+                    'file_size': file_size,
+                    'modified_time': modified_time.isoformat() if modified_time else None
+                })
+            except Exception as e:
+                logger.warning(f"Error processing file {filepath}: {e}")
+                continue
+        
+        # 按科目和文件名排序
+        files_info.sort(key=lambda x: (x['subject'], x['filename']))
+        
+        return create_response(True, data={'files': files_info})
+        
+    except Exception as e:
+        logger.error(f"Error getting subject files: {e}")
+        raise
+
+
+# --- 辅助函数 ---
+def format_file_size(size_bytes):
+    """格式化文件大小"""
+    if size_bytes == 0:
+        return "0 B"
+    size_names = ["B", "KB", "MB", "GB"]
+    import math
+    i = int(math.floor(math.log(size_bytes, 1024)))
+    p = math.pow(1024, i)
+    s = round(size_bytes / p, 2)
+    return f"{s} {size_names[i]}"
+
+
 if __name__ == '__main__':
     import sys
 

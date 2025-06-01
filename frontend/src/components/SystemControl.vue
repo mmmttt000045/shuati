@@ -1,6 +1,5 @@
 <template>
-  <div class="system-control">
-
+  <div class="system-control-content">
     <!-- 统计概览 -->
     <div class="stats-overview" v-if="stats">
       <div class="stat-card">
@@ -297,6 +296,7 @@ import { ref, onMounted, computed } from 'vue'
 import { useToast } from 'vue-toastification'
 import { useAuthStore } from '@/stores/auth'
 import { apiService } from '@/services/api'
+import Loading from '@/components/Loading.vue'
 
 const toast = useToast()
 const authStore = useAuthStore()
@@ -554,11 +554,14 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.system-control {
+.system-control-content {
+  width: 100%;
+  min-height: calc(100vh - 64px);
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
   padding: 2rem;
   max-width: 1400px;
   margin: 0 auto;
-  animation: fadeIn 0.4s ease-out;
+  overflow-y: auto;
 }
 
 @keyframes fadeIn {
@@ -570,29 +573,6 @@ onMounted(async () => {
     opacity: 1;
     transform: translateY(0);
   }
-}
-
-/* 头部样式 */
-.control-header {
-  text-align: center;
-  margin-bottom: 3rem;
-}
-
-.control-title {
-  font-size: 2.5rem;
-  font-weight: 700;
-  color: #1e293b;
-  margin-bottom: 1rem;
-  background: linear-gradient(135deg, #dc2626, #b91c1c);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-
-.control-subtitle {
-  font-size: 1.2rem;
-  color: #64748b;
-  margin: 0;
 }
 
 /* 统计概览样式 */
@@ -1137,7 +1117,7 @@ onMounted(async () => {
 
 /* 响应式设计 */
 @media (max-width: 768px) {
-  .system-control {
+  .system-control-content {
     padding: 1rem;
   }
 

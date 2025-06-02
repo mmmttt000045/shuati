@@ -51,7 +51,10 @@
         <h2>最近活动</h2>
         <div class="activity-list">
           <div v-for="activity in recentActivities" :key="activity.id" class="activity-item">
-            <div class="activity-icon">{{ activity.icon }}</div>
+            <div class="activity-icon">
+              <IconSubject v-if="activity.icon === 'subject'" :size="24" color="#3b82f6" />
+              <span v-else>{{ activity.icon }}</span>
+            </div>
             <div class="activity-content">
               <h4>{{ activity.title }}</h4>
               <p>{{ activity.description }}</p>
@@ -66,7 +69,8 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import Loading from '@/components/Loading.vue'
+import Loading from '@/components/common/Loading.vue'
+import IconSubject from '@/components/icons/IconSubject.vue'
 
 // 添加loading状态
 const loading = ref(true)
@@ -82,7 +86,7 @@ const stats = ref({
 const recentActivities = ref([
   {
     id: 1,
-    icon: '📚',
+    icon: 'subject',
     title: '完成数学练习',
     description: '高等数学第三章，正确率 92%',
     time: '2小时前'

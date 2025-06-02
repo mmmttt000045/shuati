@@ -2,12 +2,10 @@ import glob  # For finding files
 import logging  # 用于控制日志输出
 import os
 import random
-import threading  # 用于后台线程
 import time  # 用于定期任务
-import traceback  # 用于更详细的错误打印
 from datetime import timedelta, datetime
-from typing import List, Dict, Optional, Union, Any
 from functools import wraps
+from typing import List, Dict, Optional, Union, Any
 
 import pandas as pd
 from flask import Flask, request, session, jsonify, send_from_directory, Response
@@ -16,6 +14,7 @@ from werkzeug.exceptions import NotFound, BadRequest
 
 # 导入数据库连接和用户认证相关函数
 from connectDB import (
+init_connection_pool,
     authenticate_user,
     create_user,
     verify_invitation_code,
@@ -24,7 +23,6 @@ from connectDB import (
     create_invitation_code,
     save_user_session,
     load_user_session,
-    delete_user_session,
     update_session_timestamp,
     cleanup_expired_sessions,
     # 新增科目和题库管理函数
@@ -35,9 +33,7 @@ from connectDB import (
     get_tiku_by_subject,
     create_or_update_tiku,
     delete_tiku,
-    toggle_tiku_status,
-    batch_update_tiku_usage,
-    get_usage_statistics
+    toggle_tiku_status
 )
 
 # Configure logging
@@ -329,7 +325,7 @@ def load_questions_from_excel(filepath: str, sheetname: Union[str, int]) -> Opti
                 logger.warning(f"Error processing question at index {index} in '{filepath}': {e}")
                 continue
 
-        logger.info(f"Loaded {len(questions_data)} questions from '{filepath}'")
+        logger.info(f"Local Filesystem ：Loaded {len(questions_data)} questions from '{filepath}'")
         return questions_data
 
     except Exception as e:
@@ -385,46 +381,47 @@ def load_banks_from_database():
     """从数据库加载题库信息，然后根据路径加载Excel文件"""
     data = {}
     logger.info("尝试从数据库加载题库信息...")
-    
+
     try:
         # 获取数据库中的所有启用题库
         tiku_list = get_tiku_by_subject()
-        
+
         if not tiku_list:
             logger.info("数据库中没有题库数据，使用文件系统扫描")
             return load_all_banks_from_filesystem()
-        
+
         logger.info(f"从数据库找到 {len(tiku_list)} 个题库记录")
-        
+
         # 根据数据库中的路径加载Excel文件
         for tiku in tiku_list:
             if not tiku['is_active']:
                 logger.info(f"跳过已禁用的题库: {tiku['tiku_name']}")
                 continue
-                
+
             filepath = tiku['tiku_position']
             tiku_name = tiku['tiku_name']
-            
+
             # 检查文件是否存在
             if not os.path.exists(filepath):
                 logger.warning(f"题库文件不存在，跳过: {filepath}")
                 continue
-            
+
             # 加载Excel文件
             questions = load_questions_from_excel(filepath, SHEET_NAME)
             if questions is not None:
                 data[filepath] = questions
-                logger.info(f"从数据库路径加载题库: {tiku_name} ({len(questions)}题)")
-                
+                logger.info(f"Remote Database：从数据库路径加载题库: {tiku_name} ({len(questions)}题)")
+
                 # 检查题目数量是否与数据库记录一致
                 if len(questions) != tiku['tiku_nums']:
-                    logger.warning(f"题库 {tiku_name} 题目数量不一致: 文件{len(questions)}题 vs 数据库{tiku['tiku_nums']}题")
+                    logger.warning(
+                        f"题库 {tiku_name} 题目数量不一致: 文件{len(questions)}题 vs 数据库{tiku['tiku_nums']}题")
             else:
                 logger.error(f"加载题库文件失败: {filepath}")
-        
+
         logger.info(f"从数据库成功加载 {len(data)} 个题库")
         return data
-        
+
     except Exception as e:
         logger.error(f"从数据库加载题库失败: {e}")
         logger.info("降级到文件系统扫描")
@@ -458,14 +455,19 @@ def load_all_banks():
     return load_banks_from_database()
 
 
+
+#初始化mysql线程池
+init_connection_pool()
+
 APP_WIDE_QUESTION_DATA = load_all_banks()
+
 
 # 启动时同步逻辑优化
 def startup_sync():
     """启动时同步数据库和文件系统"""
     try:
         logger.info("开始启动时同步...")
-        
+
         # 如果数据库中没有题库数据，同步文件系统到数据库
         tiku_list = get_tiku_by_subject()
         if not tiku_list:
@@ -475,7 +477,7 @@ def startup_sync():
             logger.info("数据库中有题库数据，检查文件系统同步状态...")
             # 检查是否有新的文件需要同步
             check_and_sync_new_files()
-        
+
         logger.info("启动时同步完成")
     except Exception as e:
         logger.warning(f"启动时同步失败: {e}")
@@ -487,29 +489,30 @@ def check_and_sync_new_files():
         # 获取数据库中的所有文件路径
         tiku_list = get_tiku_by_subject()
         db_paths = {tiku['tiku_position'] for tiku in tiku_list}
-        
+
         # 扫描文件系统中的所有Excel文件
         excel_files = get_all_excel_files()
-        
+
         # 找出新文件
         new_files = [f for f in excel_files if normalize_filepath(f) not in db_paths]
-        
+
         if new_files:
             logger.info(f"发现 {len(new_files)} 个新文件需要同步")
-            
+
             # 为新文件创建数据库记录
             for filepath in new_files:
                 try:
                     # 解析科目和文件信息
                     path_parts = normalize_filepath(filepath).split('/')
                     if len(path_parts) >= 2:
-                        subject_name = path_parts[1] if len(path_parts) > 2 and path_parts[0] == SUBJECT_DIRECTORY else "未分类"
+                        subject_name = path_parts[1] if len(path_parts) > 2 and path_parts[
+                            0] == SUBJECT_DIRECTORY else "未分类"
                         filename = path_parts[-1].replace('.xlsx', '').replace('.xls', '')
-                        
+
                         # 确保科目存在
                         subjects = get_all_subjects()
                         subject_map = {s['subject_name']: s['subject_id'] for s in subjects}
-                        
+
                         if subject_name not in subject_map:
                             result = create_subject(subject_name)
                             if result['success']:
@@ -519,14 +522,14 @@ def check_and_sync_new_files():
                                 continue
                         else:
                             subject_id = subject_map[subject_name]
-                        
+
                         # 加载并验证文件
                         questions = load_questions_from_excel(filepath, SHEET_NAME)
                         if questions:
                             # 计算文件信息
                             file_size = os.path.getsize(filepath) if os.path.exists(filepath) else 0
                             file_hash = get_file_hash(filepath)
-                            
+
                             # 创建题库记录
                             result = create_or_update_tiku(
                                 subject_id=subject_id,
@@ -536,24 +539,26 @@ def check_and_sync_new_files():
                                 file_size=file_size,
                                 file_hash=file_hash
                             )
-                            
+
                             if result['success']:
                                 logger.info(f"同步新文件到数据库: {filename}")
                                 # 更新内存数据
                                 APP_WIDE_QUESTION_DATA[normalize_filepath(filepath)] = questions
                             else:
                                 logger.error(f"同步文件失败: {filename} - {result['error']}")
-                                
+
                 except Exception as e:
                     logger.error(f"处理新文件失败 {filepath}: {e}")
         else:
             logger.info("没有发现需要同步的新文件")
-            
+
     except Exception as e:
         logger.error(f"检查新文件失败: {e}")
 
+
 # 在后台线程中执行同步，避免阻塞启动
 import threading
+
 sync_thread = threading.Thread(target=startup_sync, daemon=True)
 sync_thread.start()
 
@@ -592,7 +597,7 @@ def monitor_activity():
             except Exception as e:
                 logger.error(f"Error cleaning sessions: {e}")
             cleanup_counter = 0
-        
+
         # 同步题库使用次数到数据库
         try:
             sync_usage_stats_to_database()
@@ -603,15 +608,15 @@ def monitor_activity():
 def sync_usage_stats_to_database():
     """同步题库使用次数到数据库"""
     global tiku_usage_stats
-    
+
     with usage_stats_lock:
         if not tiku_usage_stats:
             return
-        
+
         # 复制当前统计数据并清空
         stats_to_sync = dict(tiku_usage_stats)
         tiku_usage_stats.clear()
-    
+
     if stats_to_sync:
         from connectDB import batch_update_tiku_usage
         try:
@@ -728,7 +733,7 @@ def api_login():
 
         # 获取完整的用户信息，包括身份模型
         user_info = get_user_info(result['user_id'])
-        
+
         logger.info(f"User logged in: {username}")
         return create_response(True, '登录成功', {
             'user': {
@@ -786,7 +791,7 @@ def api_check_auth():
         # 获取完整的用户信息，包括身份模型
         user_id = session.get('user_id')
         user_info = get_user_info(user_id)
-        
+
         return create_response(True, data={
             'authenticated': True,
             'user': {
@@ -824,18 +829,25 @@ def api_file_options():
                 'progress_percent': min(100, (current_index / len(current_indices)) * 100) if current_indices else 0
             }
 
+    # 获取所有科目信息（包含考试时间）
+    all_subjects = get_all_subjects()
+    subjects_exam_time = {s['subject_name']: s['exam_time'] for s in all_subjects}
+
     # 从数据库获取启用的题库
     try:
         db_tiku_list = get_tiku_by_subject()
         db_tiku_map = {}
-        
+
         for tiku in db_tiku_list:
             if tiku['is_active']:  # 只显示启用的题库
                 subject_name = tiku['subject_name']
                 if subject_name not in db_tiku_map:
-                    db_tiku_map[subject_name] = []
-                
-                db_tiku_map[subject_name].append({
+                    db_tiku_map[subject_name] = {
+                        'files': [],
+                        'exam_time': subjects_exam_time.get(subject_name)
+                    }
+
+                db_tiku_map[subject_name]['files'].append({
                     'key': tiku['tiku_position'],
                     'display': tiku['tiku_name'],
                     'count': tiku['tiku_nums'],
@@ -850,7 +862,7 @@ def api_file_options():
     # 如果数据库中没有数据，使用文件系统作为备用方案
     if not db_tiku_map and APP_WIDE_QUESTION_DATA:
         logger.info("数据库中没有题库数据，使用文件系统数据")
-        
+
         for filepath, questions_list in APP_WIDE_QUESTION_DATA.items():
             path_parts = normalize_filepath(filepath).split('/')
             if len(path_parts) < 2:
@@ -860,7 +872,10 @@ def api_file_options():
             subject = path_parts[1] if len(path_parts) > 2 and path_parts[0] == SUBJECT_DIRECTORY else "未分类"
 
             if subject not in subjects_data:
-                subjects_data[subject] = []
+                subjects_data[subject] = {
+                    'files': [],
+                    'exam_time': subjects_exam_time.get(subject)
+                }
 
             file_info = {
                 'key': filepath,
@@ -868,15 +883,17 @@ def api_file_options():
                 'count': len(questions_list) if isinstance(questions_list, list) else 0,
                 'progress': current_progress if current_file == filepath else None
             }
-            subjects_data[subject].append(file_info)
+            subjects_data[subject]['files'].append(file_info)
     else:
         subjects_data = db_tiku_map
 
-    # 排序
-    sorted_subjects = {
-        subject: sorted(files, key=lambda x: x['display'])
-        for subject, files in sorted(subjects_data.items())
-    }
+    # 排序 - 需要更新排序逻辑以适应新的数据结构
+    sorted_subjects = {}
+    for subject, data in sorted(subjects_data.items()):
+        sorted_subjects[subject] = {
+            'files': sorted(data['files'], key=lambda x: x['display']),
+            'exam_time': data['exam_time']
+        }
 
     return create_response(True, data={'subjects': sorted_subjects})
 
@@ -914,7 +931,7 @@ def api_start_practice():
 
     # 开始新会话 - 增加题库使用次数统计
     increment_tiku_usage(file_name)
-    
+
     question_indices = list(range(len(question_bank)))
     if shuffle_questions:
         random.shuffle(question_indices)
@@ -1249,17 +1266,19 @@ def api_get_question_history(question_index: int):
 # --- 管理员功能相关路由 ---
 def admin_required(f):
     """检查用户是否为管理员的装饰器"""
+
     @wraps(f)
     def decorated_function(*args, **kwargs):
         user_id = session.get('user_id')
         if not user_id:
             return create_response(False, '请先登录', status_code=401)
-        
+
         user_model = get_user_model(user_id)
         if user_model != 10:  # ROOT用户
             return create_response(False, '权限不足，需要管理员权限', status_code=403)
-        
+
         return f(*args, **kwargs)
+
     return decorated_function
 
 
@@ -1271,40 +1290,41 @@ def api_admin_get_stats():
     """获取系统统计信息"""
     try:
         from connectDB import get_db_connection
-        
+
         connection = get_db_connection()
         if not connection:
             raise Exception("数据库连接失败")
-        
+
         cursor = connection.cursor()
-        
+
         # 用户统计
         cursor.execute("SELECT COUNT(*) FROM user_accounts")
         total_users = cursor.fetchone()[0]
-        
+
         cursor.execute("SELECT COUNT(*) FROM user_accounts WHERE is_enabled = TRUE")
         active_users = cursor.fetchone()[0]
-        
+
         cursor.execute("SELECT COUNT(*) FROM user_accounts WHERE model = 10")
         admin_users = cursor.fetchone()[0]
-        
+
         cursor.execute("SELECT COUNT(*) FROM user_accounts WHERE model = 5")
         vip_users = cursor.fetchone()[0]
-        
+
         # 邀请码统计
         cursor.execute("SELECT COUNT(*) FROM invitation_codes")
         total_invitations = cursor.fetchone()[0]
-        
-        cursor.execute("SELECT COUNT(*) FROM invitation_codes WHERE is_used = FALSE AND (expires_at IS NULL OR expires_at > NOW())")
+
+        cursor.execute(
+            "SELECT COUNT(*) FROM invitation_codes WHERE is_used = FALSE AND (expires_at IS NULL OR expires_at > NOW())")
         unused_invitations = cursor.fetchone()[0]
-        
+
         cursor.execute("SELECT COUNT(*) FROM invitation_codes WHERE is_used = TRUE")
         used_invitations = cursor.fetchone()[0]
-        
+
         # 题库统计
         total_questions = sum(len(questions) for questions in APP_WIDE_QUESTION_DATA.values() if questions)
         total_files = len(APP_WIDE_QUESTION_DATA)
-        
+
         stats = {
             'users': {
                 'total': total_users,
@@ -1322,9 +1342,9 @@ def api_admin_get_stats():
                 'total_files': total_files
             }
         }
-        
+
         return create_response(True, data={'stats': stats})
-        
+
     except Exception as e:
         logger.error(f"Error getting admin stats: {e}")
         raise
@@ -1343,39 +1363,39 @@ def api_admin_get_users():
     """获取用户列表"""
     try:
         from connectDB import get_db_connection
-        
+
         # 获取查询参数
         search = request.args.get('search', '').strip()
         order_by = request.args.get('order_by', 'id')
         order_dir = request.args.get('order_dir', 'desc')
         page = max(1, int(request.args.get('page', 1)))
         per_page = min(100, max(10, int(request.args.get('per_page', 20))))
-        
+
         # 验证排序字段
         valid_order_fields = ['id', 'username', 'created_at', 'last_time_login', 'model']
         if order_by not in valid_order_fields:
             order_by = 'id'
-        
+
         # 验证排序方向
         if order_dir.lower() not in ['asc', 'desc']:
             order_dir = 'desc'
-        
+
         connection = get_db_connection()
         if not connection:
             raise Exception("数据库连接失败")
-        
+
         cursor = connection.cursor()
-        
+
         # 构建查询条件
         where_conditions = []
         query_params = []
-        
+
         if search:
             where_conditions.append("u.username LIKE %s")
             query_params.append(f"%{search}%")
-        
+
         where_clause = "WHERE " + " AND ".join(where_conditions) if where_conditions else ""
-        
+
         # 计算总数
         count_query = f"""
         SELECT COUNT(*) as total
@@ -1384,11 +1404,11 @@ def api_admin_get_users():
         """
         cursor.execute(count_query, query_params)
         total_count = cursor.fetchone()[0]
-        
+
         # 计算分页信息
         total_pages = (total_count + per_page - 1) // per_page
         offset = (page - 1) * per_page
-        
+
         # 获取用户列表
         query = f"""
         SELECT 
@@ -1402,7 +1422,7 @@ def api_admin_get_users():
         """
         cursor.execute(query, query_params + [per_page, offset])
         users_data = cursor.fetchall()
-        
+
         users = []
         for user_data in users_data:
             user_id, username, is_enabled, created_at, last_login, model, invitation_code = user_data
@@ -1415,7 +1435,7 @@ def api_admin_get_users():
                 'model': model if model is not None else 0,
                 'invitation_code': invitation_code
             })
-        
+
         pagination = {
             'page': page,
             'per_page': per_page,
@@ -1424,12 +1444,12 @@ def api_admin_get_users():
             'has_prev': page > 1,
             'has_next': page < total_pages
         }
-        
+
         return create_response(True, data={
             'users': users,
             'pagination': pagination
         })
-        
+
     except Exception as e:
         logger.error(f"Error getting users: {e}")
         raise
@@ -1448,34 +1468,34 @@ def api_admin_toggle_user(user_id):
     """启用/禁用用户"""
     try:
         from connectDB import get_db_connection
-        
+
         # 不能操作自己
         current_user_id = session.get('user_id')
         if user_id == current_user_id:
             raise BadRequest("不能操作自己的账户")
-        
+
         connection = get_db_connection()
         if not connection:
             raise Exception("数据库连接失败")
-        
+
         cursor = connection.cursor()
-        
+
         # 获取当前状态
         cursor.execute("SELECT is_enabled FROM user_accounts WHERE id = %s", (user_id,))
         result = cursor.fetchone()
         if not result:
             raise NotFound("用户不存在")
-        
+
         current_status = result[0]
         new_status = not current_status
-        
+
         # 更新状态
         cursor.execute("UPDATE user_accounts SET is_enabled = %s WHERE id = %s", (new_status, user_id))
         connection.commit()
-        
+
         action = "启用" if new_status else "禁用"
         return create_response(True, f"用户已{action}", data={'is_enabled': new_status})
-        
+
     except Exception as e:
         logger.error(f"Error toggling user {user_id}: {e}")
         raise
@@ -1496,36 +1516,36 @@ def api_admin_update_user_model(user_id):
         data = request.get_json()
         if not data or 'model' not in data:
             raise BadRequest("缺少模型参数")
-        
+
         model = data['model']
         if model not in [0, 5, 10]:
             raise BadRequest("无效的用户模型")
-        
+
         # 不能操作自己
         current_user_id = session.get('user_id')
         if user_id == current_user_id:
             raise BadRequest("不能修改自己的权限")
-        
+
         from connectDB import get_db_connection
-        
+
         connection = get_db_connection()
         if not connection:
             raise Exception("数据库连接失败")
-        
+
         cursor = connection.cursor()
-        
+
         # 检查用户是否存在
         cursor.execute("SELECT id FROM user_accounts WHERE id = %s", (user_id,))
         if not cursor.fetchone():
             raise NotFound("用户不存在")
-        
+
         # 更新模型
         cursor.execute("UPDATE user_accounts SET model = %s WHERE id = %s", (model, user_id))
         connection.commit()
-        
+
         model_names = {0: "普通用户", 5: "VIP用户", 10: "管理员"}
         return create_response(True, f"用户权限已更新为{model_names[model]}", data={'model': model})
-        
+
     except Exception as e:
         logger.error(f"Error updating user model {user_id}: {e}")
         raise
@@ -1544,24 +1564,28 @@ def api_admin_get_invitations():
     """获取邀请码列表"""
     try:
         from connectDB import get_db_connection
-        
+
         connection = get_db_connection()
         if not connection:
             raise Exception("数据库连接失败")
-        
+
         cursor = connection.cursor()
-        
+
         query = """
-        SELECT 
-            i.id, i.code, i.is_used, i.created_at, i.expires_at, i.used_time,
-            u.username as used_by_username
-        FROM invitation_codes i
-        LEFT JOIN user_accounts u ON i.used_by_user_id = u.id
-        ORDER BY i.created_at DESC
-        """
+                SELECT i.id,
+                       i.code,
+                       i.is_used,
+                       i.created_at,
+                       i.expires_at,
+                       i.used_time,
+                       u.username as used_by_username
+                FROM invitation_codes i
+                         LEFT JOIN user_accounts u ON i.used_by_user_id = u.id
+                ORDER BY i.created_at DESC \
+                """
         cursor.execute(query)
         invitations_data = cursor.fetchall()
-        
+
         invitations = []
         for invitation_data in invitations_data:
             inv_id, code, is_used, created_at, expires_at, used_time, used_by_username = invitation_data
@@ -1574,9 +1598,9 @@ def api_admin_get_invitations():
                 'used_time': used_time.isoformat() if used_time else None,
                 'used_by_username': used_by_username
             })
-        
+
         return create_response(True, data={'invitations': invitations})
-        
+
     except Exception as e:
         logger.error(f"Error getting invitations: {e}")
         raise
@@ -1597,23 +1621,23 @@ def api_admin_create_invitation():
         data = request.get_json() or {}
         code = data.get('code', '').strip()
         expire_days = data.get('expire_days')
-        
+
         # 如果没有提供邀请码，生成一个
         if not code:
             import random
             import string
             code = ''.join(random.choices(string.ascii_letters + string.digits, k=12))
-        
+
         # 验证邀请码格式
         if not code or len(code) < 6 or len(code) > 64:
             raise BadRequest("邀请码长度必须在6-64个字符之间")
-        
+
         result = create_invitation_code(code, expire_days)
         if result['success']:
             return create_response(True, result['message'], data={'invitation_code': result['code']})
         else:
             raise BadRequest(result['error'])
-        
+
     except Exception as e:
         logger.error(f"Error creating invitation: {e}")
         raise
@@ -1627,7 +1651,7 @@ def api_admin_get_subject_files():
     """获取题库文件信息"""
     try:
         files_info = []
-        
+
         for filepath, questions in APP_WIDE_QUESTION_DATA.items():
             try:
                 # 解析文件路径
@@ -1635,7 +1659,7 @@ def api_admin_get_subject_files():
                 filename = path_parts[-1]
                 display_name = filename.replace('.xlsx', '').replace('.xls', '')
                 subject = path_parts[1] if len(path_parts) > 2 and path_parts[0] == SUBJECT_DIRECTORY else "未分类"
-                
+
                 # 获取文件信息
                 file_size = 0
                 modified_time = None
@@ -1643,7 +1667,7 @@ def api_admin_get_subject_files():
                     stat = os.stat(filepath)
                     file_size = stat.st_size
                     modified_time = datetime.fromtimestamp(stat.st_mtime)
-                
+
                 files_info.append({
                     'subject': subject,
                     'filename': filename,
@@ -1656,12 +1680,12 @@ def api_admin_get_subject_files():
             except Exception as e:
                 logger.warning(f"Error processing file {filepath}: {e}")
                 continue
-        
+
         # 按科目和文件名排序
         files_info.sort(key=lambda x: (x['subject'], x['filename']))
-        
+
         return create_response(True, data={'files': files_info})
-        
+
     except Exception as e:
         logger.error(f"Error getting subject files: {e}")
         raise
@@ -1683,24 +1707,24 @@ def format_file_size(size_bytes):
 def sync_filesystem_to_database():
     """同步文件系统的题库到数据库"""
     import hashlib
-    
+
     logger.info("开始同步文件系统到数据库...")
-    
+
     # 首先从文件系统获取所有科目
     subjects_in_fs = set()
     tiku_in_fs = []
-    
+
     for filepath, questions in APP_WIDE_QUESTION_DATA.items():
         if not questions:  # 跳过空题库
             continue
-            
+
         path_parts = normalize_filepath(filepath).split('/')
         if len(path_parts) >= 2:
             subject_name = path_parts[1] if len(path_parts) > 2 and path_parts[0] == SUBJECT_DIRECTORY else "未分类"
             filename = path_parts[-1].replace('.xlsx', '').replace('.xls', '')
-            
+
             subjects_in_fs.add(subject_name)
-            
+
             # 计算文件信息
             file_size = 0
             file_hash = None
@@ -1711,7 +1735,7 @@ def sync_filesystem_to_database():
                         file_hash = hashlib.md5(f.read()).hexdigest()
                 except Exception as e:
                     logger.warning(f"无法读取文件 {filepath}: {e}")
-            
+
             tiku_in_fs.append({
                 'subject_name': subject_name,
                 'tiku_name': filename,
@@ -1720,11 +1744,11 @@ def sync_filesystem_to_database():
                 'file_size': file_size,
                 'file_hash': file_hash
             })
-    
+
     # 同步科目到数据库
     existing_subjects = {s['subject_name']: s['subject_id'] for s in get_all_subjects()}
     subject_id_map = {}
-    
+
     for subject_name in subjects_in_fs:
         if subject_name not in existing_subjects:
             result = create_subject(subject_name)
@@ -1735,7 +1759,7 @@ def sync_filesystem_to_database():
                 logger.error(f"创建科目失败: {subject_name} - {result['error']}")
         else:
             subject_id_map[subject_name] = existing_subjects[subject_name]
-    
+
     # 同步题库到数据库
     for tiku_info in tiku_in_fs:
         subject_id = subject_id_map.get(tiku_info['subject_name'])
@@ -1750,8 +1774,9 @@ def sync_filesystem_to_database():
             )
             if not result['success']:
                 logger.error(f"同步题库失败: {tiku_info['tiku_name']} - {result['error']}")
-    
+
     logger.info("文件系统同步完成")
+
 
 def get_file_hash(filepath: str) -> str:
     """计算文件MD5哈希"""
@@ -1762,6 +1787,7 @@ def get_file_hash(filepath: str) -> str:
     except Exception:
         return None
 
+
 def ensure_subject_directory(subject_name: str) -> str:
     """确保科目目录存在，返回目录路径"""
     subject_dir = os.path.join(SUBJECT_DIRECTORY, subject_name)
@@ -1769,25 +1795,27 @@ def ensure_subject_directory(subject_name: str) -> str:
         os.makedirs(subject_dir)
     return subject_dir
 
+
 def save_uploaded_file(file, subject_name: str, filename: str) -> str:
     """保存上传的文件，返回文件路径"""
     subject_dir = ensure_subject_directory(subject_name)
-    
+
     # 确保文件名有正确的扩展名
     if not filename.lower().endswith(('.xlsx', '.xls')):
         filename += '.xlsx'
-    
+
     filepath = os.path.join(subject_dir, filename)
-    
+
     # 如果文件已存在，添加时间戳
     if os.path.exists(filepath):
         base_name = filename.replace('.xlsx', '').replace('.xls', '')
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         new_filename = f"{base_name}_{timestamp}.xlsx"
         filepath = os.path.join(subject_dir, new_filename)
-    
+
     file.save(filepath)
     return normalize_filepath(filepath)
+
 
 def remove_file_safely(filepath: str) -> bool:
     """安全删除文件"""
@@ -1801,6 +1829,7 @@ def remove_file_safely(filepath: str) -> bool:
         logger.error(f"删除文件失败 {filepath}: {e}")
         return False
 
+
 def reload_question_bank(filepath: str) -> bool:
     """重新加载指定题库到内存"""
     try:
@@ -1812,6 +1841,7 @@ def reload_question_bank(filepath: str) -> bool:
     except Exception as e:
         logger.error(f"重新加载题库失败 {filepath}: {e}")
         return False
+
 
 # --- 科目管理API ---
 @app.route('/api/admin/subjects', methods=['GET'])
@@ -1833,15 +1863,19 @@ def api_admin_create_subject():
     data = request.get_json()
     if not data:
         raise BadRequest('缺少请求数据')
-    
+
     subject_name = data.get('subject_name', '').strip()
     if not subject_name:
         raise BadRequest('科目名称不能为空')
-    
+
     if len(subject_name) > 50:
         raise BadRequest('科目名称不能超过50个字符')
-    
-    result = create_subject(subject_name)
+
+    exam_time = data.get('exam_time', '').strip()
+    if exam_time == '':
+        exam_time = None
+
+    result = create_subject(subject_name, exam_time)
     if result['success']:
         # 创建对应的文件系统目录
         try:
@@ -1865,15 +1899,19 @@ def api_admin_update_subject(subject_id):
     data = request.get_json()
     if not data:
         raise BadRequest('缺少请求数据')
-    
+
     subject_name = data.get('subject_name', '').strip()
     if not subject_name:
         raise BadRequest('科目名称不能为空')
-    
+
     if len(subject_name) > 50:
         raise BadRequest('科目名称不能超过50个字符')
-    
-    result = update_subject(subject_id, subject_name)
+
+    exam_time = data.get('exam_time', '').strip()
+    if exam_time == '':
+        exam_time = None
+
+    result = update_subject(subject_id, subject_name, exam_time)
     if result['success']:
         logger.info(f"管理员更新科目: {subject_id} -> {subject_name}")
         return create_response(True, result['message'])
@@ -1894,7 +1932,7 @@ def api_admin_delete_subject(subject_id):
             remove_file_safely(file_path)
             # 从内存中移除
             APP_WIDE_QUESTION_DATA.pop(file_path, None)
-        
+
         logger.info(f"管理员删除科目: {subject_id}")
         return create_response(True, result['message'])
     else:
@@ -1914,7 +1952,7 @@ def api_admin_get_tiku():
             subject_id = int(subject_id)
         except ValueError:
             raise BadRequest('无效的科目ID')
-    
+
     tiku_list = get_tiku_by_subject(subject_id)
     return create_response(True, data={'tiku_list': tiku_list})
 
@@ -1927,60 +1965,60 @@ def api_admin_upload_tiku():
     """上传题库文件"""
     if 'file' not in request.files:
         raise BadRequest('没有上传文件')
-    
+
     file = request.files['file']
     if file.filename == '':
         raise BadRequest('没有选择文件')
-    
+
     subject_id = request.form.get('subject_id')
     tiku_name = request.form.get('tiku_name', '').strip()
-    
+
     if not subject_id:
         raise BadRequest('缺少科目ID')
-    
+
     try:
         subject_id = int(subject_id)
     except ValueError:
         raise BadRequest('无效的科目ID')
-    
+
     if not tiku_name:
         # 如果没有提供题库名称，使用文件名
         tiku_name = file.filename.replace('.xlsx', '').replace('.xls', '')
-    
+
     # 验证文件类型
     if not file.filename.lower().endswith(('.xlsx', '.xls')):
         raise BadRequest('只支持Excel文件 (.xlsx, .xls)')
-    
+
     # 获取科目信息
     subjects = get_all_subjects()
     subject_map = {s['subject_id']: s['subject_name'] for s in subjects}
-    
+
     if subject_id not in subject_map:
         raise BadRequest('科目不存在')
-    
+
     subject_name = subject_map[subject_id]
-    
+
     try:
         # 保存文件
         filepath = save_uploaded_file(file, subject_name, tiku_name)
-        
+
         # 加载题目数据
         questions = load_questions_from_excel(filepath, SHEET_NAME)
         if questions is None:
             remove_file_safely(filepath)
             raise BadRequest('文件格式错误或无法解析')
-        
+
         if not questions:
             remove_file_safely(filepath)
             raise BadRequest('文件中没有有效的题目数据')
-        
+
         # 更新内存数据
         APP_WIDE_QUESTION_DATA[filepath] = questions
-        
+
         # 计算文件信息
         file_size = os.path.getsize(filepath)
         file_hash = get_file_hash(filepath)
-        
+
         # 保存到数据库
         result = create_or_update_tiku(
             subject_id=subject_id,
@@ -1990,7 +2028,7 @@ def api_admin_upload_tiku():
             file_size=file_size,
             file_hash=file_hash
         )
-        
+
         if result['success']:
             logger.info(f"管理员上传题库: {tiku_name} ({len(questions)}题)")
             return create_response(True, f"题库上传成功，共{len(questions)}道题", data={
@@ -2003,7 +2041,7 @@ def api_admin_upload_tiku():
             remove_file_safely(filepath)
             APP_WIDE_QUESTION_DATA.pop(filepath, None)
             raise BadRequest(result['error'])
-            
+
     except Exception as e:
         logger.error(f"上传题库失败: {e}")
         raise
@@ -2022,7 +2060,7 @@ def api_admin_delete_tiku(tiku_id):
         if file_path:
             remove_file_safely(file_path)
             APP_WIDE_QUESTION_DATA.pop(file_path, None)
-        
+
         logger.info(f"管理员删除题库: {tiku_id}")
         return create_response(True, result['message'])
     else:
@@ -2068,10 +2106,10 @@ def api_admin_reload_banks():
         old_count = len(APP_WIDE_QUESTION_DATA)
         APP_WIDE_QUESTION_DATA = load_all_banks()
         new_count = len(APP_WIDE_QUESTION_DATA)
-        
+
         # 同步到数据库
         sync_filesystem_to_database()
-        
+
         logger.info(f"管理员重新加载题库: {old_count} -> {new_count}")
         return create_response(True, f'题库重新加载完成，共{new_count}个题库')
     except Exception as e:
@@ -2087,7 +2125,7 @@ def api_admin_get_usage_stats():
     """获取使用统计信息"""
     try:
         from connectDB import get_usage_statistics
-        
+
         result = get_usage_statistics()
         if result['success']:
             return create_response(True, data={
@@ -2096,7 +2134,7 @@ def api_admin_get_usage_stats():
             })
         else:
             raise Exception(result['error'])
-            
+
     except Exception as e:
         logger.error(f"获取使用统计失败: {e}")
         raise

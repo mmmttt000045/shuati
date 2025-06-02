@@ -12,9 +12,11 @@ const isAuthPage = computed(() => {
 </script>
 
 <template>
-  <div id="app" :class="{ 'auth-page': isAuthPage }">
-    <RouterView />
-  </div>
+  <v-app>
+    <div id="app" :class="{ 'auth-page': isAuthPage }">
+      <RouterView />
+    </div>
+  </v-app>
 </template>
 
 <style>
@@ -43,5 +45,20 @@ body {
 #app.auth-page {
   width: 100vw;
   min-height: 100vh;
+}
+
+/* Vuetify 覆盖样式 */
+.v-application {
+  line-height: normal !important;
+}
+
+/* 确保导航栏在正确的层级 */
+.v-app-bar {
+  z-index: 1000 !important;
+}
+
+/* 移动端导航抽屉层级 */
+.v-navigation-drawer {
+  z-index: 1100 !important;
 }
 </style>

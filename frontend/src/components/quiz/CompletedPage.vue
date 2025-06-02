@@ -52,8 +52,8 @@ import { ref, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { apiService } from '@/services/api';
 import type { CompletedSummary, FlashMessage } from '@/types';
-import NavigationBar from './NavigationBar.vue';
-import Loading from '@/components/Loading.vue';
+import NavigationBar from '@/components/layout/NavigationBar.vue';
+import Loading from '@/components/common/Loading.vue';
 
 const router = useRouter();
 const summary = ref<CompletedSummary | null>(null);

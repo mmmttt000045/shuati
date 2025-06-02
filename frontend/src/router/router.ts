@@ -1,8 +1,8 @@
 import { createRouter, createWebHistory, type RouteRecordRaw, type RouteLocationNormalized } from 'vue-router';
-import IndexPage from '../components/IndexPage.vue';
+import IndexPage from '../components/layout/IndexPage.vue';
 // We will create PracticePage.vue later
-import PracticePage from '../components/PracticePage.vue';
-import CompletedPage from '../components/CompletedPage.vue';
+import PracticePage from '../components/quiz/PracticePage.vue';
+import CompletedPage from '../components/quiz/CompletedPage.vue';
 
 const routes: Array<RouteRecordRaw> = [
   {

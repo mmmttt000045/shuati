@@ -21,7 +21,9 @@
       </div>
 
       <div class="stat-card">
-        <div class="stat-icon">📚</div>
+        <div class="stat-icon">
+          <IconSubject :size="32" color="#3b82f6" />
+        </div>
         <div class="stat-content">
           <div class="stat-number">{{ stats.subjects.total_questions }}</div>
           <div class="stat-label">题目总数</div>
@@ -47,7 +49,10 @@
         :class="['tab-button', { active: activeTab === tab.key }]"
         @click="switchTab(tab.key)"
       >
-        <span class="tab-icon">{{ tab.icon }}</span>
+        <span class="tab-icon">
+          <IconSubject v-if="tab.icon === 'subject'" :size="20" color="currentColor" />
+          <span v-else>{{ tab.icon }}</span>
+        </span>
         <span class="tab-text">{{ tab.label }}</span>
       </button>
     </div>
@@ -77,6 +82,7 @@
         :items-per-page="userItemsPerPage"
         :sort-by="userSortBy"
         :items-per-page-options="itemsPerPageOptions"
+        :items-per-page-text="'每页显示：'"
         class="elevation-2"
         density="comfortable"
         :no-data-text="'暂无用户数据'"
@@ -85,7 +91,6 @@
         hover
         sticky
         fixed-header
-        height="600px"
       >
         <!-- 搜索槽 -->
         <template v-slot:top>
@@ -200,6 +205,7 @@
         :items-per-page="invitationItemsPerPage"
         :sort-by="invitationSortBy"
         :items-per-page-options="itemsPerPageOptions"
+        :items-per-page-text="'每页显示：'"
         class="elevation-2"
         density="comfortable"
         :no-data-text="'暂无邀请码'"
@@ -270,7 +276,10 @@
     <!-- 科目管理 -->
     <div v-if="activeTab === 'subjects'" class="control-section">
       <div class="section-header">
-        <h2 class="section-title">📚 科目管理</h2>
+        <h2 class="section-title">
+          <IconSubject :size="24" color="#3b82f6" class="title-icon" />
+          科目管理
+        </h2>
         <div class="section-actions">
           <v-btn
             color="primary"
@@ -300,6 +309,7 @@
         :items-per-page="subjectItemsPerPage"
         :sort-by="subjectSortBy"
         :items-per-page-options="itemsPerPageOptions"
+        :items-per-page-text="'每页显示：'"
         class="elevation-2"
         density="comfortable"
         :no-data-text="'暂无科目'"
@@ -323,6 +333,11 @@
         <!-- 科目名称列 -->
         <template v-slot:item.subject_name="{ item }">
           <div class="font-weight-bold">{{ item.subject_name }}</div>
+        </template>
+
+        <!-- 考试时间列 -->
+        <template v-slot:item.exam_time="{ item }">
+          <span class="text-caption">{{ formatDate(item.exam_time) }}</span>
         </template>
 
         <!-- 创建时间列 -->
@@ -425,6 +440,7 @@
         :items-per-page="tikuItemsPerPage"
         :sort-by="tikuSortBy"
         :items-per-page-options="itemsPerPageOptions"
+        :items-per-page-text="'每页显示：'"
         class="elevation-2"
         density="comfortable"
         :no-data-text="'该科目下暂无题库'"
@@ -772,6 +788,17 @@
                   @keyup.enter="saveSubject"
                 ></v-text-field>
               </v-col>
+              <v-col cols="12">
+                <v-text-field
+                  v-model="subjectExamTime"
+                  label="考试时间"
+                  placeholder="请输入考试时间"
+                  type="datetime-local"
+                  variant="outlined"
+                  hint="考试时间格式为YYYY-MM-DDTHH:MM"
+                  persistent-hint
+                ></v-text-field>
+              </v-col>
             </v-row>
           </v-container>
         </v-card-text>
@@ -855,7 +882,9 @@ import { ref, onMounted, computed, onUnmounted } from 'vue'
 import { useToast } from 'vue-toastification'
 import { useAuthStore } from '@/stores/auth'
 import { apiService, type UserSearchParams, type Pagination, type SearchParams } from '@/services/api'
-import Loading from '@/components/Loading.vue'
+import Loading from '@/components/common/Loading.vue'
+import { USER_MODEL } from '@/types'
+import IconSubject from '@/components/icons/IconSubject.vue'
 
 // 类型定义
 interface User {
@@ -881,6 +910,7 @@ interface Invitation {
 interface Subject {
   subject_id: number
   subject_name: string
+  exam_time?: string
   created_at?: string
   updated_at?: string
 }
@@ -988,6 +1018,7 @@ const showSubjectDialog = ref(false)
 const subjectDialogMode = ref<'create' | 'edit'>('create')
 const currentSubject = ref<any>(null)
 const subjectName = ref('')
+const subjectExamTime = ref('')
 
 // 新增：题库管理状态
 const showUploadDialog = ref(false)
@@ -1004,9 +1035,8 @@ const loadingStats = ref(false)
 const tabs = [
   { key: 'users', label: '用户管理', icon: '👥' },
   { key: 'invitations', label: '邀请码管理', icon: '🎫' },
-  { key: 'subjects', label: '科目管理', icon: '📚' },
-  { key: 'tiku', label: '题库管理', icon: '📖' },
-  { key: 'stats', label: '使用统计', icon: '📊' }
+  { key: 'subjects', label: '科目管理', icon: 'subject' },
+  { key: 'tiku', label: '题库管理', icon: '📖' }
 ]
 
 // 当前用户ID
@@ -1016,11 +1046,6 @@ const currentUserId = computed(() => authStore.user?.user_id)
 const switchTab = (tabKey: string) => {
   activeTab.value = tabKey
   toast.info(`已切换到${tabs.find(t => t.key === tabKey)?.label} 📌`)
-  
-  // 如果切换到使用统计标签页，自动加载数据
-  if (tabKey === 'stats' && !usageStats.value) {
-    loadUsageStats()
-  }
 }
 
 // 加载统计信息
@@ -1212,12 +1237,14 @@ const openSubjectDialog = (mode: 'create' | 'edit', subject?: any) => {
   subjectDialogMode.value = mode
   currentSubject.value = subject
   subjectName.value = mode === 'edit' ? subject?.subject_name || '' : ''
+  subjectExamTime.value = mode === 'edit' ? subject?.exam_time || '' : ''
   showSubjectDialog.value = true
 }
 
 const closeSubjectDialog = () => {
   showSubjectDialog.value = false
   subjectName.value = ''
+  subjectExamTime.value = ''
   currentSubject.value = null
 }
 
@@ -1230,7 +1257,7 @@ const saveSubject = async () => {
   loading.value = true
   try {
     if (subjectDialogMode.value === 'create') {
-      const response = await apiService.admin.createSubject(subjectName.value.trim())
+      const response = await apiService.admin.createSubject(subjectName.value.trim(), subjectExamTime.value)
       if (response.success) {
         toast.success('科目创建成功')
         closeSubjectDialog()
@@ -1240,7 +1267,7 @@ const saveSubject = async () => {
         toast.error(response.message || '创建科目失败')
       }
     } else {
-      const response = await apiService.admin.updateSubject(currentSubject.value.subject_id, subjectName.value.trim())
+      const response = await apiService.admin.updateSubject(currentSubject.value.subject_id, subjectName.value.trim(), subjectExamTime.value)
       if (response.success) {
         toast.success('科目更新成功')
         closeSubjectDialog()
@@ -1987,6 +2014,7 @@ const invitationHeaders = [
 const subjectHeaders = [
   { title: 'ID', key: 'subject_id', sortable: true, width: '80px' },
   { title: '科目名称', key: 'subject_name', sortable: true, width: '200px' },
+  { title: '考试时间', key: 'exam_time', sortable: true, width: '180px' },
   { title: '创建时间', key: 'created_at', sortable: true, width: '160px' },
   { title: '更新时间', key: 'updated_at', sortable: true, width: '160px' },
   { title: '操作', key: 'actions', sortable: false, width: '150px', align: 'center' as const }
@@ -2181,14 +2209,12 @@ const handleSuccess = (message: string, callback?: () => void) => {
 }
 
 .stat-icon {
-  font-size: 3rem;
-  background: linear-gradient(135deg, #f8fafc, #e2e8f0);
-  border-radius: 12px;
-  width: 4rem;
-  height: 4rem;
   display: flex;
   align-items: center;
   justify-content: center;
+  font-size: 2rem;
+  margin-bottom: 0.75rem;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.1));
 }
 
 .stat-content {
@@ -2256,7 +2282,20 @@ const handleSuccess = (message: string, callback?: () => void) => {
 }
 
 .tab-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 0.5rem;
   font-size: 1.2rem;
+  transition: all 0.3s ease;
+}
+
+.tab-button:hover .tab-icon {
+  transform: scale(1.1);
+}
+
+.tab-button.active .tab-icon {
+  color: #3b82f6;
 }
 
 .tab-text {
@@ -3576,6 +3615,31 @@ const handleSuccess = (message: string, callback?: () => void) => {
     padding: 0 8px !important;
     font-size: 0.6875rem !important;
   }
+
+  /* 移动端每页条数选择框优化 */
+  .v-data-table-footer__items-per-page .v-input,
+  .v-data-table-footer__items-per-page .v-select {
+    min-width: 120px !important; /* 增加移动端宽度 */
+    max-width: 140px !important;
+    width: 120px !important;
+  }
+  
+  .v-data-table-footer__items-per-page .v-field__input {
+    min-width: 100px !important; /* 增加移动端输入框宽度 */
+    width: 100px !important;
+    font-size: 0.875rem !important;
+  }
+  
+  /* 移动端深层选择器 */
+  :deep(.v-data-table-footer__items-per-page .v-input) {
+    min-width: 120px !important;
+    width: 120px !important;
+  }
+  
+  :deep(.v-data-table-footer__items-per-page .v-field__input) {
+    min-width: 100px !important;
+    width: 100px !important;
+  }
 }
 
 /* 空状态样式优化 */
@@ -3764,5 +3828,152 @@ const handleSuccess = (message: string, callback?: () => void) => {
     background: #000 !important;
     color: #fff !important;
   }
+}
+
+/* 优化每页条数下拉选择框样式 */
+.v-data-table-footer__items-per-page .v-input,
+.v-data-table-footer__items-per-page .v-select {
+  min-width: 100px !important; /* 增加最小宽度确保完整显示 */
+  max-width: 120px !important; /* 设置最大宽度避免过宽 */
+  flex-grow: 0 !important;    /* 防止在 flex 布局中被压缩 */
+  flex-shrink: 0 !important;  /* 防止在 flex 布局中被压缩 */
+}
+
+.v-data-table-footer__items-per-page .v-field__input {
+  min-width: 80px !important;
+  text-align: center !important; /* 文本居中显示 */
+  white-space: nowrap !important; /* 防止文本换行 */
+  overflow: hidden !important;
+  text-overflow: clip !important; /* 不显示省略号 */
+}
+
+.v-data-table-footer__items-per-page .v-select__selection {
+  max-width: none !important; /* 移除选中项的最大宽度限制 */
+  width: 100% !important;
+}
+
+.v-data-table-footer__items-per-page .v-field {
+  min-width: 80px !important;
+}
+
+/* 确保下拉菜单选项完整显示 */
+.v-data-table-footer__items-per-page .v-list-item {
+  min-width: 80px !important;
+  text-align: center !important;
+}
+
+.v-data-table-footer__items-per-page .v-list-item-title {
+  white-space: nowrap !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+}
+
+/* 优化每页条数下拉选择框样式 */
+.v-data-table-footer__items-per-page .v-input,
+.v-data-table-footer__items-per-page .v-select {
+  min-width: 130px !important; /* 大幅增加最小宽度 */
+  max-width: 150px !important; /* 增加最大宽度 */
+  flex-grow: 0 !important;
+  flex-shrink: 0 !important;
+  width: 130px !important; /* 强制设置固定宽度 */
+}
+
+.v-data-table-footer__items-per-page .v-field__input {
+  min-width: 110px !important; /* 增加输入框宽度 */
+  width: 110px !important;
+  text-align: center !important;
+  white-space: nowrap !important;
+  overflow: visible !important; /* 改为visible确保内容显示 */
+  text-overflow: clip !important;
+}
+
+.v-data-table-footer__items-per-page .v-select__selection {
+  max-width: none !important;
+  width: 100% !important;
+  min-width: 110px !important;
+}
+
+.v-data-table-footer__items-per-page .v-field {
+  min-width: 110px !important;
+  width: 130px !important;
+}
+
+/* 更强力的样式覆盖 */
+.v-data-table .v-data-table-footer .v-data-table-footer__items-per-page {
+  min-width: 150px !important;
+  flex-shrink: 0 !important;
+}
+
+.v-data-table .v-data-table-footer .v-data-table-footer__items-per-page .v-input__control {
+  min-width: 130px !important;
+  width: 130px !important;
+}
+
+.v-data-table .v-data-table-footer .v-data-table-footer__items-per-page .v-field__field {
+  min-width: 110px !important;
+  width: 110px !important;
+}
+
+/* 深层选择器覆盖 */
+:deep(.v-data-table-footer__items-per-page .v-input) {
+  min-width: 130px !important;
+  width: 130px !important;
+}
+
+:deep(.v-data-table-footer__items-per-page .v-field__input) {
+  min-width: 110px !important;
+  width: 110px !important;
+  text-align: center !important;
+}
+
+:deep(.v-data-table-footer__items-per-page .v-select__selection-text) {
+  max-width: none !important;
+  width: 100% !important;
+  white-space: nowrap !important;
+  overflow: visible !important;
+}
+
+/* 确保下拉菜单选项完整显示 */
+.v-data-table-footer__items-per-page .v-list-item {
+  min-width: 110px !important;
+  text-align: center !important;
+}
+
+.v-data-table-footer__items-per-page .v-list-item-title {
+  white-space: nowrap !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+}
+
+/* 全局强制样式 - 确保每页条数完整显示 */
+.v-data-table-footer__items-per-page {
+  min-width: 160px !important;
+  width: auto !important;
+}
+
+.v-data-table-footer__items-per-page * {
+  min-width: inherit !important;
+  max-width: none !important;
+  white-space: nowrap !important;
+  overflow: visible !important;
+  text-overflow: unset !important;
+}
+
+/* 最终兜底方案 */
+.v-data-table-footer .v-data-table-footer__items-per-page .v-field__input,
+.v-data-table-footer .v-data-table-footer__items-per-page .v-select__selection-text,
+.v-data-table-footer .v-data-table-footer__items-per-page .v-input__control,
+.v-data-table-footer .v-data-table-footer__items-per-page .v-field__field {
+  width: auto !important;
+  min-width: 120px !important;
+  max-width: none !important;
+  flex: none !important;
+}
+
+/* 标题图标样式 */
+.section-title .title-icon {
+  margin-right: 0.5rem;
+  filter: drop-shadow(0 2px 4px rgba(59, 130, 246, 0.3));
+  vertical-align: middle;
 }
 </style>

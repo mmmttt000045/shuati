@@ -125,8 +125,13 @@ export interface SubjectFile {
   progress?: PracticeProgress | null;
 }
 
+export interface SubjectData {
+  files: SubjectFile[];
+  exam_time?: string | null;
+}
+
 export interface SubjectsResponse {
-  subjects: Record<string, SubjectFile[]>;
+  subjects: Record<string, SubjectData>;
   message?: string;
 }
 

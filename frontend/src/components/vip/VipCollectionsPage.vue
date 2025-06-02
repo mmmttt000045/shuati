@@ -152,7 +152,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import Loading from '@/components/Loading.vue'
+import Loading from '@/components/common/Loading.vue'
 
 const searchQuery = ref('')
 const showCreateModal = ref(false)

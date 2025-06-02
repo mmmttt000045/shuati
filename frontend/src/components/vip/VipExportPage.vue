@@ -140,7 +140,7 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import Loading from '@/components/Loading.vue'
+import Loading from '@/components/common/Loading.vue'
 
 const loading = ref(false)
 const exportStatus = ref('正在导出...')

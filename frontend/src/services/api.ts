@@ -89,6 +89,7 @@ export interface SearchParams {
 export interface Subject {
   subject_id: number;
   subject_name: string;
+  exam_time?: string;
   created_at?: string;
   updated_at?: string;
 }
@@ -185,8 +186,8 @@ export interface ApiService {
     
     // 科目管理
     getSubjects(params?: SearchParams): Promise<{ success: boolean; subjects?: Subject[]; pagination?: Pagination; message?: string }>;
-    createSubject(subjectName: string): Promise<{ success: boolean; subject_id?: number; message?: string }>;
-    updateSubject(subjectId: number, subjectName: string): Promise<{ success: boolean; message?: string }>;
+    createSubject(subjectName: string, examTime?: string): Promise<{ success: boolean; subject_id?: number; message?: string }>;
+    updateSubject(subjectId: number, subjectName: string, examTime?: string): Promise<{ success: boolean; message?: string }>;
     deleteSubject(subjectId: number): Promise<{ success: boolean; message?: string }>;
     
     // 题库管理
@@ -471,17 +472,23 @@ class ApiServiceImpl implements ApiService {
       const response = await this.fetchWithCredentials(`${API_BASE}/admin/subjects?${queryParams}`);
       return this.handleResponse<{ success: boolean; subjects?: Subject[]; pagination?: Pagination; message?: string }>(response);
     },
-    createSubject: async (subjectName: string): Promise<{ success: boolean; subject_id?: number; message?: string }> => {
+    createSubject: async (subjectName: string, examTime?: string): Promise<{ success: boolean; subject_id?: number; message?: string }> => {
+      const body: any = { subject_name: subjectName };
+      if (examTime) body.exam_time = examTime;
+
       const response = await this.fetchWithCredentials(`${API_BASE}/admin/subjects`, {
         method: 'POST',
-        body: JSON.stringify({ subject_name: subjectName })
+        body: JSON.stringify(body)
       });
       return this.handleResponse<{ success: boolean; subject_id?: number; message?: string }>(response);
     },
-    updateSubject: async (subjectId: number, subjectName: string): Promise<{ success: boolean; message?: string }> => {
+    updateSubject: async (subjectId: number, subjectName: string, examTime?: string): Promise<{ success: boolean; message?: string }> => {
+      const body: any = { subject_name: subjectName };
+      if (examTime) body.exam_time = examTime;
+
       const response = await this.fetchWithCredentials(`${API_BASE}/admin/subjects/${subjectId}`, {
         method: 'PUT',
-        body: JSON.stringify({ subject_name: subjectName })
+        body: JSON.stringify(body)
       });
       return this.handleResponse<{ success: boolean; message?: string }>(response);
     },

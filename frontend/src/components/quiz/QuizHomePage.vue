@@ -15,16 +15,27 @@
         <!-- 科目选择列表 -->
         <div v-if="!selectedSubject" class="subjects-list">
           <div
-            v-for="(files, subject) in subjects"
+            v-for="(subjectData, subject) in subjects"
             :key="subject"
             class="subject-card"
             @click="selectSubject(subject)"
           >
             <h2 class="subject-title">{{ subject }}</h2>
-            <div class="subject-info">
-              <span class="subject-count">{{ files.length }}个题库</span>
-              <span class="subject-total">共{{ getTotalQuestions(files) }}题</span>
+            <!-- 考试时间显示 -->
+            <div v-if="subjectData.exam_time && !isExamExpired(subjectData.exam_time)" class="exam-time-info">
+              <div class="exam-time-content">
+                <span class="exam-time-icon">📅</span>
+                <div class="exam-time-text">
+                  <span class="exam-time-label">距离考试还有</span>
+                  <span class="exam-time-days">{{ getDaysUntilExam(subjectData.exam_time) }}天</span>
+                </div>
+              </div>
             </div>
+            <div class="subject-info">
+              <span class="subject-count">{{ subjectData.files.length }}个题库</span>
+              <span class="subject-total">共{{ getTotalQuestions(subjectData.files) }}题</span>
+            </div>
+            
           </div>
         </div>
 
@@ -78,7 +89,7 @@
 
           <div class="files-grid">
             <div
-              v-for="file in subjects[selectedSubject]"
+              v-for="file in subjects[selectedSubject].files"
               :key="file.key"
               class="file-card"
               @click="startPractice(selectedSubject, file.key)"
@@ -191,13 +202,13 @@ import { useRouter } from 'vue-router'
 import { useToast } from 'vue-toastification'
 import { apiService } from '@/services/api'
 import { useAuthStore } from '@/stores/auth'
-import type { FlashMessage, SubjectFile } from '@/types'
-import Loading from '@/components/Loading.vue'
+import type { FlashMessage, SubjectFile, SubjectData } from '@/types'
+import Loading from '@/components/common/Loading.vue'
 
 const router = useRouter()
 const toast = useToast()
 const authStore = useAuthStore()
-const subjects = ref<Record<string, SubjectFile[]>>({})
+const subjects = ref<Record<string, SubjectData>>({})
 const selectedSubject = ref<string>('')
 const messages = ref<FlashMessage[]>([])
 const loading = ref(false)
@@ -218,6 +229,24 @@ const confirmData = ref<{
 
 const getTotalQuestions = (files: SubjectFile[]) => {
   return files.reduce((total, file) => total + file.count, 0)
+}
+
+// 计算距离考试还有多少天
+const getDaysUntilExam = (examTime: string) => {
+  if (!examTime) return 0
+  const examDate = new Date(examTime)
+  const today = new Date()
+  const diffTime = examDate.getTime() - today.getTime()
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+  return Math.max(0, diffDays)
+}
+
+// 检查考试是否已过期
+const isExamExpired = (examTime: string) => {
+  if (!examTime) return true
+  const examDate = new Date(examTime)
+  const today = new Date()
+  return examDate < today
 }
 
 const selectSubject = (subject: string) => {
@@ -568,7 +597,7 @@ watch(questionOrder, (newOrder, oldOrder) => {
   display: flex;
   justify-content: space-between;
   margin-top: auto; /* 推到底部 */
-  padding-top: 0.75rem; /* 调整为0.75rem，在分割线和内容间保持适当间距 */
+  padding-top: 1rem; /* 增加顶部间距 */
   border-top: 1px solid #e2e8f0;
   flex-shrink: 0; /* 防止压缩 */
 }
@@ -1342,5 +1371,52 @@ watch(questionOrder, (newOrder, oldOrder) => {
   .confirm-message {
     font-size: 1rem;
   }
+}
+
+.exam-time-info {
+  margin-top: 1.25rem;
+  margin-bottom: 1.25rem;
+}
+
+.exam-time-content {
+  display: flex;
+  align-items: center;
+  background: linear-gradient(135deg, #fef3c7, #fde68a);
+  padding: 0.75rem 1rem;
+  border-radius: 12px;
+  border: 1px solid #fbbf24;
+  box-shadow: 0 2px 4px rgba(251, 191, 36, 0.1);
+}
+
+.exam-time-icon {
+  font-size: 1.2rem;
+  margin-right: 0.75rem;
+  flex-shrink: 0;
+}
+
+.exam-time-text {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+.exam-time-label {
+  font-size: 0.8rem;
+  color: #92400e;
+  font-weight: 500;
+  margin-bottom: 0.25rem;
+}
+
+.exam-time-days {
+  font-size: 1rem;
+  color: #b45309;
+  font-weight: 700;
+}
+
+.subject-card:hover .exam-time-content {
+  background: linear-gradient(135deg, #fde68a, #f59e0b);
+  border-color: #f59e0b;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(251, 191, 36, 0.2);
 }
 </style> 

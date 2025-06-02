@@ -1,15 +1,15 @@
 import { createRouter, createWebHistory } from 'vue-router';
 import type { RouteRecordRaw } from 'vue-router';
-import IndexPage from '@/components/IndexPage.vue';
-import PracticePage from '@/components/PracticePage.vue';
-import CompletedPage from '@/components/CompletedPage.vue';
-import LoginPage from '@/components/LoginPage.vue';
-import RegisterPage from '@/components/RegisterPage.vue';
-import NotFoundPage from '@/components/NotFoundPage.vue';
-import SystemControl from '@/components/SystemControl.vue';
-import VipStatsPage from '@/components/VipStatsPage.vue';
-import VipExportPage from '@/components/VipExportPage.vue';
-import VipCollectionsPage from '@/components/VipCollectionsPage.vue';
+import IndexPage from '@/components/layout/IndexPage.vue';
+import PracticePage from '@/components/quiz/PracticePage.vue';
+import CompletedPage from '@/components/quiz/CompletedPage.vue';
+import LoginPage from '@/components/auth/LoginPage.vue';
+import RegisterPage from '@/components/auth/RegisterPage.vue';
+import NotFoundPage from '@/components/common/NotFoundPage.vue';
+import SystemControl from '@/components/admin/SystemControl.vue';
+import VipStatsPage from '@/components/vip/VipStatsPage.vue';
+import VipExportPage from '@/components/vip/VipExportPage.vue';
+import VipCollectionsPage from '@/components/vip/VipCollectionsPage.vue';
 import { useAuthStore } from '@/stores/auth';
 import { USER_MODEL } from '@/types';
 

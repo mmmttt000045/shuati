@@ -1,7 +1,7 @@
 <template>
   <div class="practice-page-wrapper">
     <!-- 使用新的导航栏组件 -->
-    <NavigationBar />
+    <NavigationBar v-if="showNavigationBar" />
     
     <div class="container">
       <div class="practice-container">
@@ -315,8 +315,8 @@ import type {
 import { QUESTION_STATUS, isCorrectStatus, isWrongStatus, isUnansweredStatus } from '@/types'
 import { apiService } from '@/services/api'
 import { useAuthStore } from '@/stores/auth'
-import NavigationBar from '@/components/NavigationBar.vue'
-import Loading from '@/components/Loading.vue'
+import NavigationBar from '@/components/layout/NavigationBar.vue'
+import Loading from '@/components/common/Loading.vue'
 
 interface QuestionStatus {
   status: QuestionStatusType
@@ -333,6 +333,9 @@ const props = defineProps<{
 const router = useRouter()
 const toast = useToast()
 const authStore = useAuthStore()
+
+// 控制导航栏显示状态
+const showNavigationBar = ref(false)
 
 // 响应式状态
 const fileDisplayName = ref<string>('')
@@ -855,6 +858,9 @@ const syncQuestionStatuses = async () => {
 
 onMounted(async () => {
   try {
+    // 隐藏导航栏，提供专注的练习体验
+    showNavigationBar.value = false
+    
     // 首先确保用户已认证
     if (!authStore.isAuthenticated) {
       await authStore.checkAuth()
@@ -1156,10 +1162,18 @@ const goBackToIndexPage = async () => {
     await apiService.saveSession()
     toast.dismiss(savingToast)
     toast.success('练习进度已保存 💾', { timeout: 2000 })
+    
+    // 恢复导航栏显示
+    showNavigationBar.value = true
+    
     router.push('/')
   } catch (error) {
     console.error('Failed to save session progress:', error)
     toast.warning('保存进度失败，但可以继续使用 ⚠️', { timeout: 3000 })
+    
+    // 即使保存失败也恢复导航栏显示
+    showNavigationBar.value = true
+    
     router.push('/')
   }
 }
@@ -1198,6 +1212,8 @@ watch(
 // 生命周期
 onBeforeUnmount(() => {
   clearAutoNextTimer()
+  // 恢复导航栏显示
+  showNavigationBar.value = true
 })
 </script>
 
@@ -1214,6 +1230,7 @@ onBeforeUnmount(() => {
   background: linear-gradient(to bottom right, #ffffff, #f8f9fa);
   overflow-y: auto;
   overflow-x: hidden;
+  z-index: 1000; /* 确保在最上层显示 */
 }
 
 .container {

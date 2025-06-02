@@ -6,14 +6,17 @@
       @navigate="handleNavigate" 
     />
     
-    <!-- 动态组件切换 -->
-    <transition name="fade" mode="out-in">
-      <component 
-        :is="currentComponent" 
-        :key="currentView"
-        @back-to-home="handleNavigate('home')"
-      />
-    </transition>
+    <!-- Vuetify主内容区域 -->
+    <v-main>
+      <!-- 动态组件切换 -->
+      <transition name="fade" mode="out-in">
+        <component 
+          :is="currentComponent" 
+          :key="currentView"
+          @back-to-home="handleNavigate('home')"
+        />
+      </transition>
+    </v-main>
   </div>
 </template>
 
@@ -21,14 +24,15 @@
 import { ref, computed, defineAsyncComponent } from 'vue'
 import { useRouter } from 'vue-router'
 import { useToast } from 'vue-toastification'
-import NavigationBar from '@/components/NavigationBar.vue'
+import NavigationBar from '@/components/layout/NavigationBar.vue'
 
 // 异步加载组件
-const QuizHomePage = defineAsyncComponent(() => import('./QuizHomePage.vue'))
-const VipStatsPage = defineAsyncComponent(() => import('./VipStatsPage.vue'))
-const VipExportPage = defineAsyncComponent(() => import('./VipExportPage.vue'))
-const VipCollectionsPage = defineAsyncComponent(() => import('./VipCollectionsPage.vue'))
-const SystemControl = defineAsyncComponent(() => import('./SystemControl.vue'))
+const QuizHomePage = defineAsyncComponent(() => import('../quiz/QuizHomePage.vue'))
+const UsageStatsPage = defineAsyncComponent(() => import('../stats/UsageStatsPage.vue'))
+const VipStatsPage = defineAsyncComponent(() => import('../vip/VipStatsPage.vue'))
+const VipExportPage = defineAsyncComponent(() => import('../vip/VipExportPage.vue'))
+const VipCollectionsPage = defineAsyncComponent(() => import('../vip/VipCollectionsPage.vue'))
+const SystemControl = defineAsyncComponent(() => import('../admin/SystemControl.vue'))
 
 const router = useRouter()
 const toast = useToast()
@@ -39,6 +43,7 @@ const currentView = ref<string>('home')
 // 视图标题映射
 const viewTitles: Record<string, string> = {
   home: '题目练习',
+  stats: '使用统计',
   'vip-stats': 'VIP学习统计',
   'vip-export': 'VIP错题导出',
   'vip-collections': 'VIP错题集管理',
@@ -48,6 +53,7 @@ const viewTitles: Record<string, string> = {
 // 组件映射
 const components = {
   home: QuizHomePage,
+  stats: UsageStatsPage,
   'vip-stats': VipStatsPage,
   'vip-export': VipExportPage,
   'vip-collections': VipCollectionsPage,

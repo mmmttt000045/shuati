@@ -55,7 +55,16 @@ class AuthService {
         body: JSON.stringify(data),
       });
 
-      return await response.json();
+      const result = await response.json();
+      
+      if (!response.ok || !result.success) {
+        return {
+          success: false,
+          error: result.message || result.error || '注册失败，请重试'
+        };
+      }
+      
+      return result;
     } catch (error) {
       return {
         success: false,
@@ -71,7 +80,16 @@ class AuthService {
         body: JSON.stringify(data),
       });
 
-      return await response.json();
+      const result = await response.json();
+      
+      if (!response.ok || !result.success) {
+        return {
+          success: false,
+          error: result.message || result.error || '登录失败，请重试'
+        };
+      }
+      
+      return result;
     } catch (error) {
       return {
         success: false,

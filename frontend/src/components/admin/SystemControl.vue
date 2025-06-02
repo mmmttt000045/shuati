@@ -1654,18 +1654,15 @@ const getPageNumbers = () => {
 
 // 组件挂载时加载数据
 onMounted(async () => {
-  console.time('SystemControl初始化')
   try {
     await Promise.all([
       loadStats(),
       loadUsers(),
-      loadInvitations(),
+      //loadInvitations(),
       loadSubjects()
     ])
-    console.timeEnd('SystemControl初始化')
   } catch (error) {
     console.error('初始化失败:', error)
-    console.timeEnd('SystemControl初始化')
   }
 })
 

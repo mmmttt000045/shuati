@@ -14,13 +14,18 @@ def init_connection_pool():
     try:
         db_pool = pooling.MySQLConnectionPool(
             pool_name="mypool",
-            pool_size=5,  # 池中保持的最小连接数，可以根据你的应用负载调整
+            pool_size=10,  # 增加池大小以处理更多并发
+            pool_reset_session=True,  # 确保每次获取的连接状态是干净的
             host="14.103.133.62",
             user="shuati",
             password="fxTWMaTLFyMMcKfh",
             database="shuati",
             port=3306,
-            pool_reset_session=True  # 可选，确保每次获取的连接状态是干净的
+            autocommit=True,  # 默认自动提交
+            charset='utf8mb4',
+            collation='utf8mb4_unicode_ci',
+            connect_timeout=10,  # 连接超时
+            sql_mode='STRICT_TRANS_TABLES,NO_ZERO_DATE,NO_ZERO_IN_DATE,ERROR_FOR_DIVISION_BY_ZERO'
         )
         print("数据库连接池创建成功")
     except Error as e:
@@ -57,26 +62,31 @@ def verify_invitation_code(invitation_code: str) -> Optional[int]:
     if not connection:
         return None
 
+    cursor = None
     try:
         cursor = connection.cursor()
         query = """
                 SELECT id
                 FROM invitation_codes
                 WHERE code = %s
-                  AND is_used = FALSE
-                  AND (expires_at IS NULL OR expires_at > NOW()) \
+                  AND is_used = 0
+                  AND (expires_at IS NULL OR expires_at > NOW())
                 """
         cursor.execute(query, (invitation_code,))
         result = cursor.fetchone()
         return result[0] if result else None
 
-    except Error:
+    except Error as e:
+        print(f"验证邀请码时发生错误: {e}")
         return None
     finally:
-        if cursor:
-            cursor.close()
-        if connection.is_connected():
-            connection.close()
+        try:
+            if cursor:
+                cursor.close()
+            if connection and connection.is_connected():
+                connection.close()
+        except:
+            pass  # 忽略清理时的错误
 
 
 def create_user(username: str, password: str, invitation_code_id: int) -> Dict[str, Any]:
@@ -85,13 +95,27 @@ def create_user(username: str, password: str, invitation_code_id: int) -> Dict[s
     if not connection:
         return {"success": False, "error": "数据库连接失败"}
 
+    cursor = None
     try:
+        # 确保连接的autocommit设置正确
+        connection.autocommit = False
         cursor = connection.cursor()
 
         # 检查用户名是否已存在
         cursor.execute("SELECT id FROM user_accounts WHERE username = %s", (username,))
         if cursor.fetchone():
             return {"success": False, "error": "用户名已存在"}
+
+        # 再次验证邀请码是否仍然有效（防止并发问题）
+        cursor.execute("""
+                       SELECT id
+                       FROM invitation_codes
+                       WHERE id = %s
+                         AND is_used = 0
+                         AND (expires_at IS NULL OR expires_at > NOW())
+                       """, (invitation_code_id,))
+        if not cursor.fetchone():
+            return {"success": False, "error": "邀请码已失效或被使用"}
 
         password_hash = hash_password(password)
 
@@ -101,7 +125,7 @@ def create_user(username: str, password: str, invitation_code_id: int) -> Dict[s
         # 插入新用户
         insert_user_query = """
                             INSERT INTO user_accounts (username, password_hash, used_invitation_code_id)
-                            VALUES (%s, %s, %s) \
+                            VALUES (%s, %s, %s)
                             """
         cursor.execute(insert_user_query, (username, password_hash, invitation_code_id))
         user_id = cursor.lastrowid
@@ -109,24 +133,38 @@ def create_user(username: str, password: str, invitation_code_id: int) -> Dict[s
         # 标记邀请码为已使用
         update_invitation_query = """
                                   UPDATE invitation_codes
-                                  SET is_used         = TRUE,
+                                  SET is_used         = 1,
                                       used_by_user_id = %s,
                                       used_time       = NOW()
-                                  WHERE id = %s \
+                                  WHERE id = %s
+                                    AND is_used = 0
                                   """
-        cursor.execute(update_invitation_query, (user_id, invitation_code_id))
+        affected_rows = cursor.execute(update_invitation_query, (user_id, invitation_code_id))
+
+        # 检查是否成功更新了邀请码
+        if cursor.rowcount == 0:
+            connection.rollback()
+            return {"success": False, "error": "邀请码已被其他用户使用"}
 
         connection.commit()
         return {"success": True, "user_id": user_id, "message": "用户创建成功"}
 
     except Error as e:
-        connection.rollback()
+        try:
+            if connection:
+                connection.rollback()
+        except:
+            pass  # 忽略回滚时的错误
         return {"success": False, "error": f"创建用户失败: {str(e)}"}
     finally:
-        if cursor:
-            cursor.close()
-        if connection.is_connected():
-            connection.close()
+        try:
+            if cursor:
+                cursor.close()
+            if connection and connection.is_connected():
+                connection.autocommit = True  # 恢复默认设置
+                connection.close()
+        except:
+            pass  # 忽略清理时的错误
 
 
 def authenticate_user(username: str, password: str) -> Dict[str, Any]:
@@ -508,7 +546,7 @@ def create_subject(subject_name: str, exam_time: str = None) -> Dict[str, Any]:
         else:
             query = "INSERT INTO subject (subject_name) VALUES (%s)"
             cursor.execute(query, (subject_name,))
-        
+
         connection.commit()
         subject_id = cursor.lastrowid
 
@@ -554,7 +592,7 @@ def update_subject(subject_id: int, subject_name: str, exam_time: str = None) ->
         else:
             query = "UPDATE subject SET subject_name = %s, exam_time = NULL WHERE subject_id = %s"
             cursor.execute(query, (subject_name, subject_id))
-        
+
         connection.commit()
 
         return {"success": True, "message": "科目更新成功"}
@@ -824,11 +862,14 @@ def toggle_tiku_status(tiku_id: int) -> Dict[str, Any]:
 def batch_update_tiku_usage(usage_stats: dict) -> Dict[str, Any]:
     """批量更新题库使用次数"""
     connection = get_db_connection()
-    all_counts = 0
     if not connection:
         return {"success": False, "error": "数据库连接失败"}
 
+    cursor = None
+    all_counts = 0
     try:
+        # 确保事务管理正确
+        connection.autocommit = False
         cursor = connection.cursor()
 
         # 开始事务
@@ -842,7 +883,7 @@ def batch_update_tiku_usage(usage_stats: dict) -> Dict[str, Any]:
             update_tiku_query = """
                                 UPDATE tiku
                                 SET used_count = used_count + %s
-                                WHERE tiku_position = %s \
+                                WHERE tiku_position = %s
                                 """
             cursor.execute(update_tiku_query, (usage_count, tiku_position))
             all_counts += usage_count
@@ -864,7 +905,7 @@ def batch_update_tiku_usage(usage_stats: dict) -> Dict[str, Any]:
                                    SET used_count = (SELECT COALESCE(SUM(used_count), 0)
                                                      FROM tiku
                                                      WHERE subject_id = %s)
-                                   WHERE subject_id = %s \
+                                   WHERE subject_id = %s
                                    """
             cursor.execute(update_subject_query, (subject_id, subject_id))
 
@@ -878,13 +919,21 @@ def batch_update_tiku_usage(usage_stats: dict) -> Dict[str, Any]:
         }
 
     except Error as e:
-        connection.rollback()
+        try:
+            if connection:
+                connection.rollback()
+        except:
+            pass
         return {"success": False, "error": f"批量更新使用次数失败: {str(e)}"}
     finally:
-        if cursor:
-            cursor.close()
-        if connection.is_connected():
-            connection.close()
+        try:
+            if cursor:
+                cursor.close()
+            if connection and connection.is_connected():
+                connection.autocommit = True  # 恢复默认设置
+                connection.close()
+        except:
+            pass  # 忽略清理时的错误
 
 
 def get_usage_statistics() -> Dict[str, Any]:
@@ -893,6 +942,7 @@ def get_usage_statistics() -> Dict[str, Any]:
     if not connection:
         return {"success": False, "error": "数据库连接失败"}
 
+    cursor = None
     try:
         cursor = connection.cursor()
 
@@ -929,10 +979,13 @@ def get_usage_statistics() -> Dict[str, Any]:
     except Error as e:
         return {"success": False, "error": f"获取使用统计失败: {str(e)}"}
     finally:
-        if cursor:
-            cursor.close()
-        if connection.is_connected():
-            connection.close()
+        try:
+            if cursor:
+                cursor.close()
+            if connection and connection.is_connected():
+                connection.close()
+        except:
+            pass  # 忽略清理时的错误
 
 
 if __name__ == "__main__":

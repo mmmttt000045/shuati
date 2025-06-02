@@ -111,9 +111,11 @@
 import { ref, reactive, onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
+import { useToast } from 'vue-toastification'
 
 const router = useRouter();
 const authStore = useAuthStore();
+const toast = useToast();
 
 const showPassword = ref(false);
 const usernameError = ref('');
@@ -199,7 +201,12 @@ async function handleLogin() {
   if (success) {
     // 登录成功后保存凭据
     saveCredentials();
+    toast.success('登录成功！');
     router.push('/');
+  } else {
+    // 使用 toast 显示失败原因，格式化错误信息
+    const errorReason = authStore.error || '请重试';
+    toast.error(`登录失败：${errorReason}`);
   }
 }
 

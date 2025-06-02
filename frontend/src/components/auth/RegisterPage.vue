@@ -147,9 +147,11 @@
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
+import { useToast } from 'vue-toastification'
 
 const router = useRouter();
 const authStore = useAuthStore();
+const toast = useToast();
 
 const showPassword = ref(false);
 const showConfirmPassword = ref(false);
@@ -237,9 +239,14 @@ async function handleRegister() {
   
   if (success) {
     successMessage.value = '注册成功！正在跳转到登录页面...';
+    toast.success('注册成功！正在跳转到登录页面...');
     setTimeout(() => {
       router.push('/login');
     }, 2000);
+  } else {
+    // 使用 toast 显示失败原因，格式化错误信息
+    const errorReason = authStore.error || '请重试';
+    toast.error(`注册失败：${errorReason}`);
   }
 }
 

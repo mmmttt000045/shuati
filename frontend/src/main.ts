@@ -5,11 +5,38 @@ import { createPinia } from 'pinia'
 import Toast, { POSITION } from 'vue-toastification'
 import 'vue-toastification/dist/index.css'
 
+// Vuetify
+import 'vuetify/styles'
+import { createVuetify } from 'vuetify'
+import * as components from 'vuetify/components'
+import * as directives from 'vuetify/directives'
+import { aliases, mdi } from 'vuetify/iconsets/mdi'
+import '@mdi/font/css/materialdesignicons.css'
+
 import App from './App.vue'
 import router from './router'
 import { useAuthStore } from './stores/auth'
 
+// 创建 Vuetify 实例
+const vuetify = createVuetify({
+  components,
+  directives,
+  icons: {
+    defaultSet: 'mdi',
+    aliases,
+    sets: {
+      mdi,
+    },
+  },
+  theme: {
+    defaultTheme: 'light'
+  }
+})
+
 const app = createApp(App)
+
+// 配置 Vuetify
+app.use(vuetify)
 
 // 配置 Toast
 app.use(Toast, {

@@ -57,193 +57,114 @@
       <div class="section-header">
         <h2 class="section-title">👥 用户管理</h2>
         <div class="section-actions">
-          <button class="refresh-btn" @click="() => loadUsers()" :disabled="loading">
-            <span class="btn-icon">🔄</span>
-            刷新列表
-          </button>
-        </div>
-      </div>
-
-      <!-- 搜索和筛选区域 -->
-      <div class="search-controls">
-        <div class="search-group">
-          <div class="search-input-wrapper">
-            <input
-              type="text"
-              class="search-input"
-              placeholder="搜索用户名..."
-              :value="userSearchParams.search"
-              @input="handleSearch(($event.target as HTMLInputElement).value)"
-            >
-            <button 
-              v-if="userSearchParams.search"
-              class="clear-search-btn"
-              @click="clearSearch"
-              title="清除搜索"
-            >
-              ✕
-            </button>
-          </div>
-        </div>
-        
-        <div class="filter-group">
-          <label class="filter-label">每页显示:</label>
-          <select 
-            class="page-size-select" 
-            :value="userSearchParams.per_page"
-            @change="changePageSize(parseInt(($event.target as HTMLSelectElement).value))"
+          <v-btn
+            color="primary"
+            prepend-icon="mdi-refresh"
+            @click="() => loadUsers()"
+            :loading="loading"
+            variant="elevated"
           >
-            <option value="10">10条</option>
-            <option value="20">20条</option>
-            <option value="50">50条</option>
-            <option value="100">100条</option>
-          </select>
+            刷新列表
+          </v-btn>
         </div>
       </div>
 
-      <Loading v-if="loading" />
-
-      <div v-else-if="users.length === 0" class="empty-state">
-        <div class="empty-icon">👤</div>
-        <p>{{ userSearchParams.search ? '没有找到匹配的用户' : '暂无用户数据' }}</p>
-      </div>
-
-      <div v-else class="users-table-container">
-        <table class="users-table">
-          <thead>
-            <tr>
-              <th class="sortable-header" @click="handleSort('id')">
-                ID
-                <span class="sort-indicator" v-if="userSearchParams.order_by === 'id'">
-                  {{ userSearchParams.order_dir === 'asc' ? '↑' : '↓' }}
-                </span>
-              </th>
-              <th class="sortable-header" @click="handleSort('username')">
-                用户名
-                <span class="sort-indicator" v-if="userSearchParams.order_by === 'username'">
-                  {{ userSearchParams.order_dir === 'asc' ? '↑' : '↓' }}
-                </span>
-              </th>
-              <th class="sortable-header" @click="handleSort('model')">
-                权限等级
-                <span class="sort-indicator" v-if="userSearchParams.order_by === 'model'">
-                  {{ userSearchParams.order_dir === 'asc' ? '↑' : '↓' }}
-                </span>
-              </th>
-              <th>状态</th>
-              <th class="sortable-header" @click="handleSort('created_at')">
-                注册时间
-                <span class="sort-indicator" v-if="userSearchParams.order_by === 'created_at'">
-                  {{ userSearchParams.order_dir === 'asc' ? '↑' : '↓' }}
-                </span>
-              </th>
-              <th class="sortable-header" @click="handleSort('last_time_login')">
-                最后登录
-                <span class="sort-indicator" v-if="userSearchParams.order_by === 'last_time_login'">
-                  {{ userSearchParams.order_dir === 'asc' ? '↑' : '↓' }}
-                </span>
-              </th>
-              <th>邀请码</th>
-              <th>操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="user in users" :key="user.id" :class="{ disabled: !user.is_enabled }">
-              <td>{{ user.id }}</td>
-              <td class="username-cell">
-                <span class="username">{{ user.username }}</span>
-              </td>
-              <td>
-                <select
-                  :value="user.model"
-                  @change="updateUserModel(user.id, parseInt(($event.target as HTMLSelectElement).value))"
-                  class="model-select"
-                  :disabled="user.id === currentUserId"
-                >
-                  <option value="0">普通用户</option>
-                  <option value="5">VIP用户</option>
-                  <option value="10">ROOT用户</option>
-                </select>
-              </td>
-              <td>
-                <span :class="['status-badge', user.is_enabled ? 'status-active' : 'status-disabled']">
-                  {{ user.is_enabled ? '启用' : '禁用' }}
-                </span>
-              </td>
-              <td class="date-cell">{{ formatDate(user.created_at) }}</td>
-              <td class="date-cell">
-                <span :class="['last-login', getLastLoginClass(user.last_time_login)]">
-                  {{ formatLastLogin(user.last_time_login) }}
-                </span>
-              </td>
-              <td class="invitation-cell">
-                <code class="invitation-code">{{ user.invitation_code || 'N/A' }}</code>
-              </td>
-              <td class="actions-cell">
-                <button
-                  @click="toggleUser(user.id)"
-                  :class="['action-btn', user.is_enabled ? 'btn-disable' : 'btn-enable']"
-                  :disabled="user.id === currentUserId"
-                >
-                  {{ user.is_enabled ? '禁用' : '启用' }}
-                </button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-
-        <!-- 分页控件 -->
-        <div v-if="userPagination" class="pagination-container">
-          <div class="pagination-info">
-            显示第 {{ (userPagination.page - 1) * userPagination.per_page + 1 }} - 
-            {{ Math.min(userPagination.page * userPagination.per_page, userPagination.total) }} 条，
-            共 {{ userPagination.total }} 条记录
+      <v-data-table
+        :headers="userHeaders"
+        :items="filteredUsers"
+        :loading="loading"
+        :search="userSearch"
+        :items-per-page="userItemsPerPage"
+        :sort-by="userSortBy"
+        :items-per-page-options="itemsPerPageOptions"
+        class="elevation-2"
+        density="comfortable"
+        :no-data-text="'暂无用户数据'"
+        :no-results-text="'没有找到匹配的用户'"
+        loading-text="加载用户数据中..."
+        hover
+        sticky
+        fixed-header
+        height="600px"
+      >
+        <!-- 搜索槽 -->
+        <template v-slot:top>
+          <div class="pa-4">
+            <v-text-field
+              v-model="userSearch"
+              label="搜索用户名..."
+              prepend-inner-icon="mdi-magnify"
+              variant="outlined"
+              hide-details
+              clearable
+              density="compact"
+            ></v-text-field>
           </div>
-          
-          <div class="pagination-controls">
-            <button 
-              class="pagination-btn"
-              @click="goToPage(1)"
-              :disabled="!userPagination.has_prev"
-            >
-              首页
-            </button>
-            <button 
-              class="pagination-btn"
-              @click="goToPage(userPagination.page - 1)"
-              :disabled="!userPagination.has_prev"
-            >
-              上一页
-            </button>
-            
-            <div class="page-numbers">
-              <button
-                v-for="page in getPageNumbers()"
-                :key="page"
-                :class="['page-number', { active: page === userPagination.page }]"
-                @click="goToPage(page)"
-              >
-                {{ page }}
-              </button>
-            </div>
-            
-            <button 
-              class="pagination-btn"
-              @click="goToPage(userPagination.page + 1)"
-              :disabled="!userPagination.has_next"
-            >
-              下一页
-            </button>
-            <button 
-              class="pagination-btn"
-              @click="goToPage(userPagination.total_pages)"
-              :disabled="!userPagination.has_next"
-            >
-              末页
-            </button>
-          </div>
-        </div>
-      </div>
+        </template>
+
+        <!-- 用户名列 -->
+        <template v-slot:item.username="{ item }">
+          <div class="font-weight-bold">{{ (item as any).username }}</div>
+        </template>
+
+        <!-- 权限等级列 -->
+        <template v-slot:item.model="{ item }">
+          <v-select
+            :model-value="(item as any).model"
+            @update:model-value="updateUserModel((item as any).id, $event)"
+            :items="modelOptions"
+            variant="outlined"
+            density="compact"
+            hide-details
+            :disabled="item.id === currentUserId"
+          ></v-select>
+        </template>
+
+        <!-- 状态列 -->
+        <template v-slot:item.is_enabled="{ item }">
+          <v-chip
+            :color="item.is_enabled ? 'success' : 'error'"
+            size="small"
+            variant="flat"
+          >
+            {{ item.is_enabled ? '启用' : '禁用' }}
+          </v-chip>
+        </template>
+
+        <!-- 注册时间列 -->
+        <template v-slot:item.created_at="{ item }">
+          <span class="text-caption">{{ formatDate(item.created_at) }}</span>
+        </template>
+
+        <!-- 最后登录列 -->
+        <template v-slot:item.last_time_login="{ item }">
+          <v-chip
+            :color="getLastLoginColor(item.last_time_login)"
+            size="small"
+            variant="outlined"
+          >
+            {{ formatLastLogin(item.last_time_login) }}
+          </v-chip>
+        </template>
+
+        <!-- 邀请码列 -->
+        <template v-slot:item.invitation_code="{ item }">
+          <code class="text-caption">{{ item.invitation_code || 'N/A' }}</code>
+        </template>
+
+        <!-- 操作列 -->
+        <template v-slot:item.actions="{ item }">
+          <v-btn
+            :color="item.is_enabled ? 'error' : 'success'"
+            :disabled="item.id === currentUserId"
+            @click="toggleUser(item.id)"
+            size="small"
+            variant="elevated"
+          >
+            {{ item.is_enabled ? '禁用' : '启用' }}
+          </v-btn>
+        </template>
+      </v-data-table>
     </div>
 
     <!-- 邀请码管理 -->
@@ -251,166 +172,99 @@
       <div class="section-header">
         <h2 class="section-title">🎫 邀请码管理</h2>
         <div class="section-actions">
-          <button class="primary-btn" @click="showCreateInvitationDialog = true">
-            <span class="btn-icon">➕</span>
-            创建邀请码
-          </button>
-          <button class="refresh-btn" @click="() => loadInvitations()" :disabled="loading">
-            <span class="btn-icon">🔄</span>
-            刷新列表
-          </button>
-        </div>
-      </div>
-
-      <!-- 搜索和筛选区域 -->
-      <div class="search-controls">
-        <div class="search-group">
-          <div class="search-input-wrapper">
-            <input
-              type="text"
-              class="search-input"
-              placeholder="搜索邀请码..."
-              :value="invitationSearchParams.search"
-              @input="handleInvitationSearch(($event.target as HTMLInputElement).value)"
-            >
-            <button 
-              v-if="invitationSearchParams.search"
-              class="clear-search-btn"
-              @click="clearInvitationSearch"
-              title="清除搜索"
-            >
-              ✕
-            </button>
-          </div>
-        </div>
-        
-        <div class="filter-group">
-          <label class="filter-label">每页显示:</label>
-          <select 
-            class="page-size-select" 
-            :value="invitationSearchParams.per_page"
-            @change="changeInvitationPageSize(parseInt(($event.target as HTMLSelectElement).value))"
+          <v-btn
+            color="primary"
+            prepend-icon="mdi-plus"
+            @click="showCreateInvitationDialog = true"
+            variant="elevated"
           >
-            <option value="10">10条</option>
-            <option value="20">20条</option>
-            <option value="50">50条</option>
-            <option value="100">100条</option>
-          </select>
+            创建邀请码
+          </v-btn>
+          <v-btn
+            color="secondary"
+            prepend-icon="mdi-refresh"
+            @click="() => loadInvitations()"
+            :loading="loading"
+            variant="elevated"
+          >
+            刷新列表
+          </v-btn>
         </div>
       </div>
 
-      <Loading v-if="loading" />
-
-      <div v-else-if="invitations.length === 0" class="empty-state">
-        <div class="empty-icon">🎫</div>
-        <p>{{ invitationSearchParams.search ? '没有找到匹配的邀请码' : '暂无邀请码' }}</p>
-      </div>
-
-      <div v-else class="invitations-table-container">
-        <table class="invitations-table">
-          <thead>
-            <tr>
-              <th class="sortable-header" @click="handleInvitationSort('id')">
-                ID
-                <span class="sort-indicator" v-if="invitationSearchParams.order_by === 'id'">
-                  {{ invitationSearchParams.order_dir === 'asc' ? '↑' : '↓' }}
-                </span>
-              </th>
-              <th>邀请码</th>
-              <th>状态</th>
-              <th>使用者</th>
-              <th class="sortable-header" @click="handleInvitationSort('created_at')">
-                创建时间
-                <span class="sort-indicator" v-if="invitationSearchParams.order_by === 'created_at'">
-                  {{ invitationSearchParams.order_dir === 'asc' ? '↑' : '↓' }}
-                </span>
-              </th>
-              <th>使用时间</th>
-              <th>过期时间</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="invitation in invitations" :key="invitation.id" :class="{ used: invitation.is_used }">
-              <td>{{ invitation.id }}</td>
-              <td class="code-cell">
-                <code class="invitation-code-display">{{ invitation.code }}</code>
-                <button
-                  class="copy-btn"
-                  @click="copyInvitationCode(invitation.code)"
-                  title="复制邀请码"
-                >
-                  📋
-                </button>
-              </td>
-              <td>
-                <span :class="['status-badge', invitation.is_used ? 'status-used' : 'status-available']">
-                  {{ invitation.is_used ? '已使用' : '可用' }}
-                </span>
-              </td>
-              <td>{{ invitation.used_by_username || '-' }}</td>
-              <td class="date-cell">{{ formatDate(invitation.created_at) }}</td>
-              <td class="date-cell">
-                <span :class="['used-time', getUsedTimeClass(invitation.used_time)]">
-                  {{ formatUsedTime(invitation.used_time) }}
-                </span>
-              </td>
-              <td class="date-cell">{{ invitation.expires_at ? formatDate(invitation.expires_at) : '永不过期' }}</td>
-            </tr>
-          </tbody>
-        </table>
-
-        <!-- 分页控件 -->
-        <div v-if="invitationPagination" class="pagination-container">
-          <div class="pagination-info">
-            显示第 {{ (invitationPagination.page - 1) * invitationPagination.per_page + 1 }} - 
-            {{ Math.min(invitationPagination.page * invitationPagination.per_page, invitationPagination.total) }} 条，
-            共 {{ invitationPagination.total }} 条记录
+      <v-data-table
+        :headers="invitationHeaders"
+        :items="filteredInvitations"
+        :loading="loading"
+        :search="invitationSearch"
+        :items-per-page="invitationItemsPerPage"
+        :sort-by="invitationSortBy"
+        :items-per-page-options="itemsPerPageOptions"
+        class="elevation-2"
+        density="comfortable"
+        :no-data-text="'暂无邀请码'"
+        :no-results-text="'没有找到匹配的邀请码'"
+      >
+        <!-- 搜索槽 -->
+        <template v-slot:top>
+          <div class="pa-4">
+            <v-text-field
+              v-model="invitationSearch"
+              label="搜索邀请码..."
+              prepend-inner-icon="mdi-magnify"
+              variant="outlined"
+              hide-details
+              clearable
+              density="compact"
+            ></v-text-field>
           </div>
-          
-          <div class="pagination-controls">
-            <button 
-              class="pagination-btn"
-              @click="goToInvitationPage(1)"
-              :disabled="!invitationPagination.has_prev"
-            >
-              首页
-            </button>
-            <button 
-              class="pagination-btn"
-              @click="goToInvitationPage(invitationPagination.page - 1)"
-              :disabled="!invitationPagination.has_prev"
-            >
-              上一页
-            </button>
-            
-            <div class="page-numbers">
-              <button
-                v-for="page in getInvitationPageNumbers()"
-                :key="page"
-                :class="['page-number', { active: page === invitationPagination.page }]"
-                @click="goToInvitationPage(page)"
-              >
-                {{ page }}
-              </button>
-            </div>
-            
-            <button 
-              class="pagination-btn"
-              @click="goToInvitationPage(invitationPagination.page + 1)"
-              :disabled="!invitationPagination.has_next"
-            >
-              下一页
-            </button>
-            <button 
-              class="pagination-btn"
-              @click="goToInvitationPage(invitationPagination.total_pages)"
-              :disabled="!invitationPagination.has_next"
-            >
-              末页
-            </button>
+        </template>
+
+        <!-- 邀请码列 -->
+        <template v-slot:item.code="{ item }">
+          <div class="d-flex align-center">
+            <code class="text-caption mr-2">{{ item.code }}</code>
+            <v-btn
+              icon="mdi-content-copy"
+              size="x-small"
+              variant="text"
+              @click="copyInvitationCode(item.code)"
+              title="复制邀请码"
+            ></v-btn>
           </div>
-        </div>
-      </div>
+        </template>
+
+        <!-- 状态列 -->
+        <template v-slot:item.is_used="{ item }">
+          <v-chip
+            :color="item.is_used ? 'warning' : 'success'"
+            size="small"
+            variant="flat"
+          >
+            {{ item.is_used ? '已使用' : '可用' }}
+          </v-chip>
+        </template>
+
+        <!-- 使用者列 -->
+        <template v-slot:item.used_by_username="{ item }">
+          {{ item.used_by_username || '-' }}
+        </template>
+
+        <!-- 创建时间列 -->
+        <template v-slot:item.created_at="{ item }">
+          <span class="text-caption">{{ formatDate(item.created_at) }}</span>
+        </template>
+
+        <!-- 使用时间列 -->
+        <template v-slot:item.used_time="{ item }">
+          <span class="text-caption">{{ formatUsedTime(item.used_time) }}</span>
+        </template>
+
+        <!-- 过期时间列 -->
+        <template v-slot:item.expires_at="{ item }">
+          <span class="text-caption">{{ item.expires_at ? formatDate(item.expires_at) : '永不过期' }}</span>
+        </template>
+      </v-data-table>
     </div>
 
     <!-- 科目管理 -->
@@ -418,170 +272,90 @@
       <div class="section-header">
         <h2 class="section-title">📚 科目管理</h2>
         <div class="section-actions">
-          <button class="primary-btn" @click="openSubjectDialog('create')">
-            <span class="btn-icon">➕</span>
-            创建科目
-          </button>
-          <button class="refresh-btn" @click="() => loadSubjects()" :disabled="loading">
-            <span class="btn-icon">🔄</span>
-            刷新列表
-          </button>
-        </div>
-      </div>
-
-      <!-- 搜索和筛选区域 -->
-      <div class="search-controls">
-        <div class="search-group">
-          <div class="search-input-wrapper">
-            <input
-              type="text"
-              class="search-input"
-              placeholder="搜索科目名称..."
-              :value="subjectSearchParams.search"
-              @input="handleSubjectSearch(($event.target as HTMLInputElement).value)"
-            >
-            <button 
-              v-if="subjectSearchParams.search"
-              class="clear-search-btn"
-              @click="clearSubjectSearch"
-              title="清除搜索"
-            >
-              ✕
-            </button>
-          </div>
-        </div>
-        
-        <div class="filter-group">
-          <label class="filter-label">每页显示:</label>
-          <select 
-            class="page-size-select" 
-            :value="subjectSearchParams.per_page"
-            @change="changeSubjectPageSize(parseInt(($event.target as HTMLSelectElement).value))"
+          <v-btn
+            color="primary"
+            prepend-icon="mdi-plus"
+            @click="openSubjectDialog('create')"
+            variant="elevated"
           >
-            <option value="10">10条</option>
-            <option value="20">20条</option>
-            <option value="50">50条</option>
-            <option value="100">100条</option>
-          </select>
+            创建科目
+          </v-btn>
+          <v-btn
+            color="secondary"
+            prepend-icon="mdi-refresh"
+            @click="() => loadSubjects()"
+            :loading="loading"
+            variant="elevated"
+          >
+            刷新列表
+          </v-btn>
         </div>
       </div>
 
-      <Loading v-if="loading" />
-
-      <div v-else-if="subjects.length === 0" class="empty-state">
-        <div class="empty-icon">📚</div>
-        <p>{{ subjectSearchParams.search ? '没有找到匹配的科目' : '暂无科目' }}</p>
-      </div>
-
-      <div v-else class="subjects-table-container">
-        <table class="subjects-table">
-          <thead>
-            <tr>
-              <th class="sortable-header" @click="handleSubjectSort('subject_id')">
-                ID
-                <span class="sort-indicator" v-if="subjectSearchParams.order_by === 'subject_id'">
-                  {{ subjectSearchParams.order_dir === 'asc' ? '↑' : '↓' }}
-                </span>
-              </th>
-              <th class="sortable-header" @click="handleSubjectSort('subject_name')">
-                科目名称
-                <span class="sort-indicator" v-if="subjectSearchParams.order_by === 'subject_name'">
-                  {{ subjectSearchParams.order_dir === 'asc' ? '↑' : '↓' }}
-                </span>
-              </th>
-              <th class="sortable-header" @click="handleSubjectSort('created_at')">
-                创建时间
-                <span class="sort-indicator" v-if="subjectSearchParams.order_by === 'created_at'">
-                  {{ subjectSearchParams.order_dir === 'asc' ? '↑' : '↓' }}
-                </span>
-              </th>
-              <th class="sortable-header" @click="handleSubjectSort('updated_at')">
-                更新时间
-                <span class="sort-indicator" v-if="subjectSearchParams.order_by === 'updated_at'">
-                  {{ subjectSearchParams.order_dir === 'asc' ? '↑' : '↓' }}
-                </span>
-              </th>
-              <th>操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="subject in subjects" :key="subject.subject_id">
-              <td>{{ subject.subject_id }}</td>
-              <td class="subject-name-cell">
-                <span class="subject-name">{{ subject.subject_name }}</span>
-              </td>
-              <td class="date-cell">{{ formatDate(subject.created_at) }}</td>
-              <td class="date-cell">{{ formatDate(subject.updated_at) }}</td>
-              <td class="actions-cell">
-                <button
-                  @click="openSubjectDialog('edit', subject)"
-                  class="action-btn btn-edit"
-                >
-                  编辑
-                </button>
-                <button
-                  @click="deleteSubject(subject)"
-                  class="action-btn btn-delete"
-                >
-                  删除
-                </button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-
-        <!-- 分页控件 -->
-        <div v-if="subjectPagination" class="pagination-container">
-          <div class="pagination-info">
-            显示第 {{ (subjectPagination.page - 1) * subjectPagination.per_page + 1 }} - 
-            {{ Math.min(subjectPagination.page * subjectPagination.per_page, subjectPagination.total) }} 条，
-            共 {{ subjectPagination.total }} 条记录
+      <v-data-table
+        :headers="subjectHeaders"
+        :items="filteredSubjects"
+        :loading="loading"
+        :search="subjectSearch"
+        :items-per-page="subjectItemsPerPage"
+        :sort-by="subjectSortBy"
+        :items-per-page-options="itemsPerPageOptions"
+        class="elevation-2"
+        density="comfortable"
+        :no-data-text="'暂无科目'"
+        :no-results-text="'没有找到匹配的科目'"
+      >
+        <!-- 搜索槽 -->
+        <template v-slot:top>
+          <div class="pa-4">
+            <v-text-field
+              v-model="subjectSearch"
+              label="搜索科目名称..."
+              prepend-inner-icon="mdi-magnify"
+              variant="outlined"
+              hide-details
+              clearable
+              density="compact"
+            ></v-text-field>
           </div>
-          
-          <div class="pagination-controls">
-            <button 
-              class="pagination-btn"
-              @click="goToSubjectPage(1)"
-              :disabled="!subjectPagination.has_prev"
-            >
-              首页
-            </button>
-            <button 
-              class="pagination-btn"
-              @click="goToSubjectPage(subjectPagination.page - 1)"
-              :disabled="!subjectPagination.has_prev"
-            >
-              上一页
-            </button>
-            
-            <div class="page-numbers">
-              <button
-                v-for="page in getSubjectPageNumbers()"
-                :key="page"
-                :class="['page-number', { active: page === subjectPagination.page }]"
-                @click="goToSubjectPage(page)"
-              >
-                {{ page }}
-              </button>
-            </div>
-            
-            <button 
-              class="pagination-btn"
-              @click="goToSubjectPage(subjectPagination.page + 1)"
-              :disabled="!subjectPagination.has_next"
-            >
-              下一页
-            </button>
-            <button 
-              class="pagination-btn"
-              @click="goToSubjectPage(subjectPagination.total_pages)"
-              :disabled="!subjectPagination.has_next"
-            >
-              末页
-            </button>
-          </div>
-        </div>
-      </div>
+        </template>
+
+        <!-- 科目名称列 -->
+        <template v-slot:item.subject_name="{ item }">
+          <div class="font-weight-bold">{{ item.subject_name }}</div>
+        </template>
+
+        <!-- 创建时间列 -->
+        <template v-slot:item.created_at="{ item }">
+          <span class="text-caption">{{ formatDate(item.created_at) }}</span>
+        </template>
+
+        <!-- 更新时间列 -->
+        <template v-slot:item.updated_at="{ item }">
+          <span class="text-caption">{{ formatDate(item.updated_at) }}</span>
+        </template>
+
+        <!-- 操作列 -->
+        <template v-slot:item.actions="{ item }">
+          <v-btn
+            color="primary"
+            size="small"
+            variant="elevated"
+            @click="openSubjectDialog('edit', item)"
+            class="mr-2"
+          >
+            编辑
+          </v-btn>
+          <v-btn
+            color="error"
+            size="small"
+            variant="elevated"
+            @click="deleteSubject(item)"
+          >
+            删除
+          </v-btn>
+        </template>
+      </v-data-table>
     </div>
 
     <!-- 题库管理 -->
@@ -589,33 +363,48 @@
       <div class="section-header">
         <h2 class="section-title">📖 题库管理</h2>
         <div class="section-actions">
-          <button class="primary-btn" @click="openUploadDialog">
-            <span class="btn-icon">📤</span>
+          <v-btn
+            color="primary"
+            prepend-icon="mdi-upload"
+            @click="openUploadDialog"
+            variant="elevated"
+          >
             上传题库
-          </button>
-          <button class="secondary-btn" @click="reloadBanks" :disabled="loading">
-            <span class="btn-icon">♻️</span>
+          </v-btn>
+          <v-btn
+            color="secondary"
+            prepend-icon="mdi-refresh"
+            @click="reloadBanks"
+            :loading="loading"
+            variant="elevated"
+          >
             重新加载
-          </button>
+          </v-btn>
         </div>
       </div>
 
       <!-- 科目选择器 -->
-      <div v-if="subjects.length > 0" class="subject-selector">
-        <label class="selector-label">选择科目：</label>
-        <div class="subject-chips">
-          <button
+      <div v-if="subjects.length > 0" class="subject-selector pa-4">
+        <v-chip-group
+          v-model="selectedSubjectId"
+          color="primary"
+          selected-class="text-primary"
+          @update:model-value="(value: number | null) => selectSubject(value || 0)"
+        >
+          <v-chip
             v-for="subject in subjects"
             :key="subject.subject_id"
-            :class="['subject-chip', { active: selectedSubjectId === subject.subject_id }]"
-            @click="selectSubject(subject.subject_id)"
+            :value="subject.subject_id"
+            variant="outlined"
           >
             {{ subject.subject_name }}
-          </button>
-        </div>
+          </v-chip>
+        </v-chip-group>
       </div>
 
-      <Loading v-if="loading" />
+      <div v-if="loading">
+        <Loading />
+      </div>
 
       <div v-else-if="!selectedSubjectId" class="empty-state">
         <div class="empty-icon">📖</div>
@@ -624,171 +413,95 @@
 
       <div v-else-if="tikuList.length === 0" class="empty-state">
         <div class="empty-icon">📖</div>
-        <p>{{ tikuSearchParams.search ? '没有找到匹配的题库' : '该科目下暂无题库' }}</p>
+        <p>{{ tikuSearch ? '没有找到匹配的题库' : '该科目下暂无题库' }}</p>
       </div>
 
-      <div v-else>
-        <!-- 搜索和筛选区域 -->
-        <div class="search-controls">
-          <div class="search-group">
-            <div class="search-input-wrapper">
-              <input
-                type="text"
-                class="search-input"
-                placeholder="搜索题库名称..."
-                :value="tikuSearchParams.search"
-                @input="handleTikuSearch(($event.target as HTMLInputElement).value)"
-              >
-              <button 
-                v-if="tikuSearchParams.search"
-                class="clear-search-btn"
-                @click="clearTikuSearch"
-                title="清除搜索"
-              >
-                ✕
-              </button>
-            </div>
+      <v-data-table
+        v-else
+        :headers="tikuHeaders"
+        :items="filteredTiku"
+        :loading="loading"
+        :search="tikuSearch"
+        :items-per-page="tikuItemsPerPage"
+        :sort-by="tikuSortBy"
+        :items-per-page-options="itemsPerPageOptions"
+        class="elevation-2"
+        density="comfortable"
+        :no-data-text="'该科目下暂无题库'"
+        :no-results-text="'没有找到匹配的题库'"
+      >
+        <!-- 搜索槽 -->
+        <template v-slot:top>
+          <div class="pa-4">
+            <v-text-field
+              v-model="tikuSearch"
+              label="搜索题库名称..."
+              prepend-inner-icon="mdi-magnify"
+              variant="outlined"
+              hide-details
+              clearable
+              density="compact"
+            ></v-text-field>
           </div>
-          
-          <div class="filter-group">
-            <label class="filter-label">每页显示:</label>
-            <select 
-              class="page-size-select" 
-              :value="tikuSearchParams.per_page"
-              @change="changeTikuPageSize(parseInt(($event.target as HTMLSelectElement).value))"
-            >
-              <option value="10">10条</option>
-              <option value="20">20条</option>
-              <option value="50">50条</option>
-              <option value="100">100条</option>
-            </select>
-          </div>
-        </div>
+        </template>
 
-        <div class="tiku-table-container">
-          <table class="tiku-table">
-            <thead>
-              <tr>
-                <th class="sortable-header" @click="handleTikuSort('tiku_name')">
-                  题库名称
-                  <span class="sort-indicator" v-if="tikuSearchParams.order_by === 'tiku_name'">
-                    {{ tikuSearchParams.order_dir === 'asc' ? '↑' : '↓' }}
-                  </span>
-                </th>
-                <th class="sortable-header" @click="handleTikuSort('tiku_nums')">
-                  题目数量
-                  <span class="sort-indicator" v-if="tikuSearchParams.order_by === 'tiku_nums'">
-                    {{ tikuSearchParams.order_dir === 'asc' ? '↑' : '↓' }}
-                  </span>
-                </th>
-                <th class="sortable-header" @click="handleTikuSort('file_size')">
-                  文件大小
-                  <span class="sort-indicator" v-if="tikuSearchParams.order_by === 'file_size'">
-                    {{ tikuSearchParams.order_dir === 'asc' ? '↑' : '↓' }}
-                  </span>
-                </th>
-                <th>状态</th>
-                <th class="sortable-header" @click="handleTikuSort('created_at')">
-                  创建时间
-                  <span class="sort-indicator" v-if="tikuSearchParams.order_by === 'created_at'">
-                    {{ tikuSearchParams.order_dir === 'asc' ? '↑' : '↓' }}
-                  </span>
-                </th>
-                <th class="sortable-header" @click="handleTikuSort('updated_at')">
-                  更新时间
-                  <span class="sort-indicator" v-if="tikuSearchParams.order_by === 'updated_at'">
-                    {{ tikuSearchParams.order_dir === 'asc' ? '↑' : '↓' }}
-                  </span>
-                </th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="tiku in tikuList" :key="tiku.tiku_id" :class="{ disabled: !tiku.is_active }">
-                <td class="tiku-name-cell">
-                  <span class="tiku-name">{{ tiku.tiku_name }}</span>
-                  <div class="tiku-path">{{ tiku.tiku_position }}</div>
-                </td>
-                <td class="number-cell">{{ tiku.tiku_nums }}</td>
-                <td class="size-cell">{{ formatFileSize(tiku.file_size || 0) }}</td>
-                <td>
-                  <span :class="['status-badge', tiku.is_active ? 'status-active' : 'status-disabled']">
-                    {{ tiku.is_active ? '启用' : '禁用' }}
-                  </span>
-                </td>
-                <td class="date-cell">{{ formatDate(tiku.created_at) }}</td>
-                <td class="date-cell">{{ formatDate(tiku.updated_at) }}</td>
-                <td class="actions-cell">
-                  <button
-                    @click="toggleTiku(tiku)"
-                    :class="['action-btn', tiku.is_active ? 'btn-disable' : 'btn-enable']"
-                  >
-                    {{ tiku.is_active ? '禁用' : '启用' }}
-                  </button>
-                  <button
-                    @click="deleteTiku(tiku)"
-                    class="action-btn btn-delete"
-                  >
-                    删除
-                  </button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+        <!-- 题库名称列 -->
+        <template v-slot:item.tiku_name="{ item }">
+          <div class="font-weight-bold">{{ (item as any).tiku_name }}</div>
+        </template>
 
-          <!-- 分页控件 -->
-          <div v-if="tikuPagination" class="pagination-container">
-            <div class="pagination-info">
-              显示第 {{ (tikuPagination.page - 1) * tikuPagination.per_page + 1 }} - 
-              {{ Math.min(tikuPagination.page * tikuPagination.per_page, tikuPagination.total) }} 条，
-              共 {{ tikuPagination.total }} 条记录
-            </div>
-            
-            <div class="pagination-controls">
-              <button 
-                class="pagination-btn"
-                @click="goToTikuPage(1)"
-                :disabled="!tikuPagination.has_prev"
-              >
-                首页
-              </button>
-              <button 
-                class="pagination-btn"
-                @click="goToTikuPage(tikuPagination.page - 1)"
-                :disabled="!tikuPagination.has_prev"
-              >
-                上一页
-              </button>
-              
-              <div class="page-numbers">
-                <button
-                  v-for="page in getTikuPageNumbers()"
-                  :key="page"
-                  :class="['page-number', { active: page === tikuPagination.page }]"
-                  @click="goToTikuPage(page)"
-                >
-                  {{ page }}
-                </button>
-              </div>
-              
-              <button 
-                class="pagination-btn"
-                @click="goToTikuPage(tikuPagination.page + 1)"
-                :disabled="!tikuPagination.has_next"
-              >
-                下一页
-              </button>
-              <button 
-                class="pagination-btn"
-                @click="goToTikuPage(tikuPagination.total_pages)"
-                :disabled="!tikuPagination.has_next"
-              >
-                末页
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
+        <!-- 题目数量列 -->
+        <template v-slot:item.tiku_nums="{ item }">
+          <v-chip size="small" color="info">{{ item.tiku_nums }}</v-chip>
+        </template>
+
+        <!-- 文件大小列 -->
+        <template v-slot:item.file_size="{ item }">
+          {{ formatFileSize(item.file_size || 0) }}
+        </template>
+
+        <!-- 状态列 -->
+        <template v-slot:item.is_active="{ item }">
+          <v-chip
+            :color="item.is_active ? 'success' : 'error'"
+            size="small"
+            variant="flat"
+          >
+            {{ item.is_active ? '启用' : '禁用' }}
+          </v-chip>
+        </template>
+
+        <!-- 创建时间列 -->
+        <template v-slot:item.created_at="{ item }">
+          <span class="text-caption">{{ formatDate(item.created_at) }}</span>
+        </template>
+
+        <!-- 更新时间列 -->
+        <template v-slot:item.updated_at="{ item }">
+          <span class="text-caption">{{ formatDate(item.updated_at) }}</span>
+        </template>
+
+        <!-- 操作列 -->
+        <template v-slot:item.actions="{ item }">
+          <v-btn
+            :color="item.is_active ? 'warning' : 'success'"
+            size="small"
+            variant="elevated"
+            @click="toggleTiku(item)"
+            class="mr-2"
+          >
+            {{ item.is_active ? '禁用' : '启用' }}
+          </v-btn>
+          <v-btn
+            color="error"
+            size="small"
+            variant="elevated"
+            @click="deleteTiku(item)"
+          >
+            删除
+          </v-btn>
+        </template>
+      </v-data-table>
     </div>
 
     <!-- 使用统计 -->
@@ -796,14 +509,24 @@
       <div class="section-header">
         <h2 class="section-title">📊 使用统计</h2>
         <div class="section-actions">
-          <button class="secondary-btn" @click="syncUsageStats" :disabled="loading">
-            <span class="btn-icon">♻️</span>
+          <v-btn
+            color="secondary"
+            prepend-icon="mdi-sync"
+            @click="syncUsageStats"
+            :loading="loadingStats"
+            variant="elevated"
+          >
             手动同步
-          </button>
-          <button class="refresh-btn" @click="loadUsageStats" :disabled="loadingStats">
-            <span class="btn-icon">🔄</span>
+          </v-btn>
+          <v-btn
+            color="primary"
+            prepend-icon="mdi-refresh"
+            @click="loadUsageStats"
+            :loading="loadingStats"
+            variant="elevated"
+          >
             刷新统计
-          </button>
+          </v-btn>
         </div>
       </div>
 
@@ -818,43 +541,69 @@
         <!-- 科目使用统计 -->
         <div class="stats-section">
           <h3 class="stats-title">📚 科目使用排行</h3>
-          <div v-if="usageStats.subject_stats && usageStats.subject_stats.length > 0" class="stats-table-container">
-            <table class="stats-table">
-              <thead>
-                <tr>
-                  <th>排名</th>
-                  <th>科目名称</th>
-                  <th>使用次数</th>
-                  <th>使用率</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="(subject, index) in usageStats.subject_stats" :key="subject.subject_name">
-                  <td class="rank-cell">
-                    <span :class="['rank-badge', getRankClass(index)]">{{ index + 1 }}</span>
-                  </td>
-                  <td class="subject-name-cell">
-                    <span class="subject-name">{{ subject.subject_name }}</span>
-                  </td>
-                  <td class="usage-count-cell">
-                    <span :class="['usage-count', { 'unused': subject.used_count === 0 }]">
-                      {{ formatUsageCount(subject.used_count) }}
-                    </span>
-                  </td>
-                  <td class="usage-rate-cell">
-                    <div class="usage-bar" v-if="subject.used_count > 0">
-                      <div 
-                        class="usage-fill" 
-                        :style="{ width: getUsagePercentage(subject.used_count, usageStats.subject_stats) + '%' }"
-                      ></div>
-                      <span class="usage-text">{{ getUsagePercentage(subject.used_count, usageStats.subject_stats).toFixed(1) }}%</span>
-                    </div>
-                    <span v-else class="usage-unused">未使用</span>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+          <v-data-table
+            v-if="usageStats.subject_stats && usageStats.subject_stats.length > 0"
+            :headers="subjectStatsHeaders"
+            :items="usageStats.subject_stats"
+            :items-per-page="10"
+            :sort-by="[{ key: 'used_count', order: 'desc' }]"
+            class="elevation-2"
+            density="comfortable"
+            :no-data-text="'暂无科目使用数据'"
+          >
+            <!-- 排名列 -->
+            <template v-slot:item.rank="{ index }">
+              <v-chip
+                :color="(index as number) < 3 ? 'warning' : 'default'"
+                size="small"
+                variant="flat"
+              >
+                {{ (index as number) + 1 }}
+              </v-chip>
+            </template>
+
+            <!-- 科目名称列 -->
+            <template v-slot:item.subject_name="{ item }">
+              <div class="font-weight-bold">{{ (item as any).subject_name }}</div>
+            </template>
+
+            <!-- 使用次数列 -->
+            <template v-slot:item.used_count="{ item }">
+              <v-chip
+                v-if="(item as any).used_count === 0"
+                color="grey"
+                size="small"
+                variant="outlined"
+              >
+                未使用
+              </v-chip>
+              <v-chip
+                v-else
+                color="success"
+                size="small"
+                variant="flat"
+              >
+                {{ (item as any).used_count }}
+              </v-chip>
+            </template>
+
+            <!-- 使用率列 -->
+            <template v-slot:item.usage_rate="{ item }">
+              <div class="d-flex align-center" style="min-width: 120px;">
+                <v-progress-linear
+                  v-if="(item as any).used_count > 0"
+                  :model-value="getUsagePercentage((item as any).used_count, usageStats.subject_stats)"
+                  color="primary"
+                  height="8"
+                  class="mr-2"
+                  style="width: 80px;"
+                ></v-progress-linear>
+                <span class="text-caption">
+                  {{ (item as any).used_count > 0 ? getUsagePercentage((item as any).used_count, usageStats.subject_stats).toFixed(1) + '%' : '未使用' }}
+                </span>
+              </div>
+            </template>
+          </v-data-table>
           <div v-else class="empty-state">
             <p>暂无科目使用数据</p>
           </div>
@@ -863,47 +612,82 @@
         <!-- 题库使用统计 -->
         <div class="stats-section">
           <h3 class="stats-title">📖 热门题库排行 (TOP 20)</h3>
-          <div v-if="usageStats.tiku_stats && usageStats.tiku_stats.length > 0" class="stats-table-container">
-            <table class="stats-table">
-              <thead>
-                <tr>
-                  <th>排名</th>
-                  <th>题库名称</th>
-                  <th>所属科目</th>
-                  <th>使用次数</th>
-                  <th>使用率</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="(tiku, index) in usageStats.tiku_stats" :key="tiku.tiku_position">
-                  <td class="rank-cell">
-                    <span :class="['rank-badge', getRankClass(index)]">{{ index + 1 }}</span>
-                  </td>
-                  <td class="tiku-name-cell">
-                    <span class="tiku-name">{{ tiku.tiku_name }}</span>
-                  </td>
-                  <td class="subject-tag-cell">
-                    <span class="subject-tag">{{ tiku.subject_name }}</span>
-                  </td>
-                  <td class="usage-count-cell">
-                    <span :class="['usage-count', { 'unused': tiku.used_count === 0 }]">
-                      {{ formatUsageCount(tiku.used_count) }}
-                    </span>
-                  </td>
-                  <td class="usage-rate-cell">
-                    <div class="usage-bar" v-if="tiku.used_count > 0">
-                      <div 
-                        class="usage-fill" 
-                        :style="{ width: getUsagePercentage(tiku.used_count, usageStats.tiku_stats) + '%' }"
-                      ></div>
-                      <span class="usage-text">{{ getUsagePercentage(tiku.used_count, usageStats.tiku_stats).toFixed(1) }}%</span>
-                    </div>
-                    <span v-else class="usage-unused">未使用</span>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+          <v-data-table
+            v-if="usageStats.tiku_stats && usageStats.tiku_stats.length > 0"
+            :headers="tikuStatsHeaders"
+            :items="usageStats.tiku_stats"
+            :items-per-page="20"
+            :sort-by="[{ key: 'used_count', order: 'desc' }]"
+            class="elevation-2"
+            density="comfortable"
+            :no-data-text="'暂无题库使用数据'"
+            :loading="loadingStats"
+            loading-text="加载统计数据中..."
+          >
+            <!-- 排名列 -->
+            <template v-slot:item.rank="{ index }">
+              <v-chip
+                :color="index < 3 ? 'warning' : 'default'"
+                size="small"
+                variant="flat"
+              >
+                {{ index + 1 }}
+              </v-chip>
+            </template>
+
+            <!-- 题库名称列 -->
+            <template v-slot:item.tiku_name="{ item }">
+              <div class="font-weight-bold">{{ (item as any).tiku_name }}</div>
+            </template>
+
+            <!-- 所属科目列 -->
+            <template v-slot:item.subject_name="{ item }">
+              <v-chip
+                color="info"
+                size="small"
+                variant="outlined"
+              >
+                {{ (item as any).subject_name }}
+              </v-chip>
+            </template>
+
+            <!-- 使用次数列 -->
+            <template v-slot:item.used_count="{ item }">
+              <v-chip
+                v-if="(item as any).used_count === 0"
+                color="grey"
+                size="small"
+                variant="outlined"
+              >
+                未使用
+              </v-chip>
+              <v-chip
+                v-else
+                color="success"
+                size="small"
+                variant="flat"
+              >
+                {{ (item as any).used_count }}
+              </v-chip>
+            </template>
+
+            <!-- 使用率列 -->
+            <template v-slot:item.usage_rate="{ item }">
+              <div class="d-flex align-center" style="min-width: 120px;">
+                <v-progress-linear
+                  v-if="(item as any).used_count > 0"
+                  :model-value="getUsagePercentage((item as any).used_count, usageStats.tiku_stats)"
+                  color="primary"
+                  height="8"
+                  class="mr-2"
+                  style="width: 80px;"
+                ></v-progress-linear>
+                <span class="text-caption">
+                  {{ (item as any).used_count > 0 ? getUsagePercentage((item as any).used_count, usageStats.tiku_stats).toFixed(1) + '%' : '未使用' }}
+                </span>
+              </div>
+            </template>
+          </v-data-table>
           <div v-else class="empty-state">
             <p>暂无题库使用数据</p>
           </div>
@@ -912,145 +696,226 @@
     </div>
 
     <!-- 创建邀请码对话框 -->
-    <div v-if="showCreateInvitationDialog" class="dialog-overlay" @click="closeCreateDialog">
-      <div class="dialog" @click.stop>
-        <div class="dialog-header">
-          <h3 class="dialog-title">创建新邀请码</h3>
-          <button class="dialog-close" @click="closeCreateDialog">✕</button>
-        </div>
+    <v-dialog v-model="showCreateInvitationDialog" max-width="500px">
+      <v-card>
+        <v-card-title>
+          <span class="text-h5">创建新邀请码</span>
+        </v-card-title>
 
-        <div class="dialog-content">
-          <div class="form-group">
-            <label class="form-label">邀请码（可选）</label>
-            <input
-              v-model="newInvitationCode"
-              type="text"
-              class="form-input"
-              placeholder="留空自动生成"
-              maxlength="64"
-            >
-            <div class="form-hint">留空将自动生成12位随机邀请码</div>
-          </div>
+        <v-card-text>
+          <v-container>
+            <v-row>
+              <v-col cols="12">
+                <v-text-field
+                  v-model="newInvitationCode"
+                  label="邀请码（可选）"
+                  placeholder="留空自动生成"
+                  maxlength="64"
+                  variant="outlined"
+                  hint="留空将自动生成12位随机邀请码"
+                  persistent-hint
+                ></v-text-field>
+              </v-col>
+              <v-col cols="12">
+                <v-text-field
+                  v-model="newInvitationExpireDays"
+                  label="有效期（天）"
+                  placeholder="留空表示永不过期"
+                  type="number"
+                  :min="1"
+                  :max="365"
+                  variant="outlined"
+                  hint="留空表示永不过期"
+                  persistent-hint
+                ></v-text-field>
+              </v-col>
+            </v-row>
+          </v-container>
+        </v-card-text>
 
-          <div class="form-group">
-            <label class="form-label">有效期（天）</label>
-            <input
-              v-model.number="newInvitationExpireDays"
-              type="number"
-              class="form-input"
-              placeholder="留空表示永不过期"
-              min="1"
-              max="365"
-            >
-            <div class="form-hint">留空表示永不过期</div>
-          </div>
-        </div>
-
-        <div class="dialog-actions">
-          <button class="dialog-btn dialog-btn-cancel" @click="closeCreateDialog">
+        <v-card-actions>
+          <v-spacer></v-spacer>
+          <v-btn color="grey" variant="text" @click="closeCreateDialog">
             取消
-          </button>
-          <button class="dialog-btn dialog-btn-confirm" @click="createInvitation" :disabled="creatingInvitation">
-            {{ creatingInvitation ? '创建中...' : '创建' }}
-          </button>
-        </div>
-      </div>
-    </div>
+          </v-btn>
+          <v-btn
+            color="primary"
+            variant="elevated"
+            @click="createInvitation"
+            :loading="creatingInvitation"
+          >
+            创建
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
 
     <!-- 科目管理对话框 -->
-    <div v-if="showSubjectDialog" class="dialog-overlay" @click="closeSubjectDialog">
-      <div class="dialog" @click.stop>
-        <div class="dialog-header">
-          <h3 class="dialog-title">{{ subjectDialogMode === 'create' ? '创建科目' : '编辑科目' }}</h3>
-          <button class="dialog-close" @click="closeSubjectDialog">✕</button>
-        </div>
+    <v-dialog v-model="showSubjectDialog" max-width="500px">
+      <v-card>
+        <v-card-title>
+          <span class="text-h5">{{ subjectDialogMode === 'create' ? '创建科目' : '编辑科目' }}</span>
+        </v-card-title>
 
-        <div class="dialog-content">
-          <div class="form-group">
-            <label class="form-label">科目名称</label>
-            <input
-              v-model="subjectName"
-              type="text"
-              class="form-input"
-              placeholder="请输入科目名称"
-              maxlength="50"
-              @keyup.enter="saveSubject"
-            >
-            <div class="form-hint">科目名称不能超过50个字符</div>
-          </div>
-        </div>
+        <v-card-text>
+          <v-container>
+            <v-row>
+              <v-col cols="12">
+                <v-text-field
+                  v-model="subjectName"
+                  label="科目名称"
+                  placeholder="请输入科目名称"
+                  maxlength="50"
+                  variant="outlined"
+                  hint="科目名称不能超过50个字符"
+                  persistent-hint
+                  @keyup.enter="saveSubject"
+                ></v-text-field>
+              </v-col>
+            </v-row>
+          </v-container>
+        </v-card-text>
 
-        <div class="dialog-actions">
-          <button class="dialog-btn dialog-btn-cancel" @click="closeSubjectDialog">
+        <v-card-actions>
+          <v-spacer></v-spacer>
+          <v-btn color="grey" variant="text" @click="closeSubjectDialog">
             取消
-          </button>
-          <button class="dialog-btn dialog-btn-confirm" @click="saveSubject" :disabled="loading">
-            {{ loading ? '保存中...' : (subjectDialogMode === 'create' ? '创建' : '保存') }}
-          </button>
-        </div>
-      </div>
-    </div>
+          </v-btn>
+          <v-btn
+            color="primary"
+            variant="elevated"
+            @click="saveSubject"
+            :loading="loading"
+          >
+            {{ subjectDialogMode === 'create' ? '创建' : '保存' }}
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
 
     <!-- 题库上传对话框 -->
-    <div v-if="showUploadDialog" class="dialog-overlay" @click="closeUploadDialog">
-      <div class="dialog" @click.stop>
-        <div class="dialog-header">
-          <h3 class="dialog-title">上传题库文件</h3>
-          <button class="dialog-close" @click="closeUploadDialog">✕</button>
-        </div>
+    <v-dialog v-model="showUploadDialog" max-width="500px">
+      <v-card>
+        <v-card-title>
+          <span class="text-h5">上传题库文件</span>
+        </v-card-title>
 
-        <div class="dialog-content">
-          <div class="form-group">
-            <label class="form-label">题库名称</label>
-            <input
-              v-model="uploadTikuName"
-              type="text"
-              class="form-input"
-              placeholder="留空将使用文件名"
-              maxlength="50"
-            >
-            <div class="form-hint">题库名称不能超过50个字符</div>
-          </div>
+        <v-card-text>
+          <v-container>
+            <v-row>
+              <v-col cols="12">
+                <v-text-field
+                  v-model="uploadTikuName"
+                  label="题库名称"
+                  placeholder="留空将使用文件名"
+                  maxlength="50"
+                  variant="outlined"
+                  hint="题库名称不能超过50个字符"
+                  persistent-hint
+                ></v-text-field>
+              </v-col>
+              <v-col cols="12">
+                <v-file-input
+                  accept=".xlsx,.xls"
+                  @change="handleFileSelect"
+                  label="选择Excel文件"
+                  variant="outlined"
+                  prepend-icon="mdi-paperclip"
+                  hint="支持 .xlsx 和 .xls 格式的Excel文件"
+                  persistent-hint
+                  show-size
+                ></v-file-input>
+              </v-col>
+            </v-row>
+          </v-container>
+        </v-card-text>
 
-          <div class="form-group">
-            <label class="form-label">选择Excel文件</label>
-            <input
-              type="file"
-              accept=".xlsx,.xls"
-              @change="handleFileSelect"
-              class="form-file-input"
-            >
-            <div class="form-hint">支持 .xlsx 和 .xls 格式的Excel文件</div>
-            <div v-if="uploadFile" class="file-info">
-              <span class="file-name">{{ uploadFile.name }}</span>
-              <span class="file-size">({{ formatFileSize(uploadFile.size) }})</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="dialog-actions">
-          <button class="dialog-btn dialog-btn-cancel" @click="closeUploadDialog">
+        <v-card-actions>
+          <v-spacer></v-spacer>
+          <v-btn color="grey" variant="text" @click="closeUploadDialog">
             取消
-          </button>
-          <button 
-            class="dialog-btn dialog-btn-confirm" 
-            @click="uploadTiku" 
-            :disabled="!uploadFile || uploading"
+          </v-btn>
+          <v-btn
+            color="primary"
+            variant="elevated"
+            @click="uploadTiku"
+            :disabled="!uploadFile"
+            :loading="uploading"
           >
-            {{ uploading ? '上传中...' : '上传' }}
-          </button>
-        </div>
-      </div>
-    </div>
+            上传
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
   </div>
 </template>
 
 <script lang="ts" setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, onUnmounted } from 'vue'
 import { useToast } from 'vue-toastification'
 import { useAuthStore } from '@/stores/auth'
 import { apiService, type UserSearchParams, type Pagination, type SearchParams } from '@/services/api'
 import Loading from '@/components/Loading.vue'
+
+// 类型定义
+interface User {
+  id: number
+  username: string
+  model: number
+  is_enabled: boolean
+  created_at?: string
+  last_time_login?: string
+  invitation_code?: string
+}
+
+interface Invitation {
+  id: number
+  code: string
+  is_used: boolean
+  used_by_username?: string
+  created_at?: string
+  used_time?: string
+  expires_at?: string
+}
+
+interface Subject {
+  subject_id: number
+  subject_name: string
+  created_at?: string
+  updated_at?: string
+}
+
+interface Tiku {
+  tiku_id: number
+  tiku_name: string
+  tiku_position: string
+  tiku_nums: number
+  file_size?: number
+  is_active: boolean
+  created_at?: string
+  updated_at?: string
+}
+
+interface StatItem {
+  used_count: number
+  subject_name?: string
+  tiku_name?: string
+  [key: string]: any
+}
+
+interface UsageStats {
+  subject_stats: StatItem[]
+  tiku_stats: StatItem[]
+}
+
+// 全局类型声明，避免模板中的类型错误
+declare global {
+  interface VuetifySlotProps {
+    item: any
+    index: number
+    value: any
+  }
+}
 
 const toast = useToast()
 const authStore = useAuthStore()
@@ -1165,32 +1030,31 @@ const loadStats = async () => {
     if (response.success) {
       stats.value = response.stats
     } else {
-      toast.error(response.message || '获取统计信息失败')
+      handleError(new Error(response.message), '获取统计信息')
     }
   } catch (error) {
-    console.error('获取统计信息失败:', error)
-    toast.error('获取统计信息失败')
+    handleError(error, '获取统计信息')
   }
 }
 
 // 用户管理相关函数
-const loadUsers = async (resetPage = false) => {
-  if (resetPage) {
-    userSearchParams.value.page = 1
-  }
-  
+const loadUsers = async () => {
   loading.value = true
   try {
-    const response = await apiService.admin.getUsers(userSearchParams.value)
+    const response = await apiService.admin.getUsers({
+      search: userSearch.value,
+      order_by: userSortBy.value[0]?.key || 'id',
+      order_dir: (userSortBy.value[0]?.order as 'asc' | 'desc') || 'desc',
+      page: 1,
+      per_page: 1000 // 加载所有数据，让Vuetify处理分页
+    })
     if (response.success) {
       users.value = response.users || []
-      userPagination.value = response.pagination || null
     } else {
-      toast.error(response.message || '获取用户列表失败')
+      handleError(new Error(response.message), '获取用户列表')
     }
   } catch (error) {
-    console.error('获取用户列表失败:', error)
-    toast.error('获取用户列表失败')
+    handleError(error, '获取用户列表')
   } finally {
     loading.value = false
   }
@@ -1205,15 +1069,12 @@ const toggleUser = async (userId: number) => {
       if (user) {
         user.is_enabled = response.is_enabled
       }
-      toast.success(response.message || '操作成功')
-      // 重新加载统计信息
-      loadStats()
+      handleSuccess(response.message || '操作成功', () => loadStats())
     } else {
-      toast.error(response.message || '操作失败')
+      handleError(new Error(response.message), '切换用户状态')
     }
   } catch (error) {
-    console.error('切换用户状态失败:', error)
-    toast.error('操作失败')
+    handleError(error, '切换用户状态')
   }
 }
 
@@ -1226,34 +1087,32 @@ const updateUserModel = async (userId: number, model: number) => {
       if (user) {
         user.model = response.model
       }
-      toast.success(response.message || '权限更新成功')
-      // 重新加载统计信息
-      loadStats()
+      handleSuccess(response.message || '权限更新成功', () => loadStats())
     } else {
-      toast.error(response.message || '权限更新失败')
+      handleError(new Error(response.message), '更新用户权限')
       // 恢复原来的值
       loadUsers()
     }
   } catch (error) {
-    console.error('更新用户权限失败:', error)
-    toast.error('权限更新失败')
+    handleError(error, '更新用户权限')
     // 恢复原来的值
     loadUsers()
   }
 }
 
 // 邀请码管理相关函数
-const loadInvitations = async (resetPage = false) => {
-  if (resetPage) {
-    invitationSearchParams.value.page = 1
-  }
-  
+const loadInvitations = async () => {
   loading.value = true
   try {
-    const response = await apiService.admin.getInvitations(invitationSearchParams.value)
+    const response = await apiService.admin.getInvitations({
+      search: invitationSearch.value,
+      order_by: invitationSortBy.value[0]?.key || 'id',
+      order_dir: (invitationSortBy.value[0]?.order as 'asc' | 'desc') || 'desc',
+      page: 1,
+      per_page: 1000 // 加载所有数据，让Vuetify处理分页
+    })
     if (response.success) {
       invitations.value = response.invitations || []
-      invitationPagination.value = response.pagination || null
     } else {
       toast.error(response.message || '获取邀请码列表失败')
     }
@@ -1326,17 +1185,18 @@ const loadSubjectFiles = async () => {
 }
 
 // 新增：科目管理相关函数
-const loadSubjects = async (resetPage = false) => {
-  if (resetPage) {
-    subjectSearchParams.value.page = 1
-  }
-  
+const loadSubjects = async () => {
   loading.value = true
   try {
-    const response = await apiService.admin.getSubjects(subjectSearchParams.value)
+    const response = await apiService.admin.getSubjects({
+      search: subjectSearch.value,
+      order_by: subjectSortBy.value[0]?.key || 'subject_id',
+      order_dir: (subjectSortBy.value[0]?.order as 'asc' | 'desc') || 'desc',
+      page: 1,
+      per_page: 1000 // 加载所有数据，让Vuetify处理分页
+    })
     if (response.success) {
       subjects.value = response.subjects || []
-      subjectPagination.value = response.pagination || null
     } else {
       toast.error(response.message || '获取科目列表失败')
     }
@@ -1426,17 +1286,18 @@ const deleteSubject = async (subject: any) => {
 }
 
 // 新增：题库管理相关函数
-const loadTiku = async (subjectId?: number, resetPage = false) => {
-  if (resetPage) {
-    tikuSearchParams.value.page = 1
-  }
-  
+const loadTiku = async (subjectId?: number) => {
   loading.value = true
   try {
-    const response = await apiService.admin.getTiku(subjectId, tikuSearchParams.value)
+    const response = await apiService.admin.getTiku(subjectId, {
+      search: tikuSearch.value,
+      order_by: tikuSortBy.value[0]?.key || 'tiku_id',
+      order_dir: (tikuSortBy.value[0]?.order as 'asc' | 'desc') || 'desc',
+      page: 1,
+      per_page: 1000 // 加载所有数据，让Vuetify处理分页
+    })
     if (response.success) {
       tikuList.value = response.tiku_list || []
-      tikuPagination.value = response.pagination || null
     } else {
       toast.error(response.message || '获取题库列表失败')
     }
@@ -1451,9 +1312,10 @@ const loadTiku = async (subjectId?: number, resetPage = false) => {
 const selectSubject = (subjectId: number) => {
   selectedSubjectId.value = subjectId
   // 重置搜索参数
-  tikuSearchParams.value.search = ''
-  tikuSearchParams.value.page = 1
-  loadTiku(subjectId, true)
+  tikuSearch.value = ''
+  if (subjectId) {
+    loadTiku(subjectId)
+  }
 }
 
 const openUploadDialog = () => {
@@ -1611,7 +1473,7 @@ const reloadBanks = async () => {
 }
 
 // 工具函数
-const formatDate = (dateString: string) => {
+const formatDate = (dateString?: string) => {
   if (!dateString) return '-'
   return new Date(dateString).toLocaleString('zh-CN')
 }
@@ -1660,6 +1522,26 @@ const getLastLoginClass = (dateString?: string) => {
   }
 }
 
+// 新增：获取最后登录时间对应的Vuetify颜色
+const getLastLoginColor = (dateString?: string) => {
+  if (!dateString) return 'error'
+
+  const loginDate = new Date(dateString)
+  const now = new Date()
+  const timeDiff = now.getTime() - loginDate.getTime()
+  const days = Math.floor(timeDiff / (1000 * 60 * 60 * 24))
+
+  if (days === 0) {
+    return 'success' // 今天登录
+  } else if (days <= 7) {
+    return 'info' // 一周内登录
+  } else if (days <= 30) {
+    return 'warning' // 一月内登录
+  } else {
+    return 'grey' // 很久没登录
+  }
+}
+
 const formatFileSize = (bytes: number) => {
   if (bytes === 0) return '0 B'
   const k = 1024
@@ -1690,13 +1572,13 @@ const handleSearch = (searchTerm: string) => {
   
   // 设置新的定时器，延迟搜索
   searchTimeout.value = setTimeout(() => {
-    loadUsers(true)
+    loadUsers()
   }, 500) as unknown as number
 }
 
 const clearSearch = () => {
   userSearchParams.value.search = ''
-  loadUsers(true)
+  loadUsers()
 }
 
 // 排序相关方法
@@ -1709,7 +1591,7 @@ const handleSort = (field: string) => {
     userSearchParams.value.order_by = field
     userSearchParams.value.order_dir = 'desc'
   }
-  loadUsers(true)
+  loadUsers()
 }
 
 // 分页相关方法
@@ -1722,7 +1604,7 @@ const goToPage = (page: number) => {
 
 const changePageSize = (size: number) => {
   userSearchParams.value.per_page = size
-  loadUsers(true)
+  loadUsers()
 }
 
 // 计算分页显示的页码
@@ -1745,10 +1627,36 @@ const getPageNumbers = () => {
 
 // 组件挂载时加载数据
 onMounted(async () => {
-  await loadStats()
-  await loadUsers()
-  await loadInvitations()
-  await loadSubjects()
+  console.time('SystemControl初始化')
+  try {
+    await Promise.all([
+      loadStats(),
+      loadUsers(),
+      loadInvitations(),
+      loadSubjects()
+    ])
+    console.timeEnd('SystemControl初始化')
+  } catch (error) {
+    console.error('初始化失败:', error)
+    console.timeEnd('SystemControl初始化')
+  }
+})
+
+// 组件卸载时清理
+onUnmounted(() => {
+  // 清理定时器
+  if (searchTimeout.value) {
+    clearTimeout(searchTimeout.value)
+  }
+  if (invitationSearchTimeout.value) {
+    clearTimeout(invitationSearchTimeout.value)
+  }
+  if (subjectSearchTimeout.value) {
+    clearTimeout(subjectSearchTimeout.value)
+  }
+  if (tikuSearchTimeout.value) {
+    clearTimeout(tikuSearchTimeout.value)
+  }
 })
 
 // 使用统计相关函数
@@ -1826,13 +1734,13 @@ const handleInvitationSearch = (searchTerm: string) => {
   
   // 设置新的定时器，延迟搜索
   invitationSearchTimeout.value = setTimeout(() => {
-    loadInvitations(true)
+    loadInvitations()
   }, 500) as unknown as number
 }
 
 const clearInvitationSearch = () => {
   invitationSearchParams.value.search = ''
-  loadInvitations(true)
+  loadInvitations()
 }
 
 // 邀请码排序相关方法
@@ -1845,7 +1753,7 @@ const handleInvitationSort = (field: string) => {
     invitationSearchParams.value.order_by = field
     invitationSearchParams.value.order_dir = 'desc'
   }
-  loadInvitations(true)
+  loadInvitations()
 }
 
 // 邀请码分页相关方法
@@ -1858,7 +1766,7 @@ const goToInvitationPage = (page: number) => {
 
 const changeInvitationPageSize = (size: number) => {
   invitationSearchParams.value.per_page = size
-  loadInvitations(true)
+  loadInvitations()
 }
 
 // 计算邀请码分页显示的页码
@@ -1890,13 +1798,13 @@ const handleSubjectSearch = (searchTerm: string) => {
   
   // 设置新的定时器，延迟搜索
   subjectSearchTimeout.value = setTimeout(() => {
-    loadSubjects(true)
+    loadSubjects()
   }, 500) as unknown as number
 }
 
 const clearSubjectSearch = () => {
   subjectSearchParams.value.search = ''
-  loadSubjects(true)
+  loadSubjects()
 }
 
 // 科目排序相关方法
@@ -1909,7 +1817,7 @@ const handleSubjectSort = (field: string) => {
     subjectSearchParams.value.order_by = field
     subjectSearchParams.value.order_dir = 'desc'
   }
-  loadSubjects(true)
+  loadSubjects()
 }
 
 // 科目分页相关方法
@@ -1922,7 +1830,7 @@ const goToSubjectPage = (page: number) => {
 
 const changeSubjectPageSize = (size: number) => {
   subjectSearchParams.value.per_page = size
-  loadSubjects(true)
+  loadSubjects()
 }
 
 // 计算科目分页显示的页码
@@ -1954,13 +1862,13 @@ const handleTikuSearch = (searchTerm: string) => {
   
   // 设置新的定时器，延迟搜索
   tikuSearchTimeout.value = setTimeout(() => {
-    loadTiku(selectedSubjectId.value || undefined, true)
+    loadTiku(selectedSubjectId.value || undefined)
   }, 500) as unknown as number
 }
 
 const clearTikuSearch = () => {
   tikuSearchParams.value.search = ''
-  loadTiku(selectedSubjectId.value || undefined, true)
+  loadTiku(selectedSubjectId.value || undefined)
 }
 
 // 题库排序相关方法
@@ -1973,7 +1881,7 @@ const handleTikuSort = (field: string) => {
     tikuSearchParams.value.order_by = field
     tikuSearchParams.value.order_dir = 'desc'
   }
-  loadTiku(selectedSubjectId.value || undefined, true)
+  loadTiku(selectedSubjectId.value || undefined)
 }
 
 // 题库分页相关方法
@@ -1986,7 +1894,7 @@ const goToTikuPage = (page: number) => {
 
 const changeTikuPageSize = (size: number) => {
   tikuSearchParams.value.per_page = size
-  loadTiku(selectedSubjectId.value || undefined, true)
+  loadTiku(selectedSubjectId.value || undefined)
 }
 
 // 计算题库分页显示的页码
@@ -2005,6 +1913,222 @@ const getTikuPageNumbers = () => {
   }
   
   return pages
+}
+
+// Vuetify Data Table 相关变量
+// 用户管理表格
+const userSearch = ref('')
+const userItemsPerPage = ref(20)
+const userSortBy = ref([{ key: 'id', order: 'desc' as const }])
+
+// 邀请码管理表格
+const invitationSearch = ref('')
+const invitationItemsPerPage = ref(20)
+const invitationSortBy = ref([{ key: 'id', order: 'desc' as const }])
+
+// 科目管理表格
+const subjectSearch = ref('')
+const subjectItemsPerPage = ref(20)
+const subjectSortBy = ref([{ key: 'subject_id', order: 'desc' as const }])
+
+// 题库管理表格
+const tikuSearch = ref('')
+const tikuItemsPerPage = ref(20)
+const tikuSortBy = ref([{ key: 'tiku_id', order: 'desc' as const }])
+
+// 表格分页选项
+const itemsPerPageOptions = [
+  { value: 10, title: '10条/页' },
+  { value: 20, title: '20条/页' },
+  { value: 50, title: '50条/页' },
+  { value: 100, title: '100条/页' },
+  { value: -1, title: '全部显示' }
+]
+
+// 通用表格配置
+const tableConfig = {
+  density: 'comfortable' as const,
+  hover: true,
+  sticky: true,
+  fixedHeader: true,
+  height: '600px',
+  loadingText: '数据加载中...',
+  noDataText: '暂无数据',
+  noResultsText: '没有找到匹配的数据',
+  itemsPerPageText: '每页显示条数:',
+  pageText: '{0}-{1} 共 {2} 条',
+  class: 'elevation-2 data-table-enhanced'
+}
+
+// 用户表格表头
+const userHeaders = [
+  { title: 'ID', key: 'id', sortable: true, width: '80px' },
+  { title: '用户名', key: 'username', sortable: true, width: '150px' },
+  { title: '权限等级', key: 'model', sortable: true, width: '120px' },
+  { title: '状态', key: 'is_enabled', sortable: false, width: '100px' },
+  { title: '注册时间', key: 'created_at', sortable: true, width: '160px' },
+  { title: '最后登录', key: 'last_time_login', sortable: true, width: '160px' },
+  { title: '邀请码', key: 'invitation_code', sortable: false, width: '150px' },
+  { title: '操作', key: 'actions', sortable: false, width: '120px', align: 'center' as const }
+]
+
+// 邀请码表格表头
+const invitationHeaders = [
+  { title: 'ID', key: 'id', sortable: true, width: '80px' },
+  { title: '邀请码', key: 'code', sortable: false, width: '180px' },
+  { title: '状态', key: 'is_used', sortable: false, width: '100px' },
+  { title: '使用者', key: 'used_by_username', sortable: false, width: '120px' },
+  { title: '创建时间', key: 'created_at', sortable: true, width: '160px' },
+  { title: '使用时间', key: 'used_time', sortable: false, width: '160px' },
+  { title: '过期时间', key: 'expires_at', sortable: false, width: '160px' }
+]
+
+// 科目表格表头
+const subjectHeaders = [
+  { title: 'ID', key: 'subject_id', sortable: true, width: '80px' },
+  { title: '科目名称', key: 'subject_name', sortable: true, width: '200px' },
+  { title: '创建时间', key: 'created_at', sortable: true, width: '160px' },
+  { title: '更新时间', key: 'updated_at', sortable: true, width: '160px' },
+  { title: '操作', key: 'actions', sortable: false, width: '150px', align: 'center' as const }
+]
+
+// 题库表格表头
+const tikuHeaders = [
+  { title: '题库名称', key: 'tiku_name', sortable: true, width: '250px' },
+  { title: '题目数量', key: 'tiku_nums', sortable: true, width: '120px', align: 'center' as const },
+  { title: '文件大小', key: 'file_size', sortable: true, width: '120px', align: 'center' as const },
+  { title: '状态', key: 'is_active', sortable: false, width: '100px', align: 'center' as const },
+  { title: '创建时间', key: 'created_at', sortable: true, width: '160px' },
+  { title: '更新时间', key: 'updated_at', sortable: true, width: '160px' },
+  { title: '操作', key: 'actions', sortable: false, width: '150px', align: 'center' as const }
+]
+
+// 统计表格表头
+const subjectStatsHeaders = [
+  { title: '排名', key: 'rank', sortable: false, width: '80px', align: 'center' as const },
+  { title: '科目名称', key: 'subject_name', sortable: false, width: '200px' },
+  { title: '使用次数', key: 'used_count', sortable: true, width: '120px', align: 'center' as const },
+  { title: '使用率', key: 'usage_rate', sortable: false, width: '150px', align: 'center' as const }
+]
+
+const tikuStatsHeaders = [
+  { title: '排名', key: 'rank', sortable: false, width: '80px', align: 'center' as const },
+  { title: '题库名称', key: 'tiku_name', sortable: false, width: '200px' },
+  { title: '所属科目', key: 'subject_name', sortable: false, width: '150px', align: 'center' as const },
+  { title: '使用次数', key: 'used_count', sortable: true, width: '120px', align: 'center' as const },
+  { title: '使用率', key: 'usage_rate', sortable: false, width: '150px', align: 'center' as const }
+]
+
+// 权限等级选项
+const modelOptions = [
+  { title: '普通用户', value: 0 },
+  { title: 'VIP用户', value: 5 },
+  { title: 'ROOT用户', value: 10 }
+]
+
+// 计算属性优化
+const filteredUsers = computed(() => {
+  if (!userSearch.value) return users.value
+  const searchTerm = userSearch.value.toLowerCase()
+  return users.value.filter((user: any) => 
+    user.username?.toLowerCase().includes(searchTerm) ||
+    (user.invitation_code && user.invitation_code.toLowerCase().includes(searchTerm))
+  )
+})
+
+const filteredInvitations = computed(() => {
+  if (!invitationSearch.value) return invitations.value
+  const searchTerm = invitationSearch.value.toLowerCase()
+  return invitations.value.filter((invitation: any) => 
+    invitation.code?.toLowerCase().includes(searchTerm) ||
+    (invitation.used_by_username && invitation.used_by_username.toLowerCase().includes(searchTerm))
+  )
+})
+
+const filteredSubjects = computed(() => {
+  if (!subjectSearch.value) return subjects.value
+  const searchTerm = subjectSearch.value.toLowerCase()
+  return subjects.value.filter((subject: any) => 
+    subject.subject_name?.toLowerCase().includes(searchTerm)
+  )
+})
+
+const filteredTiku = computed(() => {
+  if (!tikuSearch.value) return tikuList.value
+  const searchTerm = tikuSearch.value.toLowerCase()
+  return tikuList.value.filter((tiku: any) => 
+    tiku.tiku_name?.toLowerCase().includes(searchTerm) ||
+    tiku.tiku_position?.toLowerCase().includes(searchTerm)
+  )
+})
+
+// 性能优化：缓存表格配置
+const tableConfigMemo = computed(() => ({
+  density: 'comfortable' as const,
+  hover: true,
+  sticky: true,
+  fixedHeader: true,
+  height: '600px',
+  loadingText: '数据加载中...',
+  noDataText: '暂无数据',
+  noResultsText: '没有找到匹配的数据',
+  itemsPerPageText: '每页显示条数:',
+  pageText: '{0}-{1} 共 {2} 条',
+  class: 'elevation-2 data-table-enhanced'
+}))
+
+// 新增：防抖搜索优化
+const debouncedLoadUsers = (() => {
+  let timeout: number | null = null
+  return () => {
+    if (timeout) clearTimeout(timeout)
+    timeout = setTimeout(() => {
+      loadUsers()
+    }, 300) as unknown as number
+  }
+})()
+
+const debouncedLoadInvitations = (() => {
+  let timeout: number | null = null
+  return () => {
+    if (timeout) clearTimeout(timeout)
+    timeout = setTimeout(() => {
+      loadInvitations()
+    }, 300) as unknown as number
+  }
+})()
+
+const debouncedLoadSubjects = (() => {
+  let timeout: number | null = null
+  return () => {
+    if (timeout) clearTimeout(timeout)
+    timeout = setTimeout(() => {
+      loadSubjects()
+    }, 300) as unknown as number
+  }
+})()
+
+const debouncedLoadTiku = (() => {
+  let timeout: number | null = null
+  return () => {
+    if (timeout) clearTimeout(timeout)
+    timeout = setTimeout(() => {
+      loadTiku(selectedSubjectId.value || undefined)
+    }, 300) as unknown as number
+  }
+})()
+
+// 错误处理优化
+const handleError = (error: any, operation: string) => {
+  console.error(`${operation}失败:`, error)
+  const message = error?.response?.data?.message || error?.message || `${operation}失败`
+  toast.error(message)
+}
+
+// 成功处理优化
+const handleSuccess = (message: string, callback?: () => void) => {
+  toast.success(message)
+  if (callback) callback()
 }
 </script>
 
@@ -3328,5 +3452,317 @@ const getTikuPageNumbers = () => {
 .stats-table tr:has(.usage-unused) {
   background: #fafbfc !important;
   opacity: 0.8;
+}
+
+/* Vuetify Data Table 优化样式 */
+.data-table-enhanced {
+  border-radius: 12px !important;
+  overflow: hidden;
+}
+
+.data-table-enhanced .v-data-table__wrapper {
+  border-radius: 12px;
+}
+
+.data-table-enhanced .v-data-table-header {
+  background: #f8fafc !important;
+}
+
+.data-table-enhanced .v-data-table-header th {
+  background: #f8fafc !important;
+  color: #374151 !important;
+  font-weight: 600 !important;
+  border-bottom: 2px solid #e2e8f0 !important;
+}
+
+.data-table-enhanced .v-data-table__td {
+  border-bottom: 1px solid #f1f5f9 !important;
+}
+
+.data-table-enhanced .v-data-table__tr:hover {
+  background: #fafbfc !important;
+}
+
+.data-table-enhanced .v-data-table__tr.v-data-table__tr--disabled {
+  opacity: 0.6;
+  background: #fef2f2 !important;
+}
+
+/* 加载状态样式 */
+.data-table-enhanced .v-data-table-progress {
+  background: linear-gradient(90deg, #f3f4f6, #e5e7eb, #f3f4f6);
+  background-size: 200% 100%;
+  animation: loading-shimmer 1.5s infinite;
+}
+
+@keyframes loading-shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+/* 搜索框优化 */
+.v-text-field .v-field__input {
+  padding: 8px 12px !important;
+}
+
+.v-text-field--variant-outlined .v-field__outline {
+  --v-field-border-opacity: 0.38;
+  border-radius: 8px;
+}
+
+.v-text-field--variant-outlined.v-field--focused .v-field__outline {
+  --v-field-border-width: 2px;
+  --v-field-border-opacity: 1;
+}
+
+/* 芯片样式优化 */
+.v-chip--size-small {
+  font-size: 0.75rem !important;
+  height: 24px !important;
+  padding: 0 8px !important;
+}
+
+/* 按钮样式优化 */
+.v-btn--size-small {
+  min-width: 64px !important;
+  height: 32px !important;
+  padding: 0 12px !important;
+  font-size: 0.75rem !important;
+}
+
+/* 分页样式优化 */
+.v-data-table-footer {
+  padding: 16px !important;
+  background: #f8fafc !important;
+  border-top: 1px solid #e2e8f0 !important;
+}
+
+.v-data-table-footer__info {
+  color: #6b7280 !important;
+  font-size: 0.875rem !important;
+}
+
+.v-data-table-footer__pagination {
+  color: #374151 !important;
+}
+
+/* 响应式优化 */
+@media (max-width: 768px) {
+  .data-table-enhanced {
+    font-size: 0.875rem;
+  }
+  
+  .data-table-enhanced .v-data-table__td {
+    padding: 8px 4px !important;
+  }
+  
+  .data-table-enhanced .v-data-table-header th {
+    padding: 8px 4px !important;
+  }
+  
+  .v-chip--size-small {
+    font-size: 0.6875rem !important;
+    height: 20px !important;
+    padding: 0 6px !important;
+  }
+  
+  .v-btn--size-small {
+    min-width: 48px !important;
+    height: 28px !important;
+    padding: 0 8px !important;
+    font-size: 0.6875rem !important;
+  }
+}
+
+/* 空状态样式优化 */
+.v-data-table__empty {
+  padding: 64px 24px !important;
+  text-align: center;
+  color: #9ca3af !important;
+}
+
+.v-data-table__empty::before {
+  content: "📊";
+  display: block;
+  font-size: 3rem;
+  margin-bottom: 16px;
+  opacity: 0.5;
+}
+
+/* 进度条样式 */
+.v-progress-linear {
+  border-radius: 4px !important;
+  overflow: hidden !important;
+}
+
+.v-progress-linear__determinate {
+  background: linear-gradient(90deg, #3b82f6, #2563eb) !important;
+}
+
+/* 对话框样式优化 */
+.v-dialog .v-card {
+  border-radius: 16px !important;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04) !important;
+}
+
+.v-card-title {
+  padding: 24px 24px 16px !important;
+  font-size: 1.25rem !important;
+  font-weight: 600 !important;
+  color: #1e293b !important;
+}
+
+.v-card-text {
+  padding: 0 24px 16px !important;
+}
+
+.v-card-actions {
+  padding: 16px 24px 24px !important;
+  gap: 12px;
+}
+
+/* 文件上传组件样式 */
+.v-file-input .v-field__input {
+  cursor: pointer;
+}
+
+.v-file-input .v-field__overlay {
+  background: linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%);
+  border: 2px dashed #d1d5db;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+.v-file-input:hover .v-field__overlay {
+  border-color: #9ca3af;
+  background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%);
+}
+
+.v-file-input.v-field--focused .v-field__overlay {
+  border-color: #3b82f6;
+  background: white;
+}
+
+/* 选择器样式优化 */
+.v-select .v-field__input {
+  cursor: pointer;
+}
+
+.v-select--variant-outlined .v-field__outline {
+  border-radius: 6px;
+}
+
+/* 芯片组样式优化 */
+.v-chip-group {
+  padding: 8px 0;
+}
+
+.v-chip-group .v-chip {
+  margin: 4px;
+  transition: all 0.2s ease;
+}
+
+.v-chip-group .v-chip:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+.v-chip-group .v-chip--selected {
+  background: linear-gradient(135deg, #3b82f6, #2563eb) !important;
+  color: white !important;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+}
+
+/* 性能优化：使用GPU加速 */
+.stat-card,
+.tab-button,
+.control-section,
+.v-btn,
+.v-chip {
+  transform: translateZ(0);
+  will-change: transform, opacity;
+}
+
+/* 减少重排和重绘 */
+.system-control-content * {
+  box-sizing: border-box;
+}
+
+/* 优化滚动性能 */
+.system-control-content {
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+}
+
+/* 减少动画开销 */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* 移动端优化 */
+@media (max-width: 480px) {
+  .system-control-content {
+    padding: 0.5rem;
+  }
+  
+  .stat-card {
+    padding: 1rem;
+    flex-direction: column;
+    text-align: center;
+  }
+  
+  .stat-icon {
+    margin-bottom: 0.5rem;
+  }
+  
+  .control-tabs {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  
+  .tab-button {
+    white-space: nowrap;
+    min-width: 120px;
+  }
+}
+
+/* 打印样式优化 */
+@media print {
+  .system-control-content {
+    background: white !important;
+    box-shadow: none !important;
+  }
+  
+  .control-tabs,
+  .section-actions,
+  .v-btn {
+    display: none !important;
+  }
+  
+  .control-section {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}
+
+/* 高对比度模式优化 */
+@media (prefers-contrast: high) {
+  .stat-card,
+  .control-section {
+    border: 2px solid #000;
+  }
+  
+  .tab-button.active {
+    background: #000 !important;
+    color: #fff !important;
+  }
 }
 </style>

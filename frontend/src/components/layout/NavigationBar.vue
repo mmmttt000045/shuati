@@ -51,7 +51,7 @@
             <span class="nav-text">题目练习</span>
           </v-btn>
 
-          <!-- 使用统计按钮 - 所有用户都可见 -->
+          <!-- 使用统计按钮 - 直接导航到增强统计页面 -->
           <v-btn
             variant="text"
             class="nav-item"
@@ -261,7 +261,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted,  watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useTheme } from 'vuetify'
 import { useAuthStore } from '@/stores/auth'

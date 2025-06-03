@@ -5,6 +5,7 @@ from typing import Optional, Dict, Any
 
 from mysql.connector import Error
 from mysql.connector import pooling
+
 from backend.config import DatabaseConfig
 
 db_pool = None
@@ -316,14 +317,12 @@ def save_user_session(user_id: int, session_data: Dict[str, Any]) -> bool:
 
         query = """
                 REPLACE
-                INTO user_sessions (user_id, session_data, updated_at)
-        VALUES (
-                %s,
-                %s,
-                NOW
-                (
-                )
-                ) \
+                    INTO user_sessions (user_id, session_data, updated_at)
+                VALUES (%s,
+                        %s,
+                        NOW
+                        (
+                        )) \
                 """
         cursor.execute(query, (user_id, session_json))
         connection.commit()
@@ -938,7 +937,8 @@ def get_usage_statistics() -> dict[str, bool | str] | dict[str, bool | list[dict
         cursor.execute("""
                        SELECT subject_name, used_count
                        FROM subject
-                       ORDER BY used_count DESC LIMIT 10
+                       ORDER BY used_count DESC
+                       LIMIT 10
                        """)
         subject_stats = [{"subject_name": row[0], "used_count": row[1]} for row in cursor.fetchall()]
 
@@ -947,7 +947,8 @@ def get_usage_statistics() -> dict[str, bool | str] | dict[str, bool | list[dict
                        SELECT t.tiku_name, s.subject_name, t.used_count, t.tiku_position
                        FROM tiku t
                                 JOIN subject s ON t.subject_id = s.subject_id
-                       ORDER BY t.used_count DESC LIMIT 20
+                       ORDER BY t.used_count DESC
+                       LIMIT 20
                        """)
         tiku_stats = []
         for row in cursor.fetchall():
@@ -987,15 +988,16 @@ def insert_questions_batch(questions_data: list) -> Dict[str, Any]:
     try:
         connection.autocommit = False
         cursor = connection.cursor()
-        
+
         # 开始事务
         connection.start_transaction()
-        
+
         insert_query = """
-        INSERT INTO questions (subject_id, tiku_id, question_type, stem, option_a, option_b, option_c, option_d, answer, explanation, difficulty, status)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        """
-        
+                       INSERT INTO questions (subject_id, tiku_id, question_type, stem, option_a, option_b, option_c,
+                                              option_d, answer, explanation, difficulty, status)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) \
+                       """
+
         inserted_count = 0
         for question in questions_data:
             cursor.execute(insert_query, (
@@ -1013,15 +1015,15 @@ def insert_questions_batch(questions_data: list) -> Dict[str, Any]:
                 question.get('status', 'active')
             ))
             inserted_count += 1
-        
+
         connection.commit()
-        
+
         return {
             "success": True,
             "inserted_count": inserted_count,
             "message": f"成功插入{inserted_count}道题目"
         }
-        
+
     except Error as e:
         try:
             if connection:
@@ -1049,38 +1051,61 @@ def get_questions_by_tiku(tiku_id: int = None) -> list:
     cursor = None
     try:
         cursor = connection.cursor()
-        
+
         if tiku_id:
             query = """
-            SELECT q.id, q.subject_id, q.tiku_id, q.question_type, q.stem, 
-                   q.option_a, q.option_b, q.option_c, q.option_d, q.answer, 
-                   q.explanation, q.difficulty, q.status,
-                   s.subject_name, t.tiku_name
-            FROM questions q
-            LEFT JOIN subject s ON q.subject_id = s.subject_id
-            LEFT JOIN tiku t ON q.tiku_id = t.tiku_id
-            WHERE q.tiku_id = %s AND q.status = 'active'
-            ORDER BY q.id
-            """
+                    SELECT q.id,
+                           q.subject_id,
+                           q.tiku_id,
+                           q.question_type,
+                           q.stem,
+                           q.option_a,
+                           q.option_b,
+                           q.option_c,
+                           q.option_d,
+                           q.answer,
+                           q.explanation,
+                           q.difficulty,
+                           q.status,
+                           s.subject_name,
+                           t.tiku_name
+                    FROM questions q
+                             LEFT JOIN subject s ON q.subject_id = s.subject_id
+                             LEFT JOIN tiku t ON q.tiku_id = t.tiku_id
+                    WHERE q.tiku_id = %s
+                      AND q.status = 'active'
+                    ORDER BY q.id \
+                    """
             cursor.execute(query, (tiku_id,))
         else:
             query = """
-            SELECT q.id, q.subject_id, q.tiku_id, q.question_type, q.stem, 
-                   q.option_a, q.option_b, q.option_c, q.option_d, q.answer, 
-                   q.explanation, q.difficulty, q.status,
-                   s.subject_name, t.tiku_name
-            FROM questions q
-            LEFT JOIN subject s ON q.subject_id = s.subject_id
-            LEFT JOIN tiku t ON q.tiku_id = t.tiku_id
-            WHERE q.status = 'active'
-            ORDER BY q.tiku_id, q.id
-            """
+                    SELECT q.id,
+                           q.subject_id,
+                           q.tiku_id,
+                           q.question_type,
+                           q.stem,
+                           q.option_a,
+                           q.option_b,
+                           q.option_c,
+                           q.option_d,
+                           q.answer,
+                           q.explanation,
+                           q.difficulty,
+                           q.status,
+                           s.subject_name,
+                           t.tiku_name
+                    FROM questions q
+                             LEFT JOIN subject s ON q.subject_id = s.subject_id
+                             LEFT JOIN tiku t ON q.tiku_id = t.tiku_id
+                    WHERE q.status = 'active'
+                    ORDER BY q.tiku_id, q.id \
+                    """
             cursor.execute(query)
-        
+
         questions = []
         for row in cursor.fetchall():
             question_id, subject_id, tiku_id, question_type, stem, option_a, option_b, option_c, option_d, answer, explanation, difficulty, status, subject_name, tiku_name = row
-            
+
             # 构造选项字典
             options_for_practice = {}
             if option_a:
@@ -1091,7 +1116,7 @@ def get_questions_by_tiku(tiku_id: int = None) -> list:
                 options_for_practice['C'] = option_c
             if option_d:
                 options_for_practice['D'] = option_d
-            
+
             # 处理题目类型
             if question_type == 0:
                 type_name = '单选题'
@@ -1106,7 +1131,7 @@ def get_questions_by_tiku(tiku_id: int = None) -> list:
             else:
                 type_name = '未知题型'
                 is_multiple_choice = False
-            
+
             questions.append({
                 'id': f"db_{question_id}",
                 'db_id': question_id,
@@ -1122,9 +1147,9 @@ def get_questions_by_tiku(tiku_id: int = None) -> list:
                 'subject_name': subject_name,
                 'tiku_name': tiku_name
             })
-        
+
         return questions
-        
+
     except Error as e:
         print(f"Error getting questions: {e}")
         return []
@@ -1147,24 +1172,37 @@ def get_all_questions_by_tiku_dict() -> dict:
     cursor = None
     try:
         cursor = connection.cursor()
-        
+
         query = """
-        SELECT q.id, q.subject_id, q.tiku_id, q.question_type, q.stem, 
-               q.option_a, q.option_b, q.option_c, q.option_d, q.answer, 
-               q.explanation, q.difficulty, q.status,
-               s.subject_name, t.tiku_name, t.tiku_position
-        FROM questions q
-        LEFT JOIN subject s ON q.subject_id = s.subject_id
-        LEFT JOIN tiku t ON q.tiku_id = t.tiku_id
-        WHERE q.status = 'active' AND t.is_active = 1
-        ORDER BY q.tiku_id, q.id
-        """
+                SELECT q.id,
+                       q.subject_id,
+                       q.tiku_id,
+                       q.question_type,
+                       q.stem,
+                       q.option_a,
+                       q.option_b,
+                       q.option_c,
+                       q.option_d,
+                       q.answer,
+                       q.explanation,
+                       q.difficulty,
+                       q.status,
+                       s.subject_name,
+                       t.tiku_name,
+                       t.tiku_position
+                FROM questions q
+                         LEFT JOIN subject s ON q.subject_id = s.subject_id
+                         LEFT JOIN tiku t ON q.tiku_id = t.tiku_id
+                WHERE q.status = 'active'
+                  AND t.is_active = 1
+                ORDER BY q.tiku_id, q.id \
+                """
         cursor.execute(query)
-        
+
         questions_dict = {}
         for row in cursor.fetchall():
             question_id, subject_id, tiku_id, question_type, stem, option_a, option_b, option_c, option_d, answer, explanation, difficulty, status, subject_name, tiku_name, tiku_position = row
-            
+
             # 构造选项字典
             options_for_practice = {}
             if option_a:
@@ -1175,7 +1213,7 @@ def get_all_questions_by_tiku_dict() -> dict:
                 options_for_practice['C'] = option_c
             if option_d:
                 options_for_practice['D'] = option_d
-            
+
             # 处理题目类型
             if question_type == 0:
                 type_name = '单选题'
@@ -1190,7 +1228,7 @@ def get_all_questions_by_tiku_dict() -> dict:
             else:
                 type_name = '未知题型'
                 is_multiple_choice = False
-            
+
             question_data = {
                 'id': f"db_{question_id}",
                 'db_id': question_id,
@@ -1206,15 +1244,15 @@ def get_all_questions_by_tiku_dict() -> dict:
                 'subject_name': subject_name,
                 'tiku_name': tiku_name
             }
-            
+
             # 使用tiku_position作为key以保持与现有代码的兼容性
             tiku_key = tiku_id
             if tiku_key not in questions_dict:
                 questions_dict[tiku_key] = []
             questions_dict[tiku_key].append(question_data)
-        
+
         return questions_dict
-        
+
     except Error as e:
         print(f"Error getting all questions: {e}")
         return {}
@@ -1237,21 +1275,21 @@ def delete_questions_by_tiku(tiku_id: int) -> Dict[str, Any]:
     cursor = None
     try:
         cursor = connection.cursor()
-        
+
         # 先获取要删除的题目数量
         cursor.execute("SELECT COUNT(*) FROM questions WHERE tiku_id = %s", (tiku_id,))
         count = cursor.fetchone()[0]
-        
+
         # 删除题目
         cursor.execute("DELETE FROM questions WHERE tiku_id = %s", (tiku_id,))
         connection.commit()
-        
+
         return {
             "success": True,
             "deleted_count": count,
             "message": f"成功删除{count}道题目"
         }
-        
+
     except Error as e:
         return {"success": False, "error": f"删除题目失败: {str(e)}"}
     finally:
@@ -1267,7 +1305,7 @@ def delete_questions_by_tiku(tiku_id: int) -> Dict[str, Any]:
 def parse_excel_to_questions(subject_id: int, tiku_id: int, questions_data: list) -> list:
     """将Excel解析的数据转换为数据库格式"""
     db_questions = []
-    
+
     for question in questions_data:
         # 解析题目类型
         if question['type'] == '单选题':
@@ -1278,14 +1316,14 @@ def parse_excel_to_questions(subject_id: int, tiku_id: int, questions_data: list
             question_type = 10
         else:
             continue  # 跳过未知类型
-        
+
         # 处理选项
         options = question.get('options_for_practice', {})
         option_a = options.get('A') if options else None
         option_b = options.get('B') if options else None
         option_c = options.get('C') if options else None
         option_d = options.get('D') if options else None
-        
+
         db_question = {
             'subject_id': subject_id,
             'tiku_id': tiku_id,
@@ -1300,9 +1338,9 @@ def parse_excel_to_questions(subject_id: int, tiku_id: int, questions_data: list
             'difficulty': 1,  # 默认难度
             'status': 'active'
         }
-        
+
         db_questions.append(db_question)
-    
+
     return db_questions
 
 
@@ -1404,12 +1442,12 @@ def delete_invitation_code(invitation_id: int) -> Dict[str, Any]:
 
         # 检查邀请码是否存在并获取详细信息
         cursor.execute("""
-            SELECT id, code, is_used, used_by_user_id 
-            FROM invitation_codes 
-            WHERE id = %s
-        """, (invitation_id,))
+                       SELECT id, code, is_used, used_by_user_id
+                       FROM invitation_codes
+                       WHERE id = %s
+                       """, (invitation_id,))
         result = cursor.fetchone()
-        
+
         if not result:
             return {"success": False, "error": "邀请码不存在"}
 

@@ -111,6 +111,8 @@ export interface TikuItem {
 export interface UsageSubjectStat {
   subject_name: string;
   used_count: number;
+  rank?: number;
+  usage_percentage?: number;
 }
 
 export interface UsageTikuStat {
@@ -118,11 +120,33 @@ export interface UsageTikuStat {
   subject_name: string;
   used_count: number;
   tiku_position: string;
+  rank?: number;
+  usage_percentage?: number;
 }
 
 export interface UsageStats {
   subject_stats: UsageSubjectStat[];
   tiku_stats: UsageTikuStat[];
+}
+
+export interface UsageSummary {
+  total_subject_usage: number;
+  total_tiku_usage: number;
+  active_subjects_count: number;
+  active_tikues_count: number;
+  most_popular_subject?: UsageSubjectStat;
+  most_popular_tiku?: UsageTikuStat;
+  total_subjects: number;
+  total_tikues: number;
+}
+
+export interface RealtimeUsageStats {
+  pending_usage_count: number;
+  total_pending_usages: number;
+  pending_stats: Array<{
+    tiku_id: number;
+    pending_count: number;
+  }>;
 }
 
 export interface ApiService {
@@ -192,6 +216,15 @@ export interface ApiService {
     // 使用统计
     getUsageStats(): Promise<{ success: boolean; subject_stats?: UsageSubjectStat[]; tiku_stats?: UsageTikuStat[]; message?: string }>;
     syncUsageStats(): Promise<{ success: boolean; message?: string }>;
+  };
+  
+  // 新的usage统计API
+  usage: {
+    getUsageStats(): Promise<{ success: boolean; data?: UsageStats; message?: string }>;
+    getUsageSummary(): Promise<{ success: boolean; data?: UsageSummary; message?: string }>;
+    getRealtimeStats(): Promise<{ success: boolean; data?: RealtimeUsageStats; message?: string }>;
+    getTopSubjects(limit?: number): Promise<{ success: boolean; data?: { top_subjects: UsageSubjectStat[]; total_subjects: number; limit: number }; message?: string }>;
+    getTopTikues(limit?: number): Promise<{ success: boolean; data?: { top_tikues: UsageTikuStat[]; total_tikues: number; limit: number }; message?: string }>;
   };
 }
 
@@ -532,13 +565,106 @@ class ApiServiceImpl implements ApiService {
     // 使用统计
     getUsageStats: async (): Promise<{ success: boolean; subject_stats?: UsageSubjectStat[]; tiku_stats?: UsageTikuStat[]; message?: string }> => {
       const response = await this.fetchWithCredentials(`${API_BASE}/admin/usage-stats`);
-      return this.handleResponse<{ success: boolean; subject_stats?: UsageSubjectStat[]; tiku_stats?: UsageTikuStat[]; message?: string }>(response);
+      const result = await this.handleResponse<any>(response);
+      // 适应后端create_response的格式：数据直接合并到响应中，而不是在data字段下
+      return {
+        success: result.success,
+        subject_stats: result.success ? result.subject_stats || [] : undefined,
+        tiku_stats: result.success ? result.tiku_stats || [] : undefined,
+        message: result.message
+      };
     },
     syncUsageStats: async (): Promise<{ success: boolean; message?: string }> => {
       const response = await this.fetchWithCredentials(`${API_BASE}/admin/sync-usage`, {
         method: 'POST'
       });
       return this.handleResponse<{ success: boolean; message?: string }>(response);
+    }
+  };
+  
+  // 新的usage统计API
+  usage = {
+    getUsageStats: async (): Promise<{ success: boolean; data?: UsageStats; message?: string }> => {
+      const response = await this.fetchWithCredentials(`${API_BASE}/usage-stats`);
+      const result = await this.handleResponse<any>(response);
+      // 适应后端create_response的格式：数据直接合并到响应中，而不是在data字段下
+      return {
+        success: result.success,
+        data: result.success ? {
+          subject_stats: result.subject_stats || [],
+          tiku_stats: result.tiku_stats || []
+        } : undefined,
+        message: result.message
+      };
+    },
+    getUsageSummary: async (): Promise<{ success: boolean; data?: UsageSummary; message?: string }> => {
+      const response = await this.fetchWithCredentials(`${API_BASE}/usage-stats/summary`);
+      const result = await this.handleResponse<any>(response);
+      // 适应后端create_response的格式
+      return {
+        success: result.success,
+        data: result.success ? {
+          total_subject_usage: result.total_subject_usage || 0,
+          total_tiku_usage: result.total_tiku_usage || 0,
+          active_subjects_count: result.active_subjects_count || 0,
+          active_tikues_count: result.active_tikues_count || 0,
+          most_popular_subject: result.most_popular_subject,
+          most_popular_tiku: result.most_popular_tiku,
+          total_subjects: result.total_subjects || 0,
+          total_tikues: result.total_tikues || 0
+        } : undefined,
+        message: result.message
+      };
+    },
+    getRealtimeStats: async (): Promise<{ success: boolean; data?: RealtimeUsageStats; message?: string }> => {
+      const response = await this.fetchWithCredentials(`${API_BASE}/usage-stats/realtime`);
+      const result = await this.handleResponse<any>(response);
+      // 适应后端create_response的格式
+      return {
+        success: result.success,
+        data: result.success ? {
+          pending_usage_count: result.pending_usage_count || 0,
+          total_pending_usages: result.total_pending_usages || 0,
+          pending_stats: result.pending_stats || []
+        } : undefined,
+        message: result.message
+      };
+    },
+    getTopSubjects: async (limit?: number): Promise<{ success: boolean; data?: { top_subjects: UsageSubjectStat[]; total_subjects: number; limit: number }; message?: string }> => {
+      let url = `${API_BASE}/usage-stats/top-subjects`;
+      if (limit) {
+        url += `?limit=${limit}`;
+      }
+      const response = await this.fetchWithCredentials(url);
+      const result = await this.handleResponse<any>(response);
+      // 适应后端create_response的格式
+      return {
+        success: result.success,
+        data: result.success ? {
+          top_subjects: result.top_subjects || [],
+          total_subjects: result.total_subjects || 0,
+          limit: result.limit || 10
+        } : undefined,
+        message: result.message
+      };
+    },
+    getTopTikues: async (limit?: number): Promise<{ success: boolean; data?: { top_tikues: UsageTikuStat[]; total_tikues: number; limit: number }; message?: string }> => {
+      let url = `${API_BASE}/usage-stats/top-tikues`;
+      if (limit) {
+        url += `?limit=${limit}`;
+      }
+      const response = await this.fetchWithCredentials(url);
+      const result = await this.handleResponse<any>(response);
+      // 适应后端create_response的格式
+      return {
+        success: result.success,
+        data: result.success ? {
+          top_tikues: result.top_tikues || [],
+          total_tikues: result.total_tikues || 0,
+          limit: result.limit || 20
+        } : undefined,
+        message: result.message
+      };
     }
   };
 }

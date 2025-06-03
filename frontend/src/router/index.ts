@@ -10,6 +10,7 @@ import SystemControl from '@/components/admin/SystemControl.vue';
 import VipStatsPage from '@/components/vip/VipStatsPage.vue';
 import VipExportPage from '@/components/vip/VipExportPage.vue';
 import VipCollectionsPage from '@/components/vip/VipCollectionsPage.vue';
+import EnhancedUsageStatsPage from '@/components/stats/EnhancedUsageStatsPage.vue';
 import { useAuthStore } from '@/stores/auth';
 import { USER_MODEL } from '@/types';
 
@@ -111,6 +112,17 @@ const routes: RouteRecordRaw[] = [
       title: '错题集管理',
       requiresAuth: true,
       requiresVip: true
+    }
+  },
+  // 使用统计页面路由
+  {
+    path: '/admin/usage-stats',
+    name: 'admin-usage-stats',
+    component: EnhancedUsageStatsPage,
+    meta: {
+      title: '使用统计',
+      requiresAuth: true,
+      requiresAdmin: true
     }
   },
   // 用户资料和设置页面 (暂时重定向到主页)

@@ -16,6 +16,12 @@
           @back-to-home="handleNavigate('home')"
         />
       </transition>
+      
+      <!-- 错误处理 -->
+      <div v-if="currentView === 'stats' && !currentComponent" style="text-align: center; padding: 2rem;">
+        <h3>页面加载中...</h3>
+        <p>如果长时间未响应，请检查网络连接</p>
+      </div>
     </v-main>
   </div>
 </template>
@@ -28,7 +34,7 @@ import NavigationBar from '@/components/layout/NavigationBar.vue'
 
 // 异步加载组件
 const QuizHomePage = defineAsyncComponent(() => import('../quiz/QuizHomePage.vue'))
-const UsageStatsPage = defineAsyncComponent(() => import('../stats/UsageStatsPage.vue'))
+const EnhancedUsageStatsPage = defineAsyncComponent(() => import('../stats/EnhancedUsageStatsPage.vue'))
 const VipStatsPage = defineAsyncComponent(() => import('../vip/VipStatsPage.vue'))
 const VipExportPage = defineAsyncComponent(() => import('../vip/VipExportPage.vue'))
 const VipCollectionsPage = defineAsyncComponent(() => import('../vip/VipCollectionsPage.vue'))
@@ -53,7 +59,7 @@ const viewTitles: Record<string, string> = {
 // 组件映射
 const components = {
   home: QuizHomePage,
-  stats: UsageStatsPage,
+  stats: EnhancedUsageStatsPage,
   'vip-stats': VipStatsPage,
   'vip-export': VipExportPage,
   'vip-collections': VipCollectionsPage,

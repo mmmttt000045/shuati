@@ -19,6 +19,7 @@ from backend.utils import create_response
 from backend.routes.auth import auth_bp
 from backend.routes.practice import practice_bp, APP_WIDE_QUESTION_DATA, tiku_usage_stats, usage_stats_lock
 from backend.routes.admin import admin_bp
+from backend.routes.usage import usage_bp
 from backend.data_loader import load_all_banks_from_database, startup_sync
 
 # Configure logging
@@ -126,6 +127,7 @@ def create_app():
     app.register_blueprint(auth_bp)
     app.register_blueprint(practice_bp)
     app.register_blueprint(admin_bp)
+    app.register_blueprint(usage_bp)
     
     # 添加直接的/practice路由（不使用蓝图前缀）
     from backend.routes.practice import api_practice_url_params

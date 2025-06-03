@@ -26,7 +26,7 @@
 </template>
 
 <script lang="ts" setup>
-import { computed, onMounted } from 'vue'
+import { computed } from 'vue'
 import { USER_MODEL, USER_MODEL_NAMES, type UserModel } from '@/types'
 
 interface Props {
@@ -35,16 +35,6 @@ interface Props {
 
 const props = defineProps<Props>()
 
-// 调试输出
-onMounted(() => {
-  console.log('UserBadge mounted with model:', props.model)
-  console.log('USER_MODEL constants:', USER_MODEL)
-  console.log('Model comparison:', {
-    'props.model === USER_MODEL.NORMAL': props.model === USER_MODEL.NORMAL,
-    'props.model === USER_MODEL.VIP': props.model === USER_MODEL.VIP,
-    'props.model === USER_MODEL.ROOT': props.model === USER_MODEL.ROOT
-  })
-})
 
 const modelName = computed(() => {
   return USER_MODEL_NAMES[props.model] || '未知用户'

@@ -207,6 +207,15 @@ export interface ApiService {
 }
 
 class ApiServiceImpl implements ApiService {
+  // 清理错误信息，移除HTTP状态码前缀
+  private cleanErrorMessage(errorMessage: string): string {
+    if (!errorMessage) return 'An error occurred';
+    
+    // 移除HTTP状态码前缀 (如 "400 Bad Request: ", "401 Unauthorized: " 等)
+    const httpStatusRegex = /^\d{3}\s+[^:]+:\s*/;
+    return errorMessage.replace(httpStatusRegex, '').trim();
+  }
+
   private async handleResponse<T>(response: Response): Promise<T> {
     if (!response.ok) {
       // 特殊处理401认证失败错误
@@ -224,7 +233,8 @@ class ApiServiceImpl implements ApiService {
       }
       
       const error = await response.json() as ApiError;
-      throw new Error(error.message || 'An error occurred');
+      const cleanedMessage = this.cleanErrorMessage(error.message || 'An error occurred');
+      throw new Error(cleanedMessage);
     }
     return response.json() as Promise<T>;
   }

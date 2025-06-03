@@ -34,7 +34,7 @@
               <IconSubject :size="24" color="#3b82f6" class="title-icon" />
               科目使用排行
             </h2>
-            <div class="section-subtitle">各科目被使用的次数统计</div>
+            <div class="section-subtitle">各科目被使用的次数统计Top 10</div>
           </div>
           
           <div v-if="usageStats.subject_stats && usageStats.subject_stats.length > 0" class="table-container">

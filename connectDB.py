@@ -859,7 +859,7 @@ def toggle_tiku_status(tiku_id: int) -> Dict[str, Any]:
             connection.close()
 
 
-def batch_update_tiku_usage(usage_stats: dict) -> Dict[str, Any]:
+def batch_update_tiku_usage(usage_stats: dict) -> dict[str, bool | str] | dict[str, bool | int | str | Any] | None:
     """批量更新题库使用次数"""
     connection = get_db_connection()
     if not connection:
@@ -936,7 +936,7 @@ def batch_update_tiku_usage(usage_stats: dict) -> Dict[str, Any]:
             pass  # 忽略清理时的错误
 
 
-def get_usage_statistics() -> Dict[str, Any]:
+def get_usage_statistics() -> dict[str, bool | str] | dict[str, bool | list[dict[str, Any]] | list[Any]] | None:
     """获取使用统计信息"""
     connection = get_db_connection()
     if not connection:
@@ -950,7 +950,7 @@ def get_usage_statistics() -> Dict[str, Any]:
         cursor.execute("""
                        SELECT subject_name, used_count
                        FROM subject
-                       ORDER BY used_count DESC
+                       ORDER BY used_count DESC LIMIT 10
                        """)
         subject_stats = [{"subject_name": row[0], "used_count": row[1]} for row in cursor.fetchall()]
 
@@ -985,7 +985,7 @@ def get_usage_statistics() -> Dict[str, Any]:
             if connection and connection.is_connected():
                 connection.close()
         except:
-            pass  # 忽略清理时的错误
+            return None
 
 
 if __name__ == "__main__":

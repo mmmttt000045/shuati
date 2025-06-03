@@ -10,7 +10,7 @@ from ..decorators import handle_api_error, login_required
 from ..utils import create_response, format_answer_display, validate_answer
 from ..session_manager import (
     get_session_value, set_session_value, clear_practice_session, 
-    save_session_to_db
+    save_session_to_db, get_tiku_position_by_id, get_current_tiku_info
 )
 from ..config import SESSION_KEYS, QUESTION_STATUS, SUBJECT_DIRECTORY
 from ..connectDB import get_questions_by_tiku, get_all_questions_by_tiku_dict
@@ -30,11 +30,11 @@ import threading
 usage_stats_lock = threading.Lock()
 
 
-def increment_tiku_usage(tiku_position: str):
+def increment_tiku_usage(tiku_id: int):
     """增加题库使用次数（内存统计）"""
     with usage_stats_lock:
-        tiku_usage_stats[tiku_position] = tiku_usage_stats.get(tiku_position, 0) + 1
-        logger.debug(f"Incremented usage for tiku: {tiku_position} -> {tiku_usage_stats[tiku_position]}")
+        tiku_usage_stats[tiku_id] = tiku_usage_stats.get(tiku_id, 0) + 1
+        logger.debug(f"Incremented usage for tiku_id: {tiku_id} -> {tiku_usage_stats[tiku_id]}")
 
 
 @practice_bp.route('/file_options', methods=['GET'])
@@ -45,9 +45,9 @@ def api_file_options():
     subjects_data = {}
 
     # 获取当前练习进度
-    current_file = get_session_value(SESSION_KEYS['CURRENT_EXCEL_FILE'])
+    current_tiku_id = get_session_value(SESSION_KEYS['CURRENT_TIKU_ID'])
     current_progress = None
-    if current_file:
+    if current_tiku_id:
         current_indices = get_session_value(SESSION_KEYS['QUESTION_INDICES'], [])
         current_index = get_session_value(SESSION_KEYS['CURRENT_INDEX'], 0)
         initial_total = get_session_value(SESSION_KEYS['INITIAL_TOTAL'], 0)
@@ -85,7 +85,7 @@ def api_file_options():
                     'key': tiku['tiku_position'],
                     'display': tiku['tiku_name'],
                     'count': tiku['tiku_nums'],
-                    'progress': current_progress if current_file == tiku['tiku_position'] else None,
+                    'progress': current_progress if current_tiku_id == tiku['tiku_id'] else None,
                     'file_size': tiku['file_size'],
                     'updated_at': tiku['updated_at'],
                     'tiku_id': tiku['tiku_id']
@@ -127,54 +127,30 @@ def api_start_practice():
     except ValueError:
         raise BadRequest("无效的题库ID格式")
 
-    # 从数据库获取题库信息
-    from ..connectDB import get_tiku_by_subject
-    try:
-        tiku_list = get_tiku_by_subject()
-        tiku_info = None
-        
-        for tiku in tiku_list:
-            if tiku['tiku_id'] == tiku_id:
-                tiku_info = tiku
-                break
-        
-        if not tiku_info:
-            raise NotFound(f"未找到题库ID: {tiku_id}")
-        
-        if not tiku_info.get('is_active', True):
-            raise BadRequest("题库已被禁用")
-            
-        file_name = tiku_info['tiku_position']
-        
-    except Exception as e:
-        logger.error(f"Failed to get tiku info: {e}")
-        raise BadRequest(f"获取题库信息失败: {str(e)}")
+    # 检查题库是否存在于内存中，不然从数据库加载
+    if tiku_id  in APP_WIDE_QUESTION_DATA:
+        question_bank = APP_WIDE_QUESTION_DATA[tiku_id]
+    else:
+        logger.info("选择的题库未加载到内存中,开始从数据库中同步")
 
-    if file_name not in APP_WIDE_QUESTION_DATA:
-        raise NotFound("选择的题库未找到")
-
-    question_bank = APP_WIDE_QUESTION_DATA[file_name]
-    if not isinstance(question_bank, list) or not question_bank:
-        raise BadRequest('选择的题库为空或无效')
 
     # 检查是否有现有会话
-    existing_file = get_session_value(SESSION_KEYS['CURRENT_EXCEL_FILE'])
+    existing_tiku_id = get_session_value(SESSION_KEYS['CURRENT_TIKU_ID'])
     existing_indices = get_session_value(SESSION_KEYS['QUESTION_INDICES'])
 
-    if not force_restart and existing_file == file_name and existing_indices:
+    if not force_restart and existing_tiku_id == tiku_id and existing_indices:
         return create_response(True, '恢复现有练习会话', {'resumed': True})
 
-    # 开始新会话 - 增加题库使用次数统计（使用tiku_position）
-    increment_tiku_usage(file_name)
+    # 开始新会话 - 增加题库使用次数统计
+    increment_tiku_usage(tiku_id)
 
     question_indices = list(range(len(question_bank)))
     if shuffle_questions:
         random.shuffle(question_indices)
 
     # 设置session
-    set_session_value(SESSION_KEYS['CURRENT_EXCEL_FILE'], file_name)
+    set_session_value(SESSION_KEYS['CURRENT_TIKU_ID'], tiku_id)
     set_session_value(SESSION_KEYS['QUESTION_INDICES'], question_indices)
-    set_session_value(SESSION_KEYS['QUESTION_ORDER'], question_indices)
     set_session_value(SESSION_KEYS['CURRENT_INDEX'], 0)
     set_session_value(SESSION_KEYS['WRONG_INDICES'], [])
     set_session_value(SESSION_KEYS['ROUND_NUMBER'], 1)
@@ -191,11 +167,11 @@ def api_start_practice():
 @handle_api_error
 def api_practice_question():
     """获取当前练习题目"""
-    selected_file = get_session_value(SESSION_KEYS['CURRENT_EXCEL_FILE'])
-    if not selected_file or selected_file not in APP_WIDE_QUESTION_DATA:
+    current_tiku_id = get_session_value(SESSION_KEYS['CURRENT_TIKU_ID'])
+    if not current_tiku_id or current_tiku_id not in APP_WIDE_QUESTION_DATA:
         raise BadRequest("没有选择题库或会话已过期")
 
-    question_bank = APP_WIDE_QUESTION_DATA[selected_file]
+    question_bank = APP_WIDE_QUESTION_DATA[current_tiku_id]
     q_indices = get_session_value(SESSION_KEYS['QUESTION_INDICES'])
     if not q_indices:
         raise NotFound("没有可用题目或会话已过期")
@@ -273,11 +249,11 @@ def api_submit_answer():
     if not question_id:
         raise BadRequest("缺少题目ID")
 
-    selected_file = get_session_value(SESSION_KEYS['CURRENT_EXCEL_FILE'])
-    if not selected_file or selected_file not in APP_WIDE_QUESTION_DATA:
+    current_tiku_id = get_session_value(SESSION_KEYS['CURRENT_TIKU_ID'])
+    if not current_tiku_id or current_tiku_id not in APP_WIDE_QUESTION_DATA:
         raise BadRequest("无效的会话或题库")
 
-    question_bank = APP_WIDE_QUESTION_DATA[selected_file]
+    question_bank = APP_WIDE_QUESTION_DATA[current_tiku_id]
     q_indices = get_session_value(SESSION_KEYS['QUESTION_INDICES'], [])
     current_idx = get_session_value(SESSION_KEYS['CURRENT_INDEX'], 0)
 
@@ -361,8 +337,9 @@ def api_completed_summary():
     correct_first_try = get_session_value(SESSION_KEYS['CORRECT_FIRST_TRY'], 0)
     score_percent = (correct_first_try / initial_total * 100) if initial_total > 0 else 0
 
-    completed_filename = get_session_value(SESSION_KEYS['CURRENT_EXCEL_FILE'], 'Unknown')
-    display_name = completed_filename.replace('.xlsx', '').replace('.xls', '')
+    # 获取当前题库信息
+    tiku_info = get_current_tiku_info()
+    display_name = tiku_info['tiku_name'] if tiku_info else 'Unknown'
 
     summary_data = {
         'initial_total': initial_total,
@@ -424,29 +401,21 @@ def api_next_question():
 @handle_api_error
 def api_session_status():
     """获取会话状态"""
-    current_file = get_session_value(SESSION_KEYS['CURRENT_EXCEL_FILE'])
+    current_tiku_id = get_session_value(SESSION_KEYS['CURRENT_TIKU_ID'])
     
-    if not current_file:
+    if not current_tiku_id:
         return create_response(True, '没有活跃的练习会话', {'has_session': False})
 
     # 获取题库显示名称
-    from ..connectDB import get_tiku_by_subject
-    try:
-        tiku_list = get_tiku_by_subject()
-        display_name = current_file
-        for tiku in tiku_list:
-            if tiku['tiku_position'] == current_file:
-                display_name = tiku['tiku_name']
-                break
-    except Exception:
-        display_name = current_file.replace('.xlsx', '').replace('.xls', '')
+    tiku_info = get_current_tiku_info()
+    display_name = tiku_info['tiku_name'] if tiku_info else str(current_tiku_id)
 
     current_indices = get_session_value(SESSION_KEYS['QUESTION_INDICES'], [])
     current_index = get_session_value(SESSION_KEYS['CURRENT_INDEX'], 0)
     
     return create_response(True, '当前有活跃的练习会话', {
         'has_session': True,
-        'file_name': current_file,
+        'tiku_id': current_tiku_id,
         'file_info': {
             'display': display_name,
             'current_question': current_index + 1,
@@ -640,34 +609,37 @@ def api_practice_url_params():
         logger.warning(f"查找题库失败: {e}")
         raise NotFound(f"查找题库失败: {tiku_id}")
     
-    # 检查题库是否存在于内存中
-    if tiku_position not in APP_WIDE_QUESTION_DATA:
+    # 检查题库是否存在于内存中，注意APP_WIDE_QUESTION_DATA可能使用tiku_id或tiku_position作为键
+    question_bank = None
+    if tiku_id in APP_WIDE_QUESTION_DATA:
+        question_bank = APP_WIDE_QUESTION_DATA[tiku_id]
+    elif tiku_position in APP_WIDE_QUESTION_DATA:
+        question_bank = APP_WIDE_QUESTION_DATA[tiku_position]
+    else:
         raise NotFound("选择的题库未加载到内存中")
     
     # 检查是否有现有会话
-    existing_file = get_session_value(SESSION_KEYS['CURRENT_EXCEL_FILE'])
+    existing_tiku_id = get_session_value(SESSION_KEYS['CURRENT_TIKU_ID'])
     existing_indices = get_session_value(SESSION_KEYS['QUESTION_INDICES'])
     
     # 确定题目顺序
     shuffle_questions = order.lower() == 'random'
     
-    if existing_file != tiku_position or not existing_indices:
+    if existing_tiku_id != tiku_id or not existing_indices:
         # 开始新的练习会话
-        question_bank = APP_WIDE_QUESTION_DATA[tiku_position]
         if not isinstance(question_bank, list) or not question_bank:
             raise BadRequest('选择的题库为空或无效')
         
         # 增加题库使用次数统计
-        increment_tiku_usage(tiku_position)
+        increment_tiku_usage(tiku_id)
         
         question_indices = list(range(len(question_bank)))
         if shuffle_questions:
             random.shuffle(question_indices)
         
         # 设置session
-        set_session_value(SESSION_KEYS['CURRENT_EXCEL_FILE'], tiku_position)
+        set_session_value(SESSION_KEYS['CURRENT_TIKU_ID'], tiku_id)
         set_session_value(SESSION_KEYS['QUESTION_INDICES'], question_indices)
-        set_session_value(SESSION_KEYS['QUESTION_ORDER'], question_indices)
         set_session_value(SESSION_KEYS['CURRENT_INDEX'], 0)
         set_session_value(SESSION_KEYS['WRONG_INDICES'], [])
         set_session_value(SESSION_KEYS['ROUND_NUMBER'], 1)

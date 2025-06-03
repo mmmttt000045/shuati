@@ -7,7 +7,10 @@ from werkzeug.exceptions import BadRequest, NotFound
 
 from ..decorators import handle_api_error, login_required
 from ..utils import create_response
-from ..session_manager import load_session_from_db, save_session_to_db
+from ..session_manager import (
+    load_session_from_db, save_session_to_db, 
+    clear_all_session, get_user_session_info
+)
 from ..connectDB import (
     authenticate_user, create_user, verify_invitation_code,
     get_user_info, update_session_timestamp
@@ -96,7 +99,7 @@ def api_logout():
     if session.get('user_id'):
         username = session.get('username', 'Unknown')
         save_session_to_db()
-        session.clear()
+        clear_all_session()
         logger.info(f"User logged out: {username}")
         return create_response(True, '登出成功')
     else:

@@ -878,21 +878,21 @@ def batch_update_tiku_usage(usage_stats: dict) -> dict[str, bool | str] | dict[s
         updated_count = 0
         updated_subjects = set()
 
-        for tiku_position, usage_count in usage_stats.items():
+        for tiku_id, usage_count in usage_stats.items():
             # 更新题库使用次数
             update_tiku_query = """
                                 UPDATE tiku
                                 SET used_count = used_count + %s
-                                WHERE tiku_position = %s
+                                WHERE tiku_id = %s
                                 """
-            cursor.execute(update_tiku_query, (usage_count, tiku_position))
+            cursor.execute(update_tiku_query, (usage_count, tiku_id))
             all_counts += usage_count
 
             if cursor.rowcount > 0:
                 updated_count += 1
 
                 # 获取对应的科目ID并更新科目使用次数
-                cursor.execute("SELECT subject_id FROM tiku WHERE tiku_position = %s", (tiku_position,))
+                cursor.execute("SELECT subject_id FROM tiku WHERE tiku_id = %s", (tiku_id,))
                 result = cursor.fetchone()
                 if result:
                     subject_id = result[0]
@@ -1220,7 +1220,7 @@ def get_all_questions_by_tiku_dict() -> dict:
             }
             
             # 使用tiku_position作为key以保持与现有代码的兼容性
-            tiku_key = tiku_position if tiku_position else f"tiku_{tiku_id}"
+            tiku_key = tiku_id
             if tiku_key not in questions_dict:
                 questions_dict[tiku_key] = []
             questions_dict[tiku_key].append(question_data)

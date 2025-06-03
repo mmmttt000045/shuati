@@ -60,14 +60,14 @@ def sync_usage_stats_to_database():
                 logger.error(f"Failed to sync usage stats: {result['error']}")
                 # 如果同步失败，重新添加到统计中
                 with usage_stats_lock:
-                    for tiku_position, count in stats_to_sync.items():
-                        tiku_usage_stats[tiku_position] = tiku_usage_stats.get(tiku_position, 0) + count
+                    for tiku_id, count in stats_to_sync.items():
+                        tiku_usage_stats[tiku_id] = tiku_usage_stats.get(tiku_id, 0) + count
         except Exception as e:
             logger.error(f"Error in batch_update_tiku_usage: {e}")
             # 如果发生异常，重新添加到统计中
             with usage_stats_lock:
-                for tiku_position, count in stats_to_sync.items():
-                    tiku_usage_stats[tiku_position] = tiku_usage_stats.get(tiku_position, 0) + count
+                for tiku_id, count in stats_to_sync.items():
+                    tiku_usage_stats[tiku_id] = tiku_usage_stats.get(tiku_id, 0) + count
 
 
 def monitor_activity():

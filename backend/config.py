@@ -28,19 +28,26 @@ COLUMNS_FOR_EXCEL_OUTPUT = [QUESTION_COLUMN, OPTION_A_COLUMN, OPTION_B_COLUMN, O
                             ANSWER_COLUMN, TYPE_COLUMN]
 
 # --- Session keys ---
+# 核心会话密钥，按功能分组
 SESSION_KEYS = {
-    'CURRENT_EXCEL_FILE': 'current_excel_file',
-    'QUESTION_INDICES': 'q_indices_to_practice',
-    'QUESTION_ORDER': 'question_order',  # 添加题目顺序键
-    'CURRENT_INDEX': 'current_idx_in_indices_list',
-    'WRONG_INDICES': 'wrong_q_indices_this_round',
-    'ROUND_NUMBER': 'round_number',
-    'INITIAL_TOTAL': 'initial_total_questions',
-    'CORRECT_FIRST_TRY': 'correct_on_first_try',
-    'QUESTION_STATUSES': 'question_answer_statuses',  # 保存每道题的答题状态
-    'ANSWER_HISTORY': 'question_answer_history',  # 保存每道题的答题历史
-    'USER_ID': 'user_id',  # 用户ID
-    'USERNAME': 'username'  # 用户名
+    # 用户身份相关
+    'USER_ID': 'user_id',          # 当前登录用户ID
+    'USERNAME': 'username',        # 当前登录用户名
+    
+    # 练习状态相关
+    'CURRENT_TIKU_ID': 'current_tiku_id',                 # 当前练习的题库ID
+    'QUESTION_INDICES': 'q_indices_to_practice',          # 当前轮次需要练习的题目索引列表
+    'CURRENT_INDEX': 'current_idx_in_indices_list',       # 当前题目在索引列表中的位置
+    'WRONG_INDICES': 'wrong_q_indices_this_round',        # 本轮答错的题目索引列表
+    
+    # 练习统计相关
+    'ROUND_NUMBER': 'round_number',                       # 当前练习轮次
+    'INITIAL_TOTAL': 'initial_total_questions',           # 初始题目总数
+    'CORRECT_FIRST_TRY': 'correct_on_first_try',         # 第一轮答对的题目数量
+    
+    # 题目状态相关
+    'QUESTION_STATUSES': 'question_answer_statuses',      # 每道题的答题状态数组
+    'ANSWER_HISTORY': 'question_answer_history',          # 每道题的答题历史记录
 }
 
 # --- 题目状态常量 ---

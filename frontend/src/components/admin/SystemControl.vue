@@ -270,6 +270,21 @@
         <template v-slot:item.expires_at="{ item }">
           <span class="text-caption">{{ item.expires_at ? formatDate(item.expires_at) : '永不过期' }}</span>
         </template>
+
+        <!-- 操作列 -->
+        <template v-slot:item.actions="{ item }">
+          <v-btn
+            v-if="!item.is_used"
+            color="error"
+            size="small"
+            variant="elevated"
+            @click="deleteInvitation(item)"
+            :disabled="deletingInvitation"
+          >
+            删除
+          </v-btn>
+          <span v-else class="text-disabled">已使用</span>
+        </template>
       </v-data-table>
     </div>
 
@@ -874,6 +889,138 @@
         </v-card-actions>
       </v-card>
     </v-dialog>
+
+    <!-- 权限变更确认对话框 -->
+    <v-dialog v-model="showPermissionChangeDialog" max-width="500px" persistent>
+      <v-card>
+        <v-card-title class="d-flex align-center">
+          <v-icon color="warning" class="mr-2" size="28">mdi-account-alert</v-icon>
+          <span class="text-h5">确认权限变更</span>
+        </v-card-title>
+
+        <v-card-text>
+          <v-container>
+            <v-alert
+              type="warning"
+              variant="tonal"
+              prominent
+              border="start"
+              class="mb-4"
+            >
+              <v-alert-title>⚠️ 重要操作确认</v-alert-title>
+              <div class="mt-2">
+                权限变更是敏感操作，请仔细确认以下信息：
+              </div>
+            </v-alert>
+            
+            <v-row>
+              <v-col cols="12">
+                <v-card variant="outlined" class="pa-4">
+                  <div class="permission-change-info">
+                    <div class="info-row">
+                      <v-icon color="primary" class="mr-2">mdi-account</v-icon>
+                      <span class="info-label">用户名：</span>
+                      <span class="info-value username">{{ pendingPermissionChange?.username }}</span>
+                    </div>
+                    
+                    <v-divider class="my-3"></v-divider>
+                    
+                    <div class="info-row">
+                      <v-icon color="info" class="mr-2">mdi-account-badge</v-icon>
+                      <span class="info-label">当前权限：</span>
+                      <v-chip 
+                        :color="getModelColor(pendingPermissionChange?.currentModel)" 
+                        size="small" 
+                        variant="flat"
+                        class="ml-2"
+                      >
+                        {{ getModelName(pendingPermissionChange?.currentModel) }}
+                      </v-chip>
+                    </div>
+                    
+                    <div class="info-row mt-2">
+                      <v-icon color="success" class="mr-2">mdi-account-arrow-right</v-icon>
+                      <span class="info-label">变更为：</span>
+                      <v-chip 
+                        :color="getModelColor(pendingPermissionChange?.newModel)" 
+                        size="small" 
+                        variant="flat"
+                        class="ml-2"
+                      >
+                        {{ getModelName(pendingPermissionChange?.newModel) }}
+                      </v-chip>
+                    </div>
+                  </div>
+                </v-card>
+              </v-col>
+              
+              <v-col cols="12" v-if="pendingPermissionChange?.newModel === 10">
+                <v-alert
+                  type="error"
+                  variant="tonal"
+                  density="compact"
+                  class="text-caption"
+                >
+                  <v-alert-title class="text-body-2">🔥 超级管理员权限</v-alert-title>
+                  <div class="mt-1">
+                    该用户将获得系统最高权限，包括用户管理、系统配置等所有功能的访问权限。
+                  </div>
+                </v-alert>
+              </v-col>
+              
+              <v-col cols="12" v-else-if="pendingPermissionChange?.newModel === 5">
+                <v-alert
+                  type="info"
+                  variant="tonal"
+                  density="compact"
+                  class="text-caption"
+                >
+                  <v-alert-title class="text-body-2">💎 VIP用户权限</v-alert-title>
+                  <div class="mt-1">
+                    该用户将获得VIP功能访问权限，享受更好的服务体验。
+                  </div>
+                </v-alert>
+              </v-col>
+              
+              <v-col cols="12" v-else-if="pendingPermissionChange?.newModel === 0">
+                <v-alert
+                  type="info"
+                  variant="tonal"
+                  density="compact"
+                  class="text-caption"
+                >
+                  <v-alert-title class="text-body-2">👤 普通用户权限</v-alert-title>
+                  <div class="mt-1">
+                    该用户将只能访问基础功能，无法使用高级功能。
+                  </div>
+                </v-alert>
+              </v-col>
+            </v-row>
+          </v-container>
+        </v-card-text>
+
+        <v-card-actions class="px-6 pb-4">
+          <v-spacer></v-spacer>
+          <v-btn 
+            color="grey" 
+            variant="text" 
+            @click="cancelPermissionChange"
+            :disabled="updatingPermission"
+          >
+            取消
+          </v-btn>
+          <v-btn
+            :color="pendingPermissionChange?.newModel === 10 ? 'error' : 'primary'"
+            variant="elevated"
+            @click="confirmPermissionChange"
+            :loading="updatingPermission"
+          >
+            <v-icon class="mr-1" size="16">mdi-check-bold</v-icon>
+            确认变更
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
   </div>
 </template>
 
@@ -1012,6 +1159,7 @@ const showCreateInvitationDialog = ref(false)
 const newInvitationCode = ref('')
 const newInvitationExpireDays = ref<number | null>(null)
 const creatingInvitation = ref(false)
+const deletingInvitation = ref(false)
 
 // 新增：科目管理对话框
 const showSubjectDialog = ref(false)
@@ -1045,6 +1193,14 @@ const currentUserId = computed(() => authStore.user?.user_id)
 // 切换标签页
 const switchTab = (tabKey: string) => {
   activeTab.value = tabKey
+  
+  // 根据标签页加载对应数据
+  if (tabKey === 'invitations' && invitations.value.length === 0) {
+    loadInvitations()
+  } else if (tabKey === 'subjects' && subjects.value.length === 0) {
+    loadSubjects()
+  }
+  
   toast.info(`已切换到${tabs.find(t => t.key === tabKey)?.label} 📌`)
 }
 
@@ -1104,25 +1260,26 @@ const toggleUser = async (userId: number) => {
 }
 
 const updateUserModel = async (userId: number, model: number) => {
-  try {
-    const response = await apiService.admin.updateUserModel(userId, model)
-    if (response.success) {
-      // 更新本地数据
-      const user = users.value.find(u => u.id === userId)
-      if (user) {
-        user.model = response.model
-      }
-      handleSuccess(response.message || '权限更新成功', () => loadStats())
-    } else {
-      handleError(new Error(response.message), '更新用户权限')
-      // 恢复原来的值
-      loadUsers()
-    }
-  } catch (error) {
-    handleError(error, '更新用户权限')
-    // 恢复原来的值
-    loadUsers()
+  // 找到要修改的用户
+  const user = users.value.find(u => u.id === userId)
+  if (!user) {
+    toast.error('用户不存在')
+    return
   }
+
+  // 如果没有变化，直接返回
+  if (user.model === model) {
+    return
+  }
+
+  // 设置待变更权限信息并显示确认对话框
+  pendingPermissionChange.value = {
+    userId: userId,
+    username: user.username,
+    currentModel: user.model,
+    newModel: model
+  }
+  showPermissionChangeDialog.value = true
 }
 
 // 邀请码管理相关函数
@@ -2004,7 +2161,8 @@ const invitationHeaders = [
   { title: '使用者', key: 'used_by_username', sortable: false, width: '120px' },
   { title: '创建时间', key: 'created_at', sortable: true, width: '160px' },
   { title: '使用时间', key: 'used_time', sortable: false, width: '160px' },
-  { title: '过期时间', key: 'expires_at', sortable: false, width: '160px' }
+  { title: '过期时间', key: 'expires_at', sortable: false, width: '160px' },
+  { title: '操作', key: 'actions', sortable: false, width: '100px', align: 'center' as const }
 ]
 
 // 科目表格表头
@@ -2154,6 +2312,102 @@ const handleError = (error: any, operation: string) => {
 const handleSuccess = (message: string, callback?: () => void) => {
   toast.success(message)
   if (callback) callback()
+}
+
+// 新增：权限变更相关状态
+const pendingPermissionChange = ref<{ userId: number; username: string; currentModel: number; newModel: number } | null>(null)
+const updatingPermission = ref(false)
+
+const getModelColor = (model?: number) => {
+  switch (model) {
+    case 10:
+      return 'error'
+    case 5:
+      return 'info'
+    case 0:
+      return 'success'
+    default:
+      return 'default'
+  }
+}
+
+const getModelName = (model?: number) => {
+  switch (model) {
+    case 10:
+      return 'ROOT用户'
+    case 5:
+      return 'VIP用户'
+    case 0:
+      return '普通用户'
+    default:
+      return '未知'
+  }
+}
+
+const confirmPermissionChange = async () => {
+  if (!pendingPermissionChange.value) return
+
+  updatingPermission.value = true
+  try {
+    const response = await apiService.admin.updateUserModel(pendingPermissionChange.value.userId, pendingPermissionChange.value.newModel)
+    if (response.success) {
+      // 更新本地数据
+      const user = users.value.find(u => u.id === pendingPermissionChange.value?.userId)
+      if (user) {
+        user.model = response.model
+      }
+      handleSuccess(response.message || '权限更新成功', () => loadStats())
+      closePermissionChangeDialog()
+    } else {
+      handleError(new Error(response.message), '更新用户权限')
+    }
+  } catch (error) {
+    handleError(error, '更新用户权限')
+  } finally {
+    updatingPermission.value = false
+  }
+}
+
+const cancelPermissionChange = () => {
+  // 恢复原来的选择值
+  if (pendingPermissionChange.value) {
+    const user = users.value.find(u => u.id === pendingPermissionChange.value?.userId)
+    if (user) {
+      // 触发表格重新渲染来恢复原值
+      loadUsers()
+    }
+  }
+  closePermissionChangeDialog()
+}
+
+const closePermissionChangeDialog = () => {
+  showPermissionChangeDialog.value = false
+  pendingPermissionChange.value = null
+}
+
+const showPermissionChangeDialog = ref(false)
+
+const deleteInvitation = async (invitation: any) => {
+  if (!confirm(`确定要删除邀请码"${invitation.code}"吗？此操作不可恢复！`)) {
+    return
+  }
+
+  deletingInvitation.value = true
+  try {
+    const response = await apiService.admin.deleteInvitation(invitation.id)
+    if (response.success) {
+      toast.success(response.message || '邀请码删除成功')
+      loadInvitations()
+      loadStats()
+    } else {
+      toast.error(response.message || '删除邀请码失败')
+    }
+  } catch (error) {
+    console.error('删除邀请码失败:', error)
+    toast.error('删除邀请码失败')
+  } finally {
+    deletingInvitation.value = false
+  }
 }
 </script>
 
@@ -3973,4 +4227,67 @@ const handleSuccess = (message: string, callback?: () => void) => {
   filter: drop-shadow(0 2px 4px rgba(59, 130, 246, 0.3));
   vertical-align: middle;
 }
+
+/* 权限变更确认对话框样式 */
+.permission-change-info {
+  font-size: 0.95rem;
+}
+
+.info-row {
+  display: flex;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.info-row:last-child {
+  margin-bottom: 0;
+}
+
+.info-label {
+  font-weight: 500;
+  color: #374151;
+  min-width: 80px;
+}
+
+.info-value {
+  color: #1e293b;
+  margin-left: 0.5rem;
+}
+
+.info-value.username {
+  font-weight: 600;
+  color: #3b82f6;
+  background: #eff6ff;
+  padding: 0.25rem 0.75rem;
+  border-radius: 6px;
+  border: 1px solid #bfdbfe;
+}
+
+/* 确认对话框按钮动画 */
+.v-dialog .v-card .v-btn {
+  transition: all 0.2s ease;
+}
+
+.v-dialog .v-card .v-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* 权限芯片样式优化 */
+.v-chip.v-chip--size-small {
+  font-weight: 500;
+  letter-spacing: 0.025em;
+}
+
+/* 警告提示样式 */
+.v-alert.v-alert--variant-tonal {
+  border-radius: 8px;
+}
+
+.v-alert-title {
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+}
+
+/* 最后一段样式 */
 </style>

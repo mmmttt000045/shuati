@@ -11,8 +11,9 @@ from ..connectDB import (
     get_all_subjects, create_subject, update_subject, delete_subject,
     get_tiku_by_subject, create_or_update_tiku, delete_tiku, toggle_tiku_status,
     create_invitation_code, get_questions_by_tiku, delete_questions_by_tiku,
-    parse_excel_to_questions, insert_questions_batch
+    parse_excel_to_questions, insert_questions_batch, toggle_user_status, update_user_model
 )
+from backend.routes.practice import refresh_all_cache_from_mysql
 
 logger = logging.getLogger(__name__)
 
@@ -277,7 +278,26 @@ def api_admin_create_invitation():
         if not code or len(code) < 6 or len(code) > 64:
             raise BadRequest("邀请码长度必须在6-64个字符之间")
 
-        result = create_invitation_code(code, expire_days)
+        # 处理过期天数参数
+        if expire_days is not None:
+            try:
+                # 尝试转换为整数
+                if isinstance(expire_days, str):
+                    if expire_days.strip() == '':
+                        expires_days = None
+                    else:
+                        expires_days = int(expire_days.strip())
+                else:
+                    expires_days = int(expire_days)
+                
+                # 验证天数范围
+                if expires_days is not None and (expires_days <= 0 or expires_days > 3650):
+                    raise BadRequest("过期天数必须在1-3650天之间")
+                    
+            except (ValueError, TypeError):
+                raise BadRequest("过期天数必须是有效的整数")
+
+        result = create_invitation_code(code, expires_days)
         if result['success']:
             return create_response(True, result['message'], data={'invitation_code': result['code']})
         else:
@@ -285,6 +305,26 @@ def api_admin_create_invitation():
 
     except Exception as e:
         logger.error(f"Error creating invitation: {e}")
+        raise
+
+@admin_bp.route('/invitations/<int:invitation_id>', methods=['DELETE'])
+@login_required
+@admin_required
+@handle_api_error
+def api_admin_delete_invitation(invitation_id):
+    """删除未使用的邀请码"""
+    try:
+        from ..connectDB import delete_invitation_code
+        result = delete_invitation_code(invitation_id)
+
+        if result['success']:
+            logger.info(f"管理员删除邀请码: {result.get('deleted_code', invitation_id)}")
+            return create_response(True, result['message'])
+        else:
+            raise BadRequest(result['error'])
+
+    except Exception as e:
+        logger.error(f"Error deleting invitation: {e}")
         raise
 
 
@@ -327,6 +367,7 @@ def api_admin_create_subject():
             from ..utils import ensure_subject_directory
             ensure_subject_directory(subject_name)
             logger.info(f"管理员创建科目: {subject_name}")
+            refresh_all_cache_from_mysql()  # 刷新缓存
             return create_response(True, result['message'], data={'subject_id': result['subject_id']})
         except Exception as e:
             # 如果目录创建失败，尝试删除数据库记录
@@ -359,6 +400,7 @@ def api_admin_update_subject(subject_id):
 
     result = update_subject(subject_id, subject_name, exam_time)
     if result['success']:
+        refresh_all_cache_from_mysql()  # 刷新缓存
         logger.info(f"管理员更新科目: {subject_id} -> {subject_name}")
         return create_response(True, result['message'])
     else:
@@ -378,6 +420,7 @@ def api_admin_delete_subject(subject_id):
         for file_path in result.get('deleted_files', []):
             remove_file_safely(file_path)
 
+        refresh_all_cache_from_mysql()  # 刷新缓存
         logger.info(f"管理员删除科目: {subject_id}")
         return create_response(True, result['message'])
     else:
@@ -409,7 +452,7 @@ def api_admin_get_tiku():
 def api_admin_upload_tiku():
     """上传题库文件"""
     from ..utils import save_uploaded_file, remove_file_safely, get_file_hash
-    
+
     if 'file' not in request.files:
         raise BadRequest('没有上传文件')
 
@@ -511,6 +554,7 @@ def api_admin_upload_tiku():
             )
 
         logger.info(f"管理员上传题库: {tiku_name} (解析{len(questions)}题，插入{actual_count}题)")
+        refresh_all_cache_from_mysql()  # 刷新缓存
         return create_response(True, f"题库上传成功，共{actual_count}道题目", data={
             'tiku_id': tiku_id,
             'question_count': actual_count,
@@ -541,7 +585,7 @@ def api_admin_delete_tiku(tiku_id):
         if file_path:
             from ..utils import remove_file_safely
             remove_file_safely(file_path)
-
+        refresh_all_cache_from_mysql()  # 刷新缓存
         logger.info(f"管理员删除题库: {tiku_id}")
         return create_response(True, result['message'])
     else:
@@ -555,6 +599,8 @@ def api_admin_delete_tiku(tiku_id):
 def api_admin_toggle_tiku(tiku_id):
     """切换题库启用状态"""
     result = toggle_tiku_status(tiku_id)
+
+    refresh_all_cache_from_mysql()  # 刷新缓存
     if result['success']:
         logger.info(f"管理员切换题库状态: {tiku_id} -> {'启用' if result['is_active'] else '禁用'}")
         return create_response(True, result['message'], data={'is_active': result['is_active']})
@@ -572,7 +618,7 @@ def api_admin_get_questions():
         tiku_id = request.args.get('tiku_id')
         page = max(1, int(request.args.get('page', 1)))
         per_page = min(100, max(10, int(request.args.get('per_page', 20))))
-        
+
         if tiku_id:
             try:
                 tiku_id = int(tiku_id)
@@ -581,14 +627,14 @@ def api_admin_get_questions():
                 raise BadRequest('无效的题库ID')
         else:
             questions = get_questions_by_tiku()
-        
+
         # 简单的内存分页
         total_count = len(questions)
         total_pages = (total_count + per_page - 1) // per_page
         start_idx = (page - 1) * per_page
         end_idx = start_idx + per_page
         page_questions = questions[start_idx:end_idx]
-        
+
         pagination = {
             'page': page,
             'per_page': per_page,
@@ -597,12 +643,12 @@ def api_admin_get_questions():
             'has_prev': page > 1,
             'has_next': page < total_pages
         }
-        
+
         return create_response(True, data={
             'questions': page_questions,
             'pagination': pagination
         })
-        
+
     except Exception as e:
         logger.error(f"获取题目列表失败: {e}")
         raise
@@ -616,24 +662,24 @@ def api_admin_get_questions_stats():
     """获取题目统计信息"""
     try:
         from ..connectDB import get_db_connection
-        
+
         connection = get_db_connection()
         if not connection:
             raise Exception("数据库连接失败")
-        
+
         cursor = connection.cursor()
-        
+
         # 题目总数统计
         cursor.execute("SELECT COUNT(*) FROM questions WHERE status = 'active'")
         total_questions = cursor.fetchone()[0]
-        
+
         # 按题型统计
         cursor.execute("""
-        SELECT question_type, COUNT(*) as count
-        FROM questions 
-        WHERE status = 'active'
-        GROUP BY question_type
-        """)
+                       SELECT question_type, COUNT(*) as count
+                       FROM questions
+                       WHERE status = 'active'
+                       GROUP BY question_type
+                       """)
         type_stats = []
         type_names = {0: '单选题', 5: '多选题', 10: '判断题'}
         for row in cursor.fetchall():
@@ -643,15 +689,16 @@ def api_admin_get_questions_stats():
                 'type_code': question_type,
                 'count': count
             })
-        
+
         # 按科目统计
         cursor.execute("""
-        SELECT s.subject_name, COUNT(q.id) as count
-        FROM subject s
-        LEFT JOIN questions q ON s.subject_id = q.subject_id AND q.status = 'active'
-        GROUP BY s.subject_id, s.subject_name
-        ORDER BY count DESC
-        """)
+                       SELECT s.subject_name, COUNT(q.id) as count
+                       FROM subject s
+                           LEFT JOIN questions q
+                       ON s.subject_id = q.subject_id AND q.status = 'active'
+                       GROUP BY s.subject_id, s.subject_name
+                       ORDER BY count DESC
+                       """)
         subject_stats = []
         for row in cursor.fetchall():
             subject_name, count = row
@@ -659,17 +706,18 @@ def api_admin_get_questions_stats():
                 'subject_name': subject_name,
                 'count': count
             })
-        
+
         # 按题库统计
         cursor.execute("""
-        SELECT t.tiku_name, s.subject_name, COUNT(q.id) as count
-        FROM tiku t
-        LEFT JOIN questions q ON t.tiku_id = q.tiku_id AND q.status = 'active'
-        LEFT JOIN subject s ON t.subject_id = s.subject_id
-        WHERE t.is_active = 1
-        GROUP BY t.tiku_id, t.tiku_name, s.subject_name
-        ORDER BY count DESC
-        """)
+                       SELECT t.tiku_name, s.subject_name, COUNT(q.id) as count
+                       FROM tiku t
+                           LEFT JOIN questions q
+                       ON t.tiku_id = q.tiku_id AND q.status = 'active'
+                           LEFT JOIN subject s ON t.subject_id = s.subject_id
+                       WHERE t.is_active = 1
+                       GROUP BY t.tiku_id, t.tiku_name, s.subject_name
+                       ORDER BY count DESC
+                       """)
         tiku_stats = []
         for row in cursor.fetchall():
             tiku_name, subject_name, count = row
@@ -678,14 +726,14 @@ def api_admin_get_questions_stats():
                 'subject_name': subject_name,
                 'count': count
             })
-        
+
         return create_response(True, data={
             'total_questions': total_questions,
             'type_stats': type_stats,
             'subject_stats': subject_stats,
             'tiku_stats': tiku_stats
         })
-        
+
     except Exception as e:
         logger.error(f"获取题目统计失败: {e}")
         raise
@@ -693,4 +741,94 @@ def api_admin_get_questions_stats():
         if 'cursor' in locals():
             cursor.close()
         if 'connection' in locals() and connection.is_connected():
-            connection.close() 
+            connection.close()
+
+
+@admin_bp.route('/reload-banks', methods=['POST'])
+@login_required
+@admin_required
+@handle_api_error
+def api_admin_reload_banks():
+    """重新加载题库缓存"""
+    try:
+        result = refresh_all_cache_from_mysql()
+        return create_response(True, result['message'], {
+            'tiku_count': result['tiku_count'],
+            'subjects_count': result['subjects_count']
+        })
+    except Exception as e:
+        logger.error(f"重新加载题库缓存失败: {e}")
+        return create_response(False, f'重新加载题库缓存失败: {str(e)}', status_code=500)
+
+
+@admin_bp.route('/users/<int:user_id>/toggle', methods=['POST'])
+@login_required
+@admin_required
+@handle_api_error
+def api_admin_toggle_user(user_id):
+    """启用/禁用用户"""
+    try:
+        from flask import session
+
+        # 不能操作自己
+        current_user_id = session.get('user_id')
+        if user_id == current_user_id:
+            raise BadRequest("不能操作自己的账户")
+
+        # 调用connectDB中的函数
+        result = toggle_user_status(user_id)
+
+        if result['success']:
+            action = "启用" if result['is_enabled'] else "禁用"
+            logger.info(f"管理员{action}用户: user_id={user_id}, username={result['username']}")
+            return create_response(True, result['message'], data={'is_enabled': result['is_enabled']})
+        else:
+            raise BadRequest(result['error'])
+
+    except Exception as e:
+        logger.error(f"Error toggling user {user_id}: {e}")
+        raise
+
+
+@admin_bp.route('/users/<int:user_id>/model', methods=['PUT'])
+@login_required
+@admin_required
+@handle_api_error
+def api_admin_update_user_model(user_id):
+    """更新用户权限模型"""
+    try:
+        from ..decorators import permission_cache
+        from flask import session
+
+        data = request.get_json()
+        if not data or 'model' not in data:
+            raise BadRequest("缺少模型参数")
+
+        model = data['model']
+        if model not in [0, 5, 10]:
+            raise BadRequest("无效的用户模型")
+
+        # 不能操作自己
+        current_user_id = session.get('user_id')
+        if user_id == current_user_id:
+            raise BadRequest("不能修改自己的权限")
+
+        # 调用connectDB中的函数
+        result = update_user_model(user_id, model)
+
+        if result['success']:
+            # 更新缓存
+            permission_cache.update_user_model(user_id, model)
+
+            logger.info(f"管理员更新用户权限: user_id={user_id}, username={result['username']}, model={model}")
+            return create_response(True, result['message'], data={
+                'model': result['model'],
+                'user_id': result['user_id'],
+                'username': result['username']
+            })
+        else:
+            raise BadRequest(result['error'])
+
+    except Exception as e:
+        logger.error(f"Error updating user model {user_id}: {e}")
+        raise

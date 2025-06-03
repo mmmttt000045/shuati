@@ -3,18 +3,21 @@
 """
 import logging
 import random
+import time
 from flask import Blueprint, request, session, jsonify
 from werkzeug.exceptions import BadRequest, NotFound
 
 from ..decorators import handle_api_error, login_required
 from ..utils import create_response, format_answer_display, validate_answer
 from ..session_manager import (
-    get_session_value, set_session_value, clear_practice_session, 
+    get_session_value, set_session_value, clear_practice_session,
     save_session_to_db, get_tiku_position_by_id, get_current_tiku_info
 )
 from ..config import SESSION_KEYS, QUESTION_STATUS, SUBJECT_DIRECTORY
 from ..connectDB import get_questions_by_tiku, get_all_questions_by_tiku_dict
 from ..utils import normalize_filepath
+
+from ..connectDB import get_tiku_by_subject, get_all_subjects
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +30,140 @@ APP_WIDE_QUESTION_DATA = {}
 # 题库使用统计
 tiku_usage_stats = {}
 import threading
+
 usage_stats_lock = threading.Lock()
+
+# 题库列表缓存（永久缓存，直到手动刷新）
+TIKU_LIST_CACHE = {
+    'data': None,
+    'last_time_reflash': None  # 用于检测原始数据是否变化
+}
+tiku_cache_lock = threading.Lock()
+
+# 处理后的文件选项缓存（永久缓存，直到手动刷新）
+FILE_OPTIONS_CACHE = {
+    'data': None,
+    'last_time_reflash': None  # 用于检测原始数据是否变化
+}
+file_options_cache_lock = threading.Lock()
+
+
+def get_cached_tiku_list():
+    """获取缓存的题库列表"""
+    with tiku_cache_lock:
+        # 如果缓存存在，直接返回
+        if TIKU_LIST_CACHE['data'] is not None:
+            logger.debug("使用缓存的题库列表数据")
+            return TIKU_LIST_CACHE['data']
+
+        # 缓存不存在，从数据库加载
+        logger.info("题库列表缓存不存在，从数据库加载")
+        try:
+            # 获取所有题库和科目信息
+            db_tiku_list = get_tiku_by_subject()
+            all_subjects = get_all_subjects()
+            subjects_exam_time = {s['subject_name']: s['exam_time'] for s in all_subjects}
+
+            # 更新缓存
+            TIKU_LIST_CACHE['data'] = {
+                'tiku_list': db_tiku_list,
+                'subjects_exam_time': subjects_exam_time
+            }
+            TIKU_LIST_CACHE['last_time_reflash'] = time.time()
+
+            logger.info(f"成功加载并缓存了 {len(db_tiku_list)} 个题库")
+            return TIKU_LIST_CACHE['data']
+
+        except Exception as e:
+            logger.error(f"从数据库加载题库列表失败: {e}")
+            raise
+
+
+def get_cached_file_options():
+    """获取缓存的文件选项数据"""
+    with file_options_cache_lock:
+        # 如果缓存存在，直接返回
+        if FILE_OPTIONS_CACHE['data'] is not None:
+            logger.debug("使用缓存的文件选项数据")
+            return FILE_OPTIONS_CACHE['data']
+
+        # 缓存不存在，从题库列表缓存构建
+        logger.info("文件选项缓存不存在，重新构建")
+        try:
+            cached_tiku_data = get_cached_tiku_list()
+            db_tiku_list = cached_tiku_data['tiku_list']
+            subjects_exam_time = cached_tiku_data['subjects_exam_time']
+
+            # 处理题库数据
+            db_tiku_map = {}
+            for tiku in db_tiku_list:
+                if tiku['is_active']:  # 只显示启用的题库
+                    subject_name = tiku['subject_name']
+                    if subject_name not in db_tiku_map:
+                        db_tiku_map[subject_name] = {
+                            'files': [],
+                            'exam_time': subjects_exam_time.get(subject_name)
+                        }
+
+                    db_tiku_map[subject_name]['files'].append({
+                        'key': tiku['tiku_position'],
+                        'display': tiku['tiku_name'],
+                        'count': tiku['tiku_nums'],
+                        'file_size': tiku['file_size'],
+                        'updated_at': tiku['updated_at'],
+                        'tiku_id': tiku['tiku_id']
+                        # 注意：progress 字段不在这里缓存，需要动态添加
+                    })
+
+            # 排序处理
+            sorted_subjects = {}
+            for subject, data in sorted(db_tiku_map.items()):
+                sorted_subjects[subject] = {
+                    'files': sorted(data['files'], key=lambda x: x['display']),
+                    'exam_time': data['exam_time']
+                }
+
+            # 更新缓存
+            FILE_OPTIONS_CACHE['data'] = sorted_subjects
+
+            FILE_OPTIONS_CACHE['last_time_reflash'] = time.time()
+
+            logger.info(f"成功处理并缓存了 {len(sorted_subjects)} 个科目的文件选项")
+            return sorted_subjects
+
+        except Exception as e:
+            logger.error(f"处理文件选项缓存失败: {e}")
+            raise
+
+
+def refresh_all_cache_from_mysql():
+    """从MySQL重新加载所有缓存"""
+    logger.info("开始从MySQL刷新所有缓存...")
+
+    # 清除现有缓存
+    with tiku_cache_lock:
+        TIKU_LIST_CACHE['data'] = None
+
+    with file_options_cache_lock:
+        FILE_OPTIONS_CACHE['data'] = None
+
+    # 重新加载缓存
+    try:
+        tiku_data = get_cached_tiku_list()
+        file_options_data = get_cached_file_options()
+
+        result = {
+            'tiku_count': len(tiku_data['tiku_list']) if tiku_data else 0,
+            'subjects_count': len(file_options_data) if file_options_data else 0,
+            'message': '缓存刷新成功'
+        }
+
+        logger.info(f"缓存刷新完成: {result}")
+        return result
+
+    except Exception as e:
+        logger.error(f"缓存刷新失败: {e}")
+        raise
 
 
 def increment_tiku_usage(tiku_id: int):
@@ -35,6 +171,25 @@ def increment_tiku_usage(tiku_id: int):
     with usage_stats_lock:
         tiku_usage_stats[tiku_id] = tiku_usage_stats.get(tiku_id, 0) + 1
         logger.debug(f"Incremented usage for tiku_id: {tiku_id} -> {tiku_usage_stats[tiku_id]}")
+
+
+def inject_user_progress(subjects_data, current_tiku_id, current_progress):
+    """向缓存的subjects_data中注入用户进度信息"""
+    if not current_tiku_id or not current_progress:
+        return subjects_data
+
+    # 深拷贝避免修改缓存数据
+    import copy
+    result = copy.deepcopy(subjects_data)
+
+    # 找到对应的题库并添加进度信息
+    for subject_name, subject_data in result.items():
+        for file_info in subject_data['files']:
+            if file_info['tiku_id'] == current_tiku_id:
+                file_info['progress'] = current_progress
+                break
+
+    return result
 
 
 @practice_bp.route('/file_options', methods=['GET'])
@@ -62,48 +217,15 @@ def api_file_options():
                 'progress_percent': min(100, (current_index / len(current_indices)) * 100) if current_indices else 0
             }
 
-    # 获取所有科目信息（包含考试时间）
-    from ..connectDB import get_all_subjects, get_tiku_by_subject
-    all_subjects = get_all_subjects()
-    subjects_exam_time = {s['subject_name']: s['exam_time'] for s in all_subjects}
-
-    # 从数据库获取启用的题库
+    # 从缓存获取题库列表数据
     try:
-        db_tiku_list = get_tiku_by_subject()
-        db_tiku_map = {}
-
-        for tiku in db_tiku_list:
-            if tiku['is_active']:  # 只显示启用的题库
-                subject_name = tiku['subject_name']
-                if subject_name not in db_tiku_map:
-                    db_tiku_map[subject_name] = {
-                        'files': [],
-                        'exam_time': subjects_exam_time.get(subject_name)
-                    }
-
-                db_tiku_map[subject_name]['files'].append({
-                    'key': tiku['tiku_position'],
-                    'display': tiku['tiku_name'],
-                    'count': tiku['tiku_nums'],
-                    'progress': current_progress if current_tiku_id == tiku['tiku_id'] else None,
-                    'file_size': tiku['file_size'],
-                    'updated_at': tiku['updated_at'],
-                    'tiku_id': tiku['tiku_id']
-                })
-        subjects_data = db_tiku_map
+        cached_data = get_cached_file_options()
+        subjects_data = inject_user_progress(cached_data, current_tiku_id, current_progress)
     except Exception as e:
-        logger.warning(f"从数据库获取题库失败: {e}")
+        logger.warning(f"从缓存获取题库列表失败: {e}")
         subjects_data = {}
 
-    # 排序
-    sorted_subjects = {}
-    for subject, data in sorted(subjects_data.items()):
-        sorted_subjects[subject] = {
-            'files': sorted(data['files'], key=lambda x: x['display']),
-            'exam_time': data['exam_time']
-        }
-
-    return create_response(True, data={'subjects': sorted_subjects})
+    return create_response(True, data={'subjects': subjects_data})
 
 
 @practice_bp.route('/start_practice', methods=['POST'])
@@ -127,12 +249,8 @@ def api_start_practice():
     except ValueError:
         raise BadRequest("无效的题库ID格式")
 
-    # 检查题库是否存在于内存中，不然从数据库加载
-    if tiku_id  in APP_WIDE_QUESTION_DATA:
-        question_bank = APP_WIDE_QUESTION_DATA[tiku_id]
-    else:
-        logger.info("选择的题库未加载到内存中,开始从数据库中同步")
-
+    #题库存在于内存中
+    question_bank = APP_WIDE_QUESTION_DATA[tiku_id]
 
     # 检查是否有现有会话
     existing_tiku_id = get_session_value(SESSION_KEYS['CURRENT_TIKU_ID'])
@@ -402,7 +520,7 @@ def api_next_question():
 def api_session_status():
     """获取会话状态"""
     current_tiku_id = get_session_value(SESSION_KEYS['CURRENT_TIKU_ID'])
-    
+
     if not current_tiku_id:
         return create_response(True, '没有活跃的练习会话', {'has_session': False})
 
@@ -412,7 +530,7 @@ def api_session_status():
 
     current_indices = get_session_value(SESSION_KEYS['QUESTION_INDICES'], [])
     current_index = get_session_value(SESSION_KEYS['CURRENT_INDEX'], 0)
-    
+
     return create_response(True, '当前有活跃的练习会话', {
         'has_session': True,
         'tiku_id': current_tiku_id,
@@ -485,38 +603,38 @@ def api_get_question_history(question_index: int):
 
 
 @practice_bp.route('/practice/question/<question_id>/details', methods=['GET'])
-@handle_api_error  
+@handle_api_error
 def api_get_question_details(question_id: str):
     """获取题目详细信息（包含解析）"""
     # 从题目ID中提取数据库ID
     if not question_id.startswith('db_'):
         raise BadRequest('无效的题目ID格式')
-    
+
     try:
         db_id = int(question_id.replace('db_', ''))
     except ValueError:
         raise BadRequest('无效的题目ID')
-    
+
     # 从数据库获取题目详细信息
     questions = get_questions_by_tiku()  # 获取所有题目
     question_data = None
-    
+
     for question in questions:
         if question.get('db_id') == db_id:
             question_data = question
             break
-    
+
     if not question_data:
         raise NotFound('题目不存在')
-    
+
     # 格式化选项
     options = question_data.get('options_for_practice', {})
     is_multiple_choice = question_data.get('is_multiple_choice', False)
     correct_answer = question_data['answer'].upper()
-    
+
     # 格式化正确答案显示
     correct_answer_display = format_answer_display(correct_answer, options, is_multiple_choice)
-    
+
     return create_response(True, data={
         'question': {
             'id': question_data['id'],
@@ -543,24 +661,24 @@ def api_get_question_analysis(question_id: str):
     # 从题目ID中提取数据库ID
     if not question_id.startswith('db_'):
         raise BadRequest('无效的题目ID格式')
-    
+
     try:
         db_id = int(question_id.replace('db_', ''))
     except ValueError:
         raise BadRequest('无效的题目ID')
-    
+
     # 从数据库获取题目详细信息
     questions = get_questions_by_tiku()  # 获取所有题目
     question_data = None
-    
+
     for question in questions:
         if question.get('db_id') == db_id:
             question_data = question
             break
-    
+
     if not question_data:
         raise NotFound('题目不存在')
-    
+
     return create_response(True, data={
         'analysis': question_data.get('explanation', '暂无解析'),
         'knowledge_points': question_data.get('knowledge_points', [])
@@ -568,47 +686,47 @@ def api_get_question_analysis(question_id: str):
 
 
 @practice_bp.route('/practice', methods=['GET'])
-@login_required 
+@login_required
 @handle_api_error
 def api_practice_url_params():
     """支持简化URL参数格式的练习路由：/practice?tikuid=123&order=random"""
     # 获取URL参数
     tiku_id = request.args.get('tikuid')
     order = request.args.get('order', 'random')
-    
+
     if not tiku_id:
         raise BadRequest("缺少必要的URL参数: tikuid")
-    
+
     try:
         tiku_id = int(tiku_id)
     except ValueError:
         raise BadRequest("无效的题库ID格式")
-    
+
     logger.info(f"URL practice access: tikuid={tiku_id}, order={order}")
-    
+
     # 从数据库获取题库信息
     try:
         from ..connectDB import get_tiku_by_subject
         tiku_list = get_tiku_by_subject()
         tiku_info = None
-        
+
         for tiku in tiku_list:
             if tiku['tiku_id'] == tiku_id:
                 tiku_info = tiku
                 break
-        
+
         if not tiku_info:
             raise NotFound(f"未找到题库ID: {tiku_id}")
-        
+
         if not tiku_info['is_active']:
             raise BadRequest(f"题库已禁用: {tiku_info['tiku_name']}")
-        
+
         tiku_position = tiku_info['tiku_position']
-        
+
     except Exception as e:
         logger.warning(f"查找题库失败: {e}")
         raise NotFound(f"查找题库失败: {tiku_id}")
-    
+
     # 检查题库是否存在于内存中，注意APP_WIDE_QUESTION_DATA可能使用tiku_id或tiku_position作为键
     question_bank = None
     if tiku_id in APP_WIDE_QUESTION_DATA:
@@ -617,26 +735,26 @@ def api_practice_url_params():
         question_bank = APP_WIDE_QUESTION_DATA[tiku_position]
     else:
         raise NotFound("选择的题库未加载到内存中")
-    
+
     # 检查是否有现有会话
     existing_tiku_id = get_session_value(SESSION_KEYS['CURRENT_TIKU_ID'])
     existing_indices = get_session_value(SESSION_KEYS['QUESTION_INDICES'])
-    
+
     # 确定题目顺序
     shuffle_questions = order.lower() == 'random'
-    
+
     if existing_tiku_id != tiku_id or not existing_indices:
         # 开始新的练习会话
         if not isinstance(question_bank, list) or not question_bank:
             raise BadRequest('选择的题库为空或无效')
-        
+
         # 增加题库使用次数统计
         increment_tiku_usage(tiku_id)
-        
+
         question_indices = list(range(len(question_bank)))
         if shuffle_questions:
             random.shuffle(question_indices)
-        
+
         # 设置session
         set_session_value(SESSION_KEYS['CURRENT_TIKU_ID'], tiku_id)
         set_session_value(SESSION_KEYS['QUESTION_INDICES'], question_indices)
@@ -647,14 +765,14 @@ def api_practice_url_params():
         set_session_value(SESSION_KEYS['CORRECT_FIRST_TRY'], 0)
         set_session_value(SESSION_KEYS['QUESTION_STATUSES'], [QUESTION_STATUS['UNANSWERED']] * len(question_indices))
         set_session_value(SESSION_KEYS['ANSWER_HISTORY'], {})
-        
+
         practice_mode = "乱序练习" if shuffle_questions else "顺序练习"
         logger.info(f"开始新的{practice_mode}: {tiku_info['tiku_name']} (ID: {tiku_id})")
-    
+
     # 获取当前题目数据
     try:
         question_response = api_practice_question()
-        
+
         # 如果是重定向到完成页面
         if isinstance(question_response, tuple):
             response_data, status_code = question_response
@@ -664,7 +782,7 @@ def api_practice_url_params():
                     'redirect_to_completed': True,
                     'url_mode': True
                 })
-        
+
         # 正常返回题目数据，添加URL模式标识
         if isinstance(question_response, tuple):
             response_data, status_code = question_response
@@ -679,9 +797,26 @@ def api_practice_url_params():
                     'subject_name': tiku_info['subject_name']
                 }
                 return jsonify(response_json), status_code
-        
+
         return question_response
-        
+
     except Exception as e:
         logger.error(f"获取题目失败: {e}")
-        raise BadRequest(f"获取题目失败: {str(e)}") 
+        raise BadRequest(f"获取题目失败: {str(e)}")
+
+
+# 缓存管理API - 只保留从MySQL刷新缓存的接口
+@practice_bp.route('/cache/refresh', methods=['POST'])
+@login_required
+@handle_api_error
+def api_refresh_cache_from_mysql():
+    """从MySQL重新加载所有缓存"""
+    try:
+        result = refresh_all_cache_from_mysql()
+        return create_response(True, result['message'], {
+            'tiku_count': result['tiku_count'],
+            'subjects_count': result['subjects_count']
+        })
+    except Exception as e:
+        logger.error(f"刷新缓存失败: {e}")
+        return create_response(False, f'刷新缓存失败: {str(e)}', status_code=500)

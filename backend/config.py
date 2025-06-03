@@ -4,6 +4,25 @@
 import os
 from datetime import timedelta
 
+# --- MySQL 数据库配置 ---
+class DatabaseConfig:
+    # MySQL 连接池配置
+    MYSQL_POOL_CONFIG = {
+        'pool_name': "mypool",
+        'pool_size': 10,  # 连接池大小，可根据并发需求调整
+        'pool_reset_session': True,  # 确保每次获取的连接状态是干净的
+        'host': "14.103.133.62",
+        'user': "shuati", 
+        'password': "fxTWMaTLFyMMcKfh",
+        'database': "shuati",
+        'port': 3306,
+        'autocommit': True,  # 默认自动提交
+        'charset': 'utf8mb4',
+        'collation': 'utf8mb4_unicode_ci',
+        'connect_timeout': 10,  # 连接超时时间(秒)
+        'sql_mode': 'STRICT_TRANS_TABLES,NO_ZERO_DATE,NO_ZERO_IN_DATE,ERROR_FOR_DIVISION_BY_ZERO'
+    }
+
 # --- 配置 ---
 SUBJECT_DIRECTORY = 'subject'  # 科目目录
 SHEET_NAME = 0  # Excel工作表名

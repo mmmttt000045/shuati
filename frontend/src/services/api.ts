@@ -170,6 +170,7 @@ export interface ApiService {
     updateUserModel(userId: number, model: number): Promise<{ success: boolean; model?: number; message?: string }>;
     getInvitations(params?: SearchParams): Promise<{ success: boolean; invitations?: AdminInvitation[]; pagination?: Pagination; message?: string }>;
     createInvitation(code?: string, expireDays?: number): Promise<{ success: boolean; invitation_code?: string; message?: string }>;
+    deleteInvitation(invitationId: number): Promise<{ success: boolean; message?: string }>;
     getSubjectFiles(): Promise<{ success: boolean; files?: SubjectFile[]; message?: string }>;
     
     // 科目管理
@@ -436,6 +437,13 @@ class ApiServiceImpl implements ApiService {
         body: JSON.stringify(body)
       });
       return this.handleResponse<{ success: boolean; invitation_code?: string; message?: string }>(response);
+    },
+
+    deleteInvitation: async (invitationId: number): Promise<{ success: boolean; message?: string }> => {
+      const response = await this.fetchWithCredentials(`${API_BASE}/admin/invitations/${invitationId}`, {
+        method: 'DELETE'
+      });
+      return this.handleResponse<{ success: boolean; message?: string }>(response);
     },
 
     getSubjectFiles: async (): Promise<{ success: boolean; files?: SubjectFile[]; message?: string }> => {

@@ -5,6 +5,7 @@ from typing import Optional, Dict, Any
 
 from mysql.connector import Error
 from mysql.connector import pooling
+from backend.config import DatabaseConfig
 
 db_pool = None
 
@@ -12,21 +13,8 @@ db_pool = None
 def init_connection_pool():
     global db_pool
     try:
-        db_pool = pooling.MySQLConnectionPool(
-            pool_name="mypool",
-            pool_size=1,  # 增加池大小以处理更多并发
-            pool_reset_session=True,  # 确保每次获取的连接状态是干净的
-            host="14.103.133.62",
-            user="shuati",
-            password="fxTWMaTLFyMMcKfh",
-            database="shuati",
-            port=3306,
-            autocommit=True,  # 默认自动提交
-            charset='utf8mb4',
-            collation='utf8mb4_unicode_ci',
-            connect_timeout=10,  # 连接超时
-            sql_mode='STRICT_TRANS_TABLES,NO_ZERO_DATE,NO_ZERO_IN_DATE,ERROR_FOR_DIVISION_BY_ZERO'
-        )
+        # 使用config.py中的配置参数
+        db_pool = pooling.MySQLConnectionPool(**DatabaseConfig.MYSQL_POOL_CONFIG)
         print("数据库连接池创建成功")
     except Error as e:
         print(f"创建数据库连接池失败: {e}")
@@ -1316,6 +1304,144 @@ def parse_excel_to_questions(subject_id: int, tiku_id: int, questions_data: list
         db_questions.append(db_question)
     
     return db_questions
+
+
+def toggle_user_status(user_id: int) -> Dict[str, Any]:
+    """切换用户启用/禁用状态"""
+    connection = get_db_connection()
+    if not connection:
+        return {"success": False, "error": "数据库连接失败"}
+
+    cursor = None
+    try:
+        cursor = connection.cursor()
+
+        # 获取当前状态
+        cursor.execute("SELECT is_enabled, username FROM user_accounts WHERE id = %s", (user_id,))
+        result = cursor.fetchone()
+        if not result:
+            return {"success": False, "error": "用户不存在"}
+
+        current_status, username = result
+        new_status = not current_status
+
+        # 更新状态
+        cursor.execute("UPDATE user_accounts SET is_enabled = %s WHERE id = %s", (new_status, user_id))
+        connection.commit()
+
+        return {
+            "success": True,
+            "is_enabled": new_status,
+            "username": username,
+            "message": f"用户已{'启用' if new_status else '禁用'}"
+        }
+
+    except Error as e:
+        return {"success": False, "error": f"切换用户状态失败: {str(e)}"}
+    finally:
+        try:
+            if cursor:
+                cursor.close()
+            if connection and connection.is_connected():
+                connection.close()
+        except:
+            pass
+
+
+def update_user_model(user_id: int, model: int) -> Dict[str, Any]:
+    """更新用户权限模型"""
+    connection = get_db_connection()
+    if not connection:
+        return {"success": False, "error": "数据库连接失败"}
+
+    cursor = None
+    try:
+        cursor = connection.cursor()
+
+        # 检查用户是否存在并获取用户名
+        cursor.execute("SELECT id, username FROM user_accounts WHERE id = %s", (user_id,))
+        user_data = cursor.fetchone()
+        if not user_data:
+            return {"success": False, "error": "用户不存在"}
+
+        username = user_data[1]
+
+        # 更新模型
+        cursor.execute("UPDATE user_accounts SET model = %s WHERE id = %s", (model, user_id))
+        connection.commit()
+
+        model_names = {0: "普通用户", 5: "VIP用户", 10: "管理员"}
+        return {
+            "success": True,
+            "user_id": user_id,
+            "username": username,
+            "model": model,
+            "model_name": model_names.get(model, "未知"),
+            "message": f"用户权限已更新为{model_names.get(model, '未知')}"
+        }
+
+    except Error as e:
+        return {"success": False, "error": f"更新用户权限失败: {str(e)}"}
+    finally:
+        try:
+            if cursor:
+                cursor.close()
+            if connection and connection.is_connected():
+                connection.close()
+        except:
+            pass
+
+
+def delete_invitation_code(invitation_id: int) -> Dict[str, Any]:
+    """删除未使用的邀请码"""
+    connection = get_db_connection()
+    if not connection:
+        return {"success": False, "error": "数据库连接失败"}
+
+    cursor = None
+    try:
+        cursor = connection.cursor()
+
+        # 检查邀请码是否存在并获取详细信息
+        cursor.execute("""
+            SELECT id, code, is_used, used_by_user_id 
+            FROM invitation_codes 
+            WHERE id = %s
+        """, (invitation_id,))
+        result = cursor.fetchone()
+        
+        if not result:
+            return {"success": False, "error": "邀请码不存在"}
+
+        inv_id, code, is_used, used_by_user_id = result
+
+        # 检查邀请码是否已被使用
+        if is_used or used_by_user_id:
+            return {"success": False, "error": "不能删除已使用的邀请码"}
+
+        # 删除邀请码
+        cursor.execute("DELETE FROM invitation_codes WHERE id = %s", (invitation_id,))
+        connection.commit()
+
+        if cursor.rowcount == 0:
+            return {"success": False, "error": "删除失败，邀请码可能已被删除"}
+
+        return {
+            "success": True,
+            "message": f"邀请码 {code} 删除成功",
+            "deleted_code": code
+        }
+
+    except Error as e:
+        return {"success": False, "error": f"删除邀请码失败: {str(e)}"}
+    finally:
+        try:
+            if cursor:
+                cursor.close()
+            if connection and connection.is_connected():
+                connection.close()
+        except:
+            pass
 
 
 if __name__ == "__main__":

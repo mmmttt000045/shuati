@@ -261,8 +261,7 @@ interface QuestionStatus {
 }
 
 const props = defineProps<{
-  subject: string
-  fileName: string
+  tikuid: string
   order?: string
 }>()
 
@@ -692,99 +691,87 @@ onMounted(async () => {
       }
     }
 
-    // 首先检查是否已有活跃的练习会话
-    const sessionStatus = await apiService.checkSessionStatus()
-
-    if (sessionStatus.active) {
-      // 检查会话是否已完成
-      if (sessionStatus.completed) {
-        router.push('/completed')
-        return
-      }
-
-      // 检查会话文件是否与当前请求的文件匹配
-      if (sessionStatus.file_info && sessionStatus.file_info.key === props.fileName) {
-        // 设置文件显示名称和练习模式
-        fileDisplayName.value = sessionStatus.file_info.display || props.fileName
-        orderMode.value = sessionStatus.file_info.order_mode || ''
-
-        // 显示恢复会话的提示信息
-        if (sessionStatus.progress) {
-          // 使用 toast 进行即时通知
-          toast.info(
-            `已恢复练习进度：第${sessionStatus.progress.round}轮，第${sessionStatus.progress.current}/${sessionStatus.progress.total}题`,
-            {
-              timeout: 4000,
-            },
-          )
-
-          // 同时在页面上显示持久信息
-          messages.value.push({
-            category: 'info',
-            text: `练习进度已恢复：第${sessionStatus.progress.round}轮`,
-          })
-        }
-
-        // 恢复答题卡状态 - 修复：确保状态数组正确初始化
-        if (sessionStatus.question_statuses && sessionStatus.question_statuses.length > 0) {
-          questionStatuses.value = [...sessionStatus.question_statuses]
-          console.log('从会话状态恢复答题卡状态：', questionStatuses.value)
-        } else if (sessionStatus.progress) {
-          // 如果没有状态数组，根据进度创建默认状态数组
-          const defaultStatuses = new Array(sessionStatus.progress.total).fill(
-            QUESTION_STATUS.UNANSWERED,
-          )
-          questionStatuses.value = defaultStatuses
-          console.log('创建默认答题卡状态：', questionStatuses.value)
-        }
-
-        // 直接加载当前题目，无需重新开始练习
-        await loadQuestion()
-
-        // 加载完成后立即同步状态，确保一致性
-        await syncQuestionStatuses()
-        return
-      } else if (sessionStatus.file_info) {
-        // 显示切换题库的提示信息
-        toast.info(`已从《${sessionStatus.file_info.display}》切换到当前题库`, {
-          timeout: 3000,
-        })
-
-        // 当前有其他文件的会话，需要强制重新开始
-        const shuffleQuestions = props.order !== 'sequential' // 默认为随机，除非明确指定为顺序
-        const startResponse = await apiService.startPractice(
-          props.subject,
-          props.fileName,
-          true,
-          shuffleQuestions,
-        )
-        if (!startResponse.success) {
-          throw new Error(startResponse.message)
-        }
-        // 设置文件显示名称
-        fileDisplayName.value = getDisplayNameFromFilePath(props.fileName)
-      }
-    } else {
-      // 没有活跃会话，开始新的练习
-      const shuffleQuestions = props.order !== 'sequential' // 默认为随机，除非明确指定为顺序
-      const startResponse = await apiService.startPractice(
-        props.subject,
-        props.fileName,
-        false,
-        shuffleQuestions,
-      )
-      if (!startResponse.success) {
-        throw new Error(startResponse.message)
-      }
-      // 设置文件显示名称
-      fileDisplayName.value = getDisplayNameFromFilePath(props.fileName)
+    // 验证tikuid参数
+    if (!props.tikuid) {
+      toast.error('缺少题库ID参数', { timeout: 3000 })
+      router.push('/')
+      return
     }
 
-    // 加载第一题或当前题目
-    await loadQuestion()
+    // 获取文件选项以找到对应的题库信息（用于显示题库名称）
+    try {
+      const fileOptions = await apiService.getFileOptions()
+      let tikuInfo = null
 
-    // 确保答题卡状态正确同步
-    await syncQuestionStatuses()
+      // 查找对应的题库信息
+      for (const [subject, data] of Object.entries(fileOptions.subjects)) {
+        for (const file of data.files) {
+          if (file.tiku_id && file.tiku_id.toString() === props.tikuid) {
+            tikuInfo = file
+            break
+          }
+        }
+        if (tikuInfo) break
+      }
+
+      // 设置题库信息
+      if (tikuInfo) {
+        fileDisplayName.value = tikuInfo.display
+      } else {
+        fileDisplayName.value = `题库ID: ${props.tikuid}`
+      }
+      
+      const orderText = props.order === 'random' ? '乱序练习' : '顺序练习'
+      orderMode.value = orderText
+    } catch (error) {
+      console.warn('获取题库信息失败，将使用默认显示名:', error)
+      fileDisplayName.value = `题库ID: ${props.tikuid}`
+      orderMode.value = props.order === 'random' ? '乱序练习' : '顺序练习'
+    }
+
+    // 使用apiService.startPractice启动练习
+    const shuffleQuestions = (props.order || 'random') === 'random'
+    const startResponse = await apiService.startPractice(props.tikuid, true, shuffleQuestions)
+    
+    if (!startResponse.success) {
+      throw new Error(startResponse.message || '启动练习失败')
+    }
+
+    // 获取第一道题目
+    const questionResponse = await apiService.getCurrentQuestion()
+    
+    if (questionResponse.redirect_to_completed) {
+      router.push('/completed')
+      return
+    }
+
+    if (questionResponse.success && questionResponse.question) {
+      // 处理返回的数据
+      question.value = questionResponse.question
+      progress.value = questionResponse.progress
+      messages.value = questionResponse.flash_messages || []
+
+      // 初始化答题卡状态
+      if (progress.value) {
+        const newLength = progress.value.total
+        questionStatuses.value = new Array(newLength).fill(QUESTION_STATUS.UNANSWERED)
+      }
+
+      // 重置选项
+      if (question.value && question.value.options_for_practice) {
+        shuffledMcqOptions.value = { ...question.value.options_for_practice }
+      } else {
+        shuffledMcqOptions.value = {}
+      }
+
+      // 同步答题卡状态
+      await syncQuestionStatuses()
+
+      toast.success('练习启动成功', { timeout: 2000 })
+    } else {
+      throw new Error(questionResponse.message || '获取题目失败')
+    }
+
   } catch (error) {
     console.error('Error initializing practice:', error)
     toast.error(error instanceof Error ? error.message : '练习会话初始化失败', {
@@ -829,7 +816,7 @@ const loadQuestion = async () => {
       }
 
       // 重置选项
-      if (question.value.options_for_practice) {
+      if (question.value && question.value.options_for_practice) {
         shuffledMcqOptions.value = { ...question.value.options_for_practice }
       } else {
         shuffledMcqOptions.value = {}

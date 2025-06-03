@@ -127,7 +127,7 @@ export interface UsageStats {
 
 export interface ApiService {
   getFileOptions(): Promise<SubjectsResponse>;
-  startPractice(subject: string, fileName: string, forceRestart?: boolean, shuffleQuestions?: boolean): Promise<{ message: string; success: boolean; resumed?: boolean }>;
+  startPractice(tikuid: string, forceRestart?: boolean, shuffleQuestions?: boolean): Promise<{ message: string; success: boolean; resumed?: boolean }>;
   getCurrentQuestion(): Promise<QuestionResponse>;
   submitAnswer(answer: string, questionId: string, isRevealed: boolean, isSkipped: boolean): Promise<Feedback>;
   jumpToQuestion(index: number): Promise<{ message: string; success: boolean }>;
@@ -145,26 +145,14 @@ export interface ApiService {
     message?: string;
   }>;
   checkSessionStatus(): Promise<{
-    active: boolean;
-    completed?: boolean;
+    has_session: boolean;
     message?: string;
+    file_name?: string;
     file_info?: {
-      key: string;
       display: string;
-      subject: string;
-      order_mode?: string;
+      current_question: number;
+      total_questions: number;
     };
-    progress?: {
-      current: number;
-      total: number;
-      round: number;
-    };
-    statistics?: {
-      initial_total: number;
-      correct_first_try: number;
-      wrong_count: number;
-    };
-    question_statuses?: Array<QuestionStatus>;
   }>;
   getQuestionStatuses(): Promise<{
     statuses: Array<QuestionStatus>;
@@ -293,10 +281,10 @@ class ApiServiceImpl implements ApiService {
     return this.handleResponse<SubjectsResponse>(response);
   }
 
-  async startPractice(subject: string, fileName: string, forceRestart?: boolean, shuffleQuestions?: boolean): Promise<{ message: string; success: boolean; resumed?: boolean }> {
+  async startPractice(tikuid: string, forceRestart?: boolean, shuffleQuestions?: boolean): Promise<{ message: string; success: boolean; resumed?: boolean }> {
     const response = await this.fetchWithCredentials(`${API_BASE}/start_practice`, {
       method: 'POST',
-      body: JSON.stringify({ subject, fileName, force_restart: forceRestart, shuffle_questions: shuffleQuestions })
+      body: JSON.stringify({ tikuid, force_restart: forceRestart, shuffle_questions: shuffleQuestions })
     });
     return this.handleResponse<{ message: string; success: boolean; resumed?: boolean }>(response);
   }
@@ -329,16 +317,19 @@ class ApiServiceImpl implements ApiService {
     return this.handleResponse<CompletedResponse>(response);
   }
 
-  async getQuestionAnalysis(questionId: string) {
-    try {
-      const response = await this.fetchWithCredentials(`${API_BASE}/questions/${questionId}/analysis`);
-      return await response.json();
-    } catch (error) {
-      return {
-        success: false,
-        message: 'Failed to fetch question analysis'
-      };
-    }
+  async getQuestionAnalysis(questionId: string): Promise<{
+    success: boolean;
+    analysis?: string;
+    knowledge_points?: string[];
+    message?: string;
+  }> {
+    const response = await this.fetchWithCredentials(`${API_BASE}/practice/question/${questionId}/analysis`);
+    return this.handleResponse<{
+      success: boolean;
+      analysis?: string;
+      knowledge_points?: string[];
+      message?: string;
+    }>(response);
   }
 
   async getQuestionHistory(questionIndex: number): Promise<{
@@ -357,49 +348,25 @@ class ApiServiceImpl implements ApiService {
   }
 
   async checkSessionStatus(): Promise<{
-    active: boolean;
-    completed?: boolean;
+    has_session: boolean;
     message?: string;
+    file_name?: string;
     file_info?: {
-      key: string;
       display: string;
-      subject: string;
-      order_mode?: string;
+      current_question: number;
+      total_questions: number;
     };
-    progress?: {
-      current: number;
-      total: number;
-      round: number;
-    };
-    statistics?: {
-      initial_total: number;
-      correct_first_try: number;
-      wrong_count: number;
-    };
-    question_statuses?: Array<QuestionStatus>;
   }> {
     const response = await this.fetchWithCredentials(`${API_BASE}/session/status`);
     return this.handleResponse<{
-      active: boolean;
-      completed?: boolean;
+      has_session: boolean;
       message?: string;
+      file_name?: string;
       file_info?: {
-        key: string;
         display: string;
-        subject: string;
-        order_mode?: string;
+        current_question: number;
+        total_questions: number;
       };
-      progress?: {
-        current: number;
-        total: number;
-        round: number;
-      };
-      statistics?: {
-        initial_total: number;
-        correct_first_try: number;
-        wrong_count: number;
-      };
-      question_statuses?: Array<QuestionStatus>;
     }>(response);
   }
 

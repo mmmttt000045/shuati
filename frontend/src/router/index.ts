@@ -46,8 +46,7 @@ const routes: RouteRecordRaw[] = [
     name: 'practice',
     component: PracticePage,
     props: (route) => ({
-      subject: route.query.subject as string,
-      fileName: route.query.file as string,
+      tikuid: route.query.tikuid as string,
       order: route.query.order as string
     }),
     meta: {
@@ -56,7 +55,7 @@ const routes: RouteRecordRaw[] = [
     },
     beforeEnter: (to, from, next) => {
       // Check if required query parameters are present
-      if (!to.query.subject || !to.query.file) {
+      if (!to.query.tikuid) {
         next({ name: 'index' });
       } else {
         next();

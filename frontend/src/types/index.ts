@@ -123,6 +123,7 @@ export interface SubjectFile {
   display: string;
   count: number;
   progress?: PracticeProgress | null;
+  tiku_id?: number;
 }
 
 export interface SubjectData {

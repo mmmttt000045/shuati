@@ -221,10 +221,12 @@ const confirmData = ref<{
   progress?: { current: number; total: number; round: number };
   progressPercent: number;
   sessionStatus?: any;
+  tikuId: string;
 }>({
   fileName: '',
   subject: '',
-  progressPercent: 0
+  progressPercent: 0,
+  tikuId: ''
 })
 
 const getTotalQuestions = (files: SubjectFile[]) => {
@@ -267,43 +269,25 @@ const startPractice = async (subject: string, fileName: string) => {
   loading.value = true
 
   try {
-    // 检查是否已有同一文件的活跃会话
-    const sessionStatus = await apiService.checkSessionStatus()
-
-    if (
-      sessionStatus.active &&
-      sessionStatus.file_info &&
-      sessionStatus.file_info.key === fileName &&
-      !sessionStatus.completed
-    ) {
-      // 显示确认对话框
-      showConfirmDialog.value = true
-      loading.value = false // 停止加载状态
-      confirmData.value = {
-        fileName: sessionStatus.file_info.display,
-        subject: subject,
-        order: sessionStatus.file_info.order_mode || '未知模式',
-        progress: sessionStatus.progress,
-        progressPercent: Math.round(((sessionStatus.progress?.current || 0) / (sessionStatus.progress?.total || 1)) * 100) || 0,
-        sessionStatus: sessionStatus
-      }
-      return // 等待用户选择
-    } else {
-      // 正常启动练习，传递题目顺序参数
-      const orderText = questionOrder.value === 'random' ? '乱序练习' : '顺序练习'
-      toast.success(`开始${orderText} 🎯`, {
-        timeout: 2000
-      })
-
-      router.push({
-        name: 'practice',
-        query: {
-          subject,
-          file: fileName,
-          order: questionOrder.value,
-        },
-      })
+    // 获取题库ID - 需要从subjects数据中找到对应的tiku_id
+    const file = subjects.value[subject]?.files?.find(f => f.key === fileName)
+    if (!file || !file.tiku_id) {
+      throw new Error('未找到题库ID信息')
     }
+
+    // 正常启动练习，使用新的URL格式
+    const orderText = questionOrder.value === 'random' ? '乱序练习' : '顺序练习'
+    toast.success(`开始${orderText} 🎯`, {
+      timeout: 2000
+    })
+
+    router.push({
+      name: 'practice',
+      query: {
+        tikuid: file.tiku_id.toString(),
+        order: questionOrder.value,
+      },
+    })
   } catch (error) {
     console.error('Error starting practice:', error)
     toast.error(error instanceof Error ? error.message : '启动练习失败', {
@@ -323,14 +307,14 @@ const handleConfirmContinue = async () => {
   router.push({
     name: 'practice',
     query: {
-      subject: confirmData.value.subject,
-      file: confirmData.value.sessionStatus.file_info.key
+      tikuid: confirmData.value.tikuId,
+      order: 'random'  // 默认使用随机顺序
     },
   })
 }
 
 const handleConfirmRestart = async () => {
-  // 重新开始练习，传递题目顺序参数
+  // 重新开始练习，使用新的URL格式
   showConfirmDialog.value = false
   loading.value = true
 
@@ -338,17 +322,8 @@ const handleConfirmRestart = async () => {
     toast.info('重新开始练习 🔄', {
       timeout: 2000
     })
-    const startResponse = await apiService.startPractice(
-      confirmData.value.subject,
-      confirmData.value.sessionStatus.file_info.key,
-      true,
-      questionOrder.value === 'random',
-    )
-    if (!startResponse.success) {
-      throw new Error(startResponse.message)
-    }
 
-    // 启动成功后跳转
+    // 启动成功后跳转，使用新的URL格式
     const orderText = questionOrder.value === 'random' ? '乱序练习' : '顺序练习'
     toast.success(`开始${orderText} 🎯`, {
       timeout: 2000
@@ -357,8 +332,7 @@ const handleConfirmRestart = async () => {
     router.push({
       name: 'practice',
       query: {
-        subject: confirmData.value.subject,
-        file: confirmData.value.sessionStatus.file_info.key,
+        tikuid: confirmData.value.tikuId,
         order: questionOrder.value,
       },
     })

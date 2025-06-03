@@ -14,7 +14,7 @@ def init_connection_pool():
     try:
         db_pool = pooling.MySQLConnectionPool(
             pool_name="mypool",
-            pool_size=10,  # 增加池大小以处理更多并发
+            pool_size=1,  # 增加池大小以处理更多并发
             pool_reset_session=True,  # 确保每次获取的连接状态是干净的
             host="14.103.133.62",
             user="shuati",
@@ -986,6 +986,336 @@ def get_usage_statistics() -> dict[str, bool | str] | dict[str, bool | list[dict
                 connection.close()
         except:
             return None
+
+
+# 题目管理相关函数
+def insert_questions_batch(questions_data: list) -> Dict[str, Any]:
+    """批量插入题目到数据库"""
+    connection = get_db_connection()
+    if not connection:
+        return {"success": False, "error": "数据库连接失败"}
+
+    cursor = None
+    try:
+        connection.autocommit = False
+        cursor = connection.cursor()
+        
+        # 开始事务
+        connection.start_transaction()
+        
+        insert_query = """
+        INSERT INTO questions (subject_id, tiku_id, question_type, stem, option_a, option_b, option_c, option_d, answer, explanation, difficulty, status)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """
+        
+        inserted_count = 0
+        for question in questions_data:
+            cursor.execute(insert_query, (
+                question['subject_id'],
+                question['tiku_id'],
+                question['question_type'],
+                question['stem'],
+                question.get('option_a'),
+                question.get('option_b'),
+                question.get('option_c'),
+                question.get('option_d'),
+                question['answer'],
+                question.get('explanation'),
+                question.get('difficulty', 1),
+                question.get('status', 'active')
+            ))
+            inserted_count += 1
+        
+        connection.commit()
+        
+        return {
+            "success": True,
+            "inserted_count": inserted_count,
+            "message": f"成功插入{inserted_count}道题目"
+        }
+        
+    except Error as e:
+        try:
+            if connection:
+                connection.rollback()
+        except:
+            pass
+        return {"success": False, "error": f"批量插入题目失败: {str(e)}"}
+    finally:
+        try:
+            if cursor:
+                cursor.close()
+            if connection and connection.is_connected():
+                connection.autocommit = True
+                connection.close()
+        except:
+            pass
+
+
+def get_questions_by_tiku(tiku_id: int = None) -> list:
+    """根据题库ID获取题目列表，如果不指定则获取所有题目"""
+    connection = get_db_connection()
+    if not connection:
+        return []
+
+    cursor = None
+    try:
+        cursor = connection.cursor()
+        
+        if tiku_id:
+            query = """
+            SELECT q.id, q.subject_id, q.tiku_id, q.question_type, q.stem, 
+                   q.option_a, q.option_b, q.option_c, q.option_d, q.answer, 
+                   q.explanation, q.difficulty, q.status,
+                   s.subject_name, t.tiku_name
+            FROM questions q
+            LEFT JOIN subject s ON q.subject_id = s.subject_id
+            LEFT JOIN tiku t ON q.tiku_id = t.tiku_id
+            WHERE q.tiku_id = %s AND q.status = 'active'
+            ORDER BY q.id
+            """
+            cursor.execute(query, (tiku_id,))
+        else:
+            query = """
+            SELECT q.id, q.subject_id, q.tiku_id, q.question_type, q.stem, 
+                   q.option_a, q.option_b, q.option_c, q.option_d, q.answer, 
+                   q.explanation, q.difficulty, q.status,
+                   s.subject_name, t.tiku_name
+            FROM questions q
+            LEFT JOIN subject s ON q.subject_id = s.subject_id
+            LEFT JOIN tiku t ON q.tiku_id = t.tiku_id
+            WHERE q.status = 'active'
+            ORDER BY q.tiku_id, q.id
+            """
+            cursor.execute(query)
+        
+        questions = []
+        for row in cursor.fetchall():
+            question_id, subject_id, tiku_id, question_type, stem, option_a, option_b, option_c, option_d, answer, explanation, difficulty, status, subject_name, tiku_name = row
+            
+            # 构造选项字典
+            options_for_practice = {}
+            if option_a:
+                options_for_practice['A'] = option_a
+            if option_b:
+                options_for_practice['B'] = option_b
+            if option_c:
+                options_for_practice['C'] = option_c
+            if option_d:
+                options_for_practice['D'] = option_d
+            
+            # 处理题目类型
+            if question_type == 0:
+                type_name = '单选题'
+                is_multiple_choice = False
+            elif question_type == 5:
+                type_name = '多选题'
+                is_multiple_choice = True
+            elif question_type == 10:
+                type_name = '判断题'
+                is_multiple_choice = False
+                options_for_practice = None  # 判断题不需要选项
+            else:
+                type_name = '未知题型'
+                is_multiple_choice = False
+            
+            questions.append({
+                'id': f"db_{question_id}",
+                'db_id': question_id,
+                'subject_id': subject_id,
+                'tiku_id': tiku_id,
+                'type': type_name,
+                'question': stem,
+                'options_for_practice': options_for_practice,
+                'answer': answer,
+                'is_multiple_choice': is_multiple_choice,
+                'explanation': explanation,
+                'difficulty': difficulty,
+                'subject_name': subject_name,
+                'tiku_name': tiku_name
+            })
+        
+        return questions
+        
+    except Error as e:
+        print(f"Error getting questions: {e}")
+        return []
+    finally:
+        try:
+            if cursor:
+                cursor.close()
+            if connection and connection.is_connected():
+                connection.close()
+        except:
+            pass
+
+
+def get_all_questions_by_tiku_dict() -> dict:
+    """获取所有题目，按题库ID分组返回字典"""
+    connection = get_db_connection()
+    if not connection:
+        return {}
+
+    cursor = None
+    try:
+        cursor = connection.cursor()
+        
+        query = """
+        SELECT q.id, q.subject_id, q.tiku_id, q.question_type, q.stem, 
+               q.option_a, q.option_b, q.option_c, q.option_d, q.answer, 
+               q.explanation, q.difficulty, q.status,
+               s.subject_name, t.tiku_name, t.tiku_position
+        FROM questions q
+        LEFT JOIN subject s ON q.subject_id = s.subject_id
+        LEFT JOIN tiku t ON q.tiku_id = t.tiku_id
+        WHERE q.status = 'active' AND t.is_active = 1
+        ORDER BY q.tiku_id, q.id
+        """
+        cursor.execute(query)
+        
+        questions_dict = {}
+        for row in cursor.fetchall():
+            question_id, subject_id, tiku_id, question_type, stem, option_a, option_b, option_c, option_d, answer, explanation, difficulty, status, subject_name, tiku_name, tiku_position = row
+            
+            # 构造选项字典
+            options_for_practice = {}
+            if option_a:
+                options_for_practice['A'] = option_a
+            if option_b:
+                options_for_practice['B'] = option_b
+            if option_c:
+                options_for_practice['C'] = option_c
+            if option_d:
+                options_for_practice['D'] = option_d
+            
+            # 处理题目类型
+            if question_type == 0:
+                type_name = '单选题'
+                is_multiple_choice = False
+            elif question_type == 5:
+                type_name = '多选题'
+                is_multiple_choice = True
+            elif question_type == 10:
+                type_name = '判断题'
+                is_multiple_choice = False
+                options_for_practice = None  # 判断题不需要选项
+            else:
+                type_name = '未知题型'
+                is_multiple_choice = False
+            
+            question_data = {
+                'id': f"db_{question_id}",
+                'db_id': question_id,
+                'subject_id': subject_id,
+                'tiku_id': tiku_id,
+                'type': type_name,
+                'question': stem,
+                'options_for_practice': options_for_practice,
+                'answer': answer,
+                'is_multiple_choice': is_multiple_choice,
+                'explanation': explanation,
+                'difficulty': difficulty,
+                'subject_name': subject_name,
+                'tiku_name': tiku_name
+            }
+            
+            # 使用tiku_position作为key以保持与现有代码的兼容性
+            tiku_key = tiku_position if tiku_position else f"tiku_{tiku_id}"
+            if tiku_key not in questions_dict:
+                questions_dict[tiku_key] = []
+            questions_dict[tiku_key].append(question_data)
+        
+        return questions_dict
+        
+    except Error as e:
+        print(f"Error getting all questions: {e}")
+        return {}
+    finally:
+        try:
+            if cursor:
+                cursor.close()
+            if connection and connection.is_connected():
+                connection.close()
+        except:
+            pass
+
+
+def delete_questions_by_tiku(tiku_id: int) -> Dict[str, Any]:
+    """删除指定题库的所有题目"""
+    connection = get_db_connection()
+    if not connection:
+        return {"success": False, "error": "数据库连接失败"}
+
+    cursor = None
+    try:
+        cursor = connection.cursor()
+        
+        # 先获取要删除的题目数量
+        cursor.execute("SELECT COUNT(*) FROM questions WHERE tiku_id = %s", (tiku_id,))
+        count = cursor.fetchone()[0]
+        
+        # 删除题目
+        cursor.execute("DELETE FROM questions WHERE tiku_id = %s", (tiku_id,))
+        connection.commit()
+        
+        return {
+            "success": True,
+            "deleted_count": count,
+            "message": f"成功删除{count}道题目"
+        }
+        
+    except Error as e:
+        return {"success": False, "error": f"删除题目失败: {str(e)}"}
+    finally:
+        try:
+            if cursor:
+                cursor.close()
+            if connection and connection.is_connected():
+                connection.close()
+        except:
+            pass
+
+
+def parse_excel_to_questions(subject_id: int, tiku_id: int, questions_data: list) -> list:
+    """将Excel解析的数据转换为数据库格式"""
+    db_questions = []
+    
+    for question in questions_data:
+        # 解析题目类型
+        if question['type'] == '单选题':
+            question_type = 0
+        elif question['type'] == '多选题':
+            question_type = 5
+        elif question['type'] == '判断题':
+            question_type = 10
+        else:
+            continue  # 跳过未知类型
+        
+        # 处理选项
+        options = question.get('options_for_practice', {})
+        option_a = options.get('A') if options else None
+        option_b = options.get('B') if options else None
+        option_c = options.get('C') if options else None
+        option_d = options.get('D') if options else None
+        
+        db_question = {
+            'subject_id': subject_id,
+            'tiku_id': tiku_id,
+            'question_type': question_type,
+            'stem': question['question'],
+            'option_a': option_a,
+            'option_b': option_b,
+            'option_c': option_c,
+            'option_d': option_d,
+            'answer': question['answer'],
+            'explanation': question.get('analysis', ''),
+            'difficulty': 1,  # 默认难度
+            'status': 'active'
+        }
+        
+        db_questions.append(db_question)
+    
+    return db_questions
 
 
 if __name__ == "__main__":

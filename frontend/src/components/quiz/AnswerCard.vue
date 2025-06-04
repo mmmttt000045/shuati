@@ -165,52 +165,95 @@ const canGoNext = computed(
 // 小屏幕检测
 const isSmallScreen = computed(() => screenWidth.value <= 768)
 
-// 缩略模式下的所有题目（包括模糊预览）
-const allQuestionsWithPreview = computed<Array<QuestionStatus>>(() => {
-  if (!props.progress || isExpanded.value) return []
-
+// 计算网格参数的辅助函数
+const getGridParams = () => {
+  if (!props.progress) return null
+  
   const totalQuestions = props.progress.total
   const currentIndex = props.currentQuestionIndex
   const gridColumns = 5
   
-  // 响应式调整网格行数 - 小屏幕使用更少的行数
+  // 响应式调整网格行数
   const isSmallScreen = screenWidth.value <= 576
   const isMediumScreen = screenWidth.value <= 768
   
-  let gridRows = 4 // 默认4行
+  let gridRows = 5
   if (isSmallScreen) {
-    gridRows = 3 // 小屏幕3行
+    gridRows = 3
   } else if (isMediumScreen) {
-    gridRows = 3 // 中等屏幕3行
+    gridRows = 3
   }
   
   const totalSlots = gridColumns * gridRows
-  const centerColumn = Math.floor(gridColumns / 2) // 中心列索引 (2)
+  const centerRow = Math.floor(gridRows / 2)
+  const centerColumn = Math.floor(gridColumns / 2)
+  
+  // 计算理想的起始位置
+  const idealCurrentSlotIndex = centerRow * gridColumns + centerColumn
+  const idealStartQuestionIndex = currentIndex - idealCurrentSlotIndex
+  
+  // 边界处理：确保显示范围合理
+  let startQuestionIndex: number
+  
+  if (idealStartQuestionIndex < 0) {
+    startQuestionIndex = 0
+  } else if (idealStartQuestionIndex + totalSlots > totalQuestions) {
+    startQuestionIndex = Math.max(0, totalQuestions - totalSlots)
+  } else {
+    startQuestionIndex = idealStartQuestionIndex
+  }
+  
+  return {
+    totalQuestions,
+    currentIndex,
+    gridColumns,
+    gridRows,
+    totalSlots,
+    centerRow,
+    centerColumn,
+    startQuestionIndex,
+    idealStartQuestionIndex
+  }
+}
+
+// 缩略模式下的所有题目（包括模糊预览）
+const allQuestionsWithPreview = computed<Array<QuestionStatus>>(() => {
+  if (isExpanded.value) return []
+  
+  const gridParams = getGridParams()
+  if (!gridParams) return []
+  
+  const {
+    totalQuestions,
+    currentIndex,
+    gridColumns,
+    gridRows,
+    totalSlots,
+    startQuestionIndex
+  } = gridParams
   
   const allItems: Array<QuestionStatus> = []
-  
-  // 计算当前题目应该在第几行的中心列
-  // 我们希望当前题目尽可能在中间行
-  const preferredCurrentRow = Math.floor(gridRows / 2) // 优选中间行
-  const currentSlotIndex = preferredCurrentRow * gridColumns + centerColumn // 当前题目的槽位索引
-  
-  // 计算显示范围：以当前题目为中心，向前后扩展
-  const startQuestionIndex = currentIndex - currentSlotIndex
-  const endQuestionIndex = startQuestionIndex + totalSlots
   
   // 填充网格
   for (let slotIndex = 0; slotIndex < totalSlots; slotIndex++) {
     const questionIndex = startQuestionIndex + slotIndex
     const row = Math.floor(slotIndex / gridColumns)
-    const col = slotIndex % gridColumns
     
     if (questionIndex >= 0 && questionIndex < totalQuestions) {
-      // 在有效范围内的题目
       const isCurrent = questionIndex === currentIndex
       
-      // 判断是否为预览（模糊）
-      // 只有第一行和最后一行设为预览，中间行完全清晰
-      const isPreview = row === 0 || row === gridRows - 1
+      // 动态调整预览逻辑：只有在有足够题目时才使用预览
+      let isPreview = false
+      
+      if (totalQuestions > totalSlots) {
+        // 有超出显示范围的题目时，第一行和最后一行设为预览
+        if (startQuestionIndex > 0 && row === 0) {
+          isPreview = true // 前面还有题目，第一行预览
+        }
+        if (startQuestionIndex + totalSlots < totalQuestions && row === gridRows - 1) {
+          isPreview = true // 后面还有题目，最后一行预览
+        }
+      }
       
       allItems.push({
         status: props.questionStatuses[questionIndex] || QUESTION_STATUS.UNANSWERED,
@@ -218,25 +261,49 @@ const allQuestionsWithPreview = computed<Array<QuestionStatus>>(() => {
         isCurrent,
         isPreview: isPreview && !isCurrent // 当前题目永远不模糊
       })
-    } else {
-      // 超出范围的位置留空，不添加按钮
-      // 可以通过在模板中使用 v-if 控制显示
     }
   }
   
   return allItems
 })
 
-// 简化溢出检测
+// 优化的溢出检测
 const hasLeftOverflow = computed(() => {
-  if (isExpanded.value || !props.progress) return false
-  return props.currentQuestionIndex > 10 // 如果当前题目大于10，说明左侧有溢出
+  if (isExpanded.value) return false
+  
+  const gridParams = getGridParams()
+  if (!gridParams) return false
+  
+  const { startQuestionIndex, idealStartQuestionIndex, totalQuestions, totalSlots } = gridParams
+  
+  // 判断是否有左侧溢出
+  if (idealStartQuestionIndex < 0) {
+    return false // 前几道题，没有左侧溢出
+  } else if (idealStartQuestionIndex + totalSlots > totalQuestions) {
+    // 最后几道题的情况
+    return startQuestionIndex > 0
+  } else {
+    return startQuestionIndex > 0
+  }
 })
 
 const hasRightOverflow = computed(() => {
-  if (isExpanded.value || !props.progress) return false
-  const totalQuestions = props.progress.total
-  return props.currentQuestionIndex < totalQuestions - 11 // 如果当前题目小于总数-11，说明右侧有溢出
+  if (isExpanded.value) return false
+  
+  const gridParams = getGridParams()
+  if (!gridParams) return false
+  
+  const { startQuestionIndex, idealStartQuestionIndex, totalQuestions, totalSlots } = gridParams
+  
+  // 判断是否有右侧溢出
+  if (idealStartQuestionIndex < 0) {
+    // 前几道题的情况
+    return totalQuestions > totalSlots
+  } else if (idealStartQuestionIndex + totalSlots > totalQuestions) {
+    return false // 最后几道题，没有右侧溢出
+  } else {
+    return startQuestionIndex + totalSlots < totalQuestions
+  }
 })
 
 // 方法

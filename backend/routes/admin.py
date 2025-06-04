@@ -2,18 +2,35 @@
 管理员相关的路由模块
 """
 import logging
-from flask import Blueprint, request
+import random
+import string
+import os
+
+from flask import Blueprint, request, session
 from werkzeug.exceptions import BadRequest, NotFound
 
-from ..decorators import handle_api_error, login_required, admin_required
-from ..utils import create_response
+from backend.routes.practice import cache_manager as practice_cache_manager
 from ..connectDB import (
     get_all_subjects, create_subject, update_subject, delete_subject,
     get_tiku_by_subject, create_or_update_tiku, delete_tiku, toggle_tiku_status,
     create_invitation_code, get_questions_by_tiku, delete_questions_by_tiku,
-    parse_excel_to_questions, insert_questions_batch, toggle_user_status, update_user_model
+    parse_excel_to_questions, insert_questions_batch, toggle_user_status, update_user_model,
+    delete_invitation_code, get_system_stats, get_users_paginated,
+    get_all_invitations_detailed, get_detailed_question_stats,
+    get_question_details_by_id, create_question_and_update_tiku_count,
+    update_question_details, delete_question_and_update_tiku_count,
+    toggle_question_status_and_update_tiku_count, get_questions_paginated
 )
-from backend.routes.practice import refresh_all_cache_from_mysql
+from ..decorators import handle_api_error, login_required, admin_required, permission_cache
+from ..utils import (
+    create_response,
+    ensure_subject_directory,
+    remove_file_safely,
+    save_uploaded_file,
+    get_file_hash,
+    load_questions_from_excel
+)
+from ..config import SHEET_NAME
 
 logger = logging.getLogger(__name__)
 
@@ -27,74 +44,8 @@ admin_bp = Blueprint('admin', __name__, url_prefix='/api/admin')
 @handle_api_error
 def api_admin_get_stats():
     """获取系统统计信息"""
-    try:
-        from ..connectDB import get_db_connection
-
-        connection = get_db_connection()
-        if not connection:
-            raise Exception("数据库连接失败")
-
-        cursor = connection.cursor()
-
-        # 用户统计
-        cursor.execute("SELECT COUNT(*) FROM user_accounts")
-        total_users = cursor.fetchone()[0]
-
-        cursor.execute("SELECT COUNT(*) FROM user_accounts WHERE is_enabled = TRUE")
-        active_users = cursor.fetchone()[0]
-
-        cursor.execute("SELECT COUNT(*) FROM user_accounts WHERE model = 10")
-        admin_users = cursor.fetchone()[0]
-
-        cursor.execute("SELECT COUNT(*) FROM user_accounts WHERE model = 5")
-        vip_users = cursor.fetchone()[0]
-
-        # 邀请码统计
-        cursor.execute("SELECT COUNT(*) FROM invitation_codes")
-        total_invitations = cursor.fetchone()[0]
-
-        cursor.execute(
-            "SELECT COUNT(*) FROM invitation_codes WHERE is_used = FALSE AND (expires_at IS NULL OR expires_at > NOW())")
-        unused_invitations = cursor.fetchone()[0]
-
-        cursor.execute("SELECT COUNT(*) FROM invitation_codes WHERE is_used = TRUE")
-        used_invitations = cursor.fetchone()[0]
-
-        # 题库统计
-        cursor.execute("SELECT COUNT(*) FROM questions WHERE status = 'active'")
-        total_questions = cursor.fetchone()[0]
-
-        cursor.execute("SELECT COUNT(*) FROM tiku WHERE is_active = 1")
-        total_files = cursor.fetchone()[0]
-
-        stats = {
-            'users': {
-                'total': total_users,
-                'active': active_users,
-                'admins': admin_users,
-                'vips': vip_users
-            },
-            'invitations': {
-                'total': total_invitations,
-                'unused': unused_invitations,
-                'used': used_invitations
-            },
-            'subjects': {
-                'total_questions': total_questions,
-                'total_files': total_files
-            }
-        }
-
-        return create_response(True, data={'stats': stats})
-
-    except Exception as e:
-        logger.error(f"Error getting admin stats: {e}")
-        raise
-    finally:
-        if 'cursor' in locals():
-            cursor.close()
-        if 'connection' in locals() and connection.is_connected():
-            connection.close()
+    stats = get_system_stats()
+    return create_response(True, data={'stats': stats})
 
 
 @admin_bp.route('/users', methods=['GET'])
@@ -103,103 +54,20 @@ def api_admin_get_stats():
 @handle_api_error
 def api_admin_get_users():
     """获取用户列表"""
-    try:
-        from ..connectDB import get_db_connection
+    # 获取查询参数
+    search = request.args.get('search', '').strip()
+    order_by = request.args.get('order_by', 'id')
+    order_dir = request.args.get('order_dir', 'desc')
+    page = max(1, int(request.args.get('page', 1)))
+    per_page = min(100, max(10, int(request.args.get('per_page', 20))))
 
-        # 获取查询参数
-        search = request.args.get('search', '').strip()
-        order_by = request.args.get('order_by', 'id')
-        order_dir = request.args.get('order_dir', 'desc')
-        page = max(1, int(request.args.get('page', 1)))
-        per_page = min(100, max(10, int(request.args.get('per_page', 20))))
-
-        # 验证排序字段
-        valid_order_fields = ['id', 'username', 'created_at', 'last_time_login', 'model']
-        if order_by not in valid_order_fields:
-            order_by = 'id'
-
-        # 验证排序方向
-        if order_dir.lower() not in ['asc', 'desc']:
-            order_dir = 'desc'
-
-        connection = get_db_connection()
-        if not connection:
-            raise Exception("数据库连接失败")
-
-        cursor = connection.cursor()
-
-        # 构建查询条件
-        where_conditions = []
-        query_params = []
-
-        if search:
-            where_conditions.append("u.username LIKE %s")
-            query_params.append(f"%{search}%")
-
-        where_clause = "WHERE " + " AND ".join(where_conditions) if where_conditions else ""
-
-        # 计算总数
-        count_query = f"""
-        SELECT COUNT(*) as total
-        FROM user_accounts u
-        {where_clause}
-        """
-        cursor.execute(count_query, query_params)
-        total_count = cursor.fetchone()[0]
-
-        # 计算分页信息
-        total_pages = (total_count + per_page - 1) // per_page
-        offset = (page - 1) * per_page
-
-        # 获取用户列表
-        query = f"""
-        SELECT 
-            u.id, u.username, u.is_enabled, u.created_at, u.last_time_login, u.model,
-            i.code as invitation_code
-        FROM user_accounts u
-        LEFT JOIN invitation_codes i ON u.used_invitation_code_id = i.id
-        {where_clause}
-        ORDER BY u.{order_by} {order_dir.upper()}
-        LIMIT %s OFFSET %s
-        """
-        cursor.execute(query, query_params + [per_page, offset])
-        users_data = cursor.fetchall()
-
-        users = []
-        for user_data in users_data:
-            user_id, username, is_enabled, created_at, last_login, model, invitation_code = user_data
-            users.append({
-                'id': user_id,
-                'username': username,
-                'is_enabled': bool(is_enabled),
-                'created_at': created_at.isoformat() if created_at else None,
-                'last_time_login': last_login.isoformat() if last_login else None,
-                'model': model if model is not None else 0,
-                'invitation_code': invitation_code
-            })
-
-        pagination = {
-            'page': page,
-            'per_page': per_page,
-            'total': total_count,
-            'total_pages': total_pages,
-            'has_prev': page > 1,
-            'has_next': page < total_pages
-        }
-
-        return create_response(True, data={
-            'users': users,
-            'pagination': pagination
-        })
-
-    except Exception as e:
-        logger.error(f"Error getting users: {e}")
-        raise
-    finally:
-        if 'cursor' in locals():
-            cursor.close()
-        if 'connection' in locals() and connection.is_connected():
-            connection.close()
+    # Database logic is now in connectDB.get_users_paginated
+    result = get_users_paginated(search, order_by, order_dir, page, per_page)
+    
+    return create_response(True, data={
+        'users': result['users'],
+        'pagination': result['pagination']
+    })
 
 
 @admin_bp.route('/invitations', methods=['GET'])
@@ -208,53 +76,9 @@ def api_admin_get_users():
 @handle_api_error
 def api_admin_get_invitations():
     """获取邀请码列表"""
-    try:
-        from ..connectDB import get_db_connection
-
-        connection = get_db_connection()
-        if not connection:
-            raise Exception("数据库连接失败")
-
-        cursor = connection.cursor()
-
-        query = """
-                SELECT i.id,
-                       i.code,
-                       i.is_used,
-                       i.created_at,
-                       i.expires_at,
-                       i.used_time,
-                       u.username as used_by_username
-                FROM invitation_codes i
-                         LEFT JOIN user_accounts u ON i.used_by_user_id = u.id
-                ORDER BY i.created_at DESC
-                """
-        cursor.execute(query)
-        invitations_data = cursor.fetchall()
-
-        invitations = []
-        for invitation_data in invitations_data:
-            inv_id, code, is_used, created_at, expires_at, used_time, used_by_username = invitation_data
-            invitations.append({
-                'id': inv_id,
-                'code': code,
-                'is_used': bool(is_used),
-                'created_at': created_at.isoformat() if created_at else None,
-                'expires_at': expires_at.isoformat() if expires_at else None,
-                'used_time': used_time.isoformat() if used_time else None,
-                'used_by_username': used_by_username
-            })
-
-        return create_response(True, data={'invitations': invitations})
-
-    except Exception as e:
-        logger.error(f"Error getting invitations: {e}")
-        raise
-    finally:
-        if 'cursor' in locals():
-            cursor.close()
-        if 'connection' in locals() and connection.is_connected():
-            connection.close()
+    # Database logic is now in connectDB.get_all_invitations_detailed
+    invitations = get_all_invitations_detailed()
+    return create_response(True, data={'invitations': invitations})
 
 
 @admin_bp.route('/invitations', methods=['POST'])
@@ -270,8 +94,6 @@ def api_admin_create_invitation():
 
         # 如果没有提供邀请码，生成一个
         if not code:
-            import random
-            import string
             code = ''.join(random.choices(string.ascii_letters + string.digits, k=12))
 
         # 验证邀请码格式
@@ -289,11 +111,11 @@ def api_admin_create_invitation():
                         expires_days = int(expire_days.strip())
                 else:
                     expires_days = int(expire_days)
-                
+
                 # 验证天数范围
                 if expires_days is not None and (expires_days <= 0 or expires_days > 3650):
                     raise BadRequest("过期天数必须在1-3650天之间")
-                    
+
             except (ValueError, TypeError):
                 raise BadRequest("过期天数必须是有效的整数")
 
@@ -307,6 +129,7 @@ def api_admin_create_invitation():
         logger.error(f"Error creating invitation: {e}")
         raise
 
+
 @admin_bp.route('/invitations/<int:invitation_id>', methods=['DELETE'])
 @login_required
 @admin_required
@@ -314,7 +137,6 @@ def api_admin_create_invitation():
 def api_admin_delete_invitation(invitation_id):
     """删除未使用的邀请码"""
     try:
-        from ..connectDB import delete_invitation_code
         result = delete_invitation_code(invitation_id)
 
         if result['success']:
@@ -364,10 +186,9 @@ def api_admin_create_subject():
     if result['success']:
         # 创建对应的文件系统目录
         try:
-            from ..utils import ensure_subject_directory
             ensure_subject_directory(subject_name)
             logger.info(f"管理员创建科目: {subject_name}")
-            refresh_all_cache_from_mysql()  # 刷新缓存
+            practice_cache_manager.refresh_all_cache()
             return create_response(True, result['message'], data={'subject_id': result['subject_id']})
         except Exception as e:
             # 如果目录创建失败，尝试删除数据库记录
@@ -400,7 +221,7 @@ def api_admin_update_subject(subject_id):
 
     result = update_subject(subject_id, subject_name, exam_time)
     if result['success']:
-        refresh_all_cache_from_mysql()  # 刷新缓存
+        practice_cache_manager.refresh_all_cache()
         logger.info(f"管理员更新科目: {subject_id} -> {subject_name}")
         return create_response(True, result['message'])
     else:
@@ -416,11 +237,10 @@ def api_admin_delete_subject(subject_id):
     result = delete_subject(subject_id)
     if result['success']:
         # 删除对应的文件
-        from ..utils import remove_file_safely
         for file_path in result.get('deleted_files', []):
             remove_file_safely(file_path)
 
-        refresh_all_cache_from_mysql()  # 刷新缓存
+        practice_cache_manager.refresh_all_cache()
         logger.info(f"管理员删除科目: {subject_id}")
         return create_response(True, result['message'])
     else:
@@ -451,8 +271,6 @@ def api_admin_get_tiku():
 @handle_api_error
 def api_admin_upload_tiku():
     """上传题库文件"""
-    from ..utils import save_uploaded_file, remove_file_safely, get_file_hash
-
     if 'file' not in request.files:
         raise BadRequest('没有上传文件')
 
@@ -493,8 +311,6 @@ def api_admin_upload_tiku():
         temp_filepath = save_uploaded_file(file, subject_name, tiku_name)
 
         # 解析Excel文件
-        from ..data_loader import load_questions_from_excel
-        from ..config import SHEET_NAME
         questions = load_questions_from_excel(temp_filepath, SHEET_NAME)
         if questions is None:
             remove_file_safely(temp_filepath)
@@ -505,7 +321,6 @@ def api_admin_upload_tiku():
             raise BadRequest('文件中没有有效的题目数据')
 
         # 计算文件信息
-        import os
         file_size = os.path.getsize(temp_filepath)
         file_hash = get_file_hash(temp_filepath)
 
@@ -554,7 +369,7 @@ def api_admin_upload_tiku():
             )
 
         logger.info(f"管理员上传题库: {tiku_name} (解析{len(questions)}题，插入{actual_count}题)")
-        refresh_all_cache_from_mysql()  # 刷新缓存
+        practice_cache_manager.refresh_all_cache()
         return create_response(True, f"题库上传成功，共{actual_count}道题目", data={
             'tiku_id': tiku_id,
             'question_count': actual_count,
@@ -583,9 +398,8 @@ def api_admin_delete_tiku(tiku_id):
         # 删除文件
         file_path = result.get('file_path')
         if file_path:
-            from ..utils import remove_file_safely
             remove_file_safely(file_path)
-        refresh_all_cache_from_mysql()  # 刷新缓存
+        practice_cache_manager.refresh_all_cache()
         logger.info(f"管理员删除题库: {tiku_id}")
         return create_response(True, result['message'])
     else:
@@ -600,7 +414,7 @@ def api_admin_toggle_tiku(tiku_id):
     """切换题库启用状态"""
     result = toggle_tiku_status(tiku_id)
 
-    refresh_all_cache_from_mysql()  # 刷新缓存
+    practice_cache_manager.refresh_all_cache()
     if result['success']:
         logger.info(f"管理员切换题库状态: {tiku_id} -> {'启用' if result['is_active'] else '禁用'}")
         return create_response(True, result['message'], data={'is_active': result['is_active']})
@@ -614,44 +428,68 @@ def api_admin_toggle_tiku(tiku_id):
 @handle_api_error
 def api_admin_get_questions():
     """获取题目列表"""
-    try:
-        tiku_id = request.args.get('tiku_id')
-        page = max(1, int(request.args.get('page', 1)))
-        per_page = min(100, max(10, int(request.args.get('per_page', 20))))
+    tiku_id_str = request.args.get('tiku_id')
+    tiku_id = None
+    if tiku_id_str:
+        try:
+            tiku_id = int(tiku_id_str)
+        except ValueError:
+            raise BadRequest('无效的题库ID')
 
-        if tiku_id:
-            try:
-                tiku_id = int(tiku_id)
-                questions = get_questions_by_tiku(tiku_id)
-            except ValueError:
-                raise BadRequest('无效的题库ID')
-        else:
-            questions = get_questions_by_tiku()
+    page = max(1, int(request.args.get('page', 1)))
+    per_page = min(100, max(10, int(request.args.get('per_page', 20))))
 
-        # 简单的内存分页
-        total_count = len(questions)
-        total_pages = (total_count + per_page - 1) // per_page
-        start_idx = (page - 1) * per_page
-        end_idx = start_idx + per_page
-        page_questions = questions[start_idx:end_idx]
+    # Call the new function in connectDB.py
+    result = get_questions_paginated(tiku_id, page, per_page)
 
-        pagination = {
-            'page': page,
-            'per_page': per_page,
-            'total': total_count,
-            'total_pages': total_pages,
-            'has_prev': page > 1,
-            'has_next': page < total_pages
-        }
+    # The data from get_questions_paginated is already in the desired format for the response
+    # (a dict with 'questions' list and 'pagination' info).
+    # However, the original `get_questions_by_tiku` in connectDB.py (which this route used to call indirectly)
+    # had specific formatting for question objects (e.g., 'type' name, 'options_for_practice', 'id' with 'db_' prefix).
+    # The new `get_questions_paginated` returns raw DB rows. We need to re-apply that formatting here.
+    
+    formatted_questions = []
+    for q_row in result['questions']:
+        # This formatting logic is adapted from connectDB.get_questions_by_tiku
+        options_for_practice = {}
+        if q_row.get('option_a'): options_for_practice['A'] = q_row['option_a']
+        if q_row.get('option_b'): options_for_practice['B'] = q_row['option_b']
+        if q_row.get('option_c'): options_for_practice['C'] = q_row['option_c']
+        if q_row.get('option_d'): options_for_practice['D'] = q_row['option_d']
 
-        return create_response(True, data={
-            'questions': page_questions,
-            'pagination': pagination
+        question_type_code = q_row['question_type']
+        type_name = '未知题型'
+        is_multiple_choice = False
+        if question_type_code == 0: # Assuming 0: Single
+            type_name = '单选题'
+        elif question_type_code == 5: # Assuming 5: Multiple
+            type_name = '多选题'
+            is_multiple_choice = True
+        elif question_type_code == 10: # Assuming 10: True/False
+            type_name = '判断题'
+            options_for_practice = None # Judgment questions don't need options A, B, C, D
+
+        formatted_questions.append({
+            'id': f"db_{q_row['id']}", # Add 'db_' prefix as in original function
+            'db_id': q_row['id'],
+            'subject_id': q_row['subject_id'],
+            'tiku_id': q_row['tiku_id'],
+            'type': type_name,
+            'question': q_row['stem'],
+            'options_for_practice': options_for_practice,
+            'answer': q_row['answer'],
+            'is_multiple_choice': is_multiple_choice,
+            'explanation': q_row['explanation'],
+            'difficulty': q_row['difficulty'],
+            'status': q_row['status'], # This field was not in the original get_questions_by_tiku output structure directly in questions list
+            'subject_name': q_row['subject_name'],
+            'tiku_name': q_row['tiku_name']
         })
 
-    except Exception as e:
-        logger.error(f"获取题目列表失败: {e}")
-        raise
+    return create_response(True, data={
+        'questions': formatted_questions,
+        'pagination': result['pagination']
+    })
 
 
 @admin_bp.route('/questions/stats', methods=['GET'])
@@ -660,88 +498,9 @@ def api_admin_get_questions():
 @handle_api_error
 def api_admin_get_questions_stats():
     """获取题目统计信息"""
-    try:
-        from ..connectDB import get_db_connection
-
-        connection = get_db_connection()
-        if not connection:
-            raise Exception("数据库连接失败")
-
-        cursor = connection.cursor()
-
-        # 题目总数统计
-        cursor.execute("SELECT COUNT(*) FROM questions WHERE status = 'active'")
-        total_questions = cursor.fetchone()[0]
-
-        # 按题型统计
-        cursor.execute("""
-                       SELECT question_type, COUNT(*) as count
-                       FROM questions
-                       WHERE status = 'active'
-                       GROUP BY question_type
-                       """)
-        type_stats = []
-        type_names = {0: '单选题', 5: '多选题', 10: '判断题'}
-        for row in cursor.fetchall():
-            question_type, count = row
-            type_stats.append({
-                'type': type_names.get(question_type, f'类型{question_type}'),
-                'type_code': question_type,
-                'count': count
-            })
-
-        # 按科目统计
-        cursor.execute("""
-                       SELECT s.subject_name, COUNT(q.id) as count
-                       FROM subject s
-                           LEFT JOIN questions q
-                       ON s.subject_id = q.subject_id AND q.status = 'active'
-                       GROUP BY s.subject_id, s.subject_name
-                       ORDER BY count DESC
-                       """)
-        subject_stats = []
-        for row in cursor.fetchall():
-            subject_name, count = row
-            subject_stats.append({
-                'subject_name': subject_name,
-                'count': count
-            })
-
-        # 按题库统计
-        cursor.execute("""
-                       SELECT t.tiku_name, s.subject_name, COUNT(q.id) as count
-                       FROM tiku t
-                           LEFT JOIN questions q
-                       ON t.tiku_id = q.tiku_id AND q.status = 'active'
-                           LEFT JOIN subject s ON t.subject_id = s.subject_id
-                       WHERE t.is_active = 1
-                       GROUP BY t.tiku_id, t.tiku_name, s.subject_name
-                       ORDER BY count DESC
-                       """)
-        tiku_stats = []
-        for row in cursor.fetchall():
-            tiku_name, subject_name, count = row
-            tiku_stats.append({
-                'tiku_name': tiku_name,
-                'subject_name': subject_name,
-                'count': count
-            })
-
-        return create_response(True, data={
-            'total_questions': total_questions,
-            'type_stats': type_stats,
-            'subject_stats': subject_stats,
-            'tiku_stats': tiku_stats
-        })
-
-    except Exception as e:
-        logger.error(f"获取题目统计失败: {e}")
-        raise
-    finally:
-        if 'cursor' in locals():
-            cursor.close()
-        if 'connection' in locals() and connection.is_connected():
-            connection.close()
+    # Database logic is now in connectDB.get_detailed_question_stats
+    stats = get_detailed_question_stats()
+    return create_response(True, data=stats)
 
 
 @admin_bp.route('/reload-banks', methods=['POST'])
@@ -751,7 +510,7 @@ def api_admin_get_questions_stats():
 def api_admin_reload_banks():
     """重新加载题库缓存"""
     try:
-        result = refresh_all_cache_from_mysql()
+        result = practice_cache_manager.refresh_all_cache()
         return create_response(True, result['message'], {
             'tiku_count': result['tiku_count'],
             'subjects_count': result['subjects_count']
@@ -768,8 +527,6 @@ def api_admin_reload_banks():
 def api_admin_toggle_user(user_id):
     """启用/禁用用户"""
     try:
-        from flask import session
-
         # 不能操作自己
         current_user_id = session.get('user_id')
         if user_id == current_user_id:
@@ -797,9 +554,6 @@ def api_admin_toggle_user(user_id):
 def api_admin_update_user_model(user_id):
     """更新用户权限模型"""
     try:
-        from ..decorators import permission_cache
-        from flask import session
-
         data = request.get_json()
         if not data or 'model' not in data:
             raise BadRequest("缺少模型参数")
@@ -832,3 +586,134 @@ def api_admin_update_user_model(user_id):
     except Exception as e:
         logger.error(f"Error updating user model {user_id}: {e}")
         raise
+
+
+# 题目详细管理API
+@admin_bp.route('/questions/<int:question_id>', methods=['GET'])
+@login_required
+@admin_required
+@handle_api_error
+def api_admin_get_question_detail(question_id):
+    """获取单个题目详情"""
+    question_data = get_question_details_by_id(question_id)
+    if not question_data:
+        raise NotFound('题目不存在')
+    return create_response(True, data={'question': question_data})
+
+
+@admin_bp.route('/questions', methods=['POST'])
+@login_required
+@admin_required
+@handle_api_error
+def api_admin_create_question():
+    """新增题目"""
+    data = request.get_json()
+    if not data:
+        raise BadRequest("缺少请求数据")
+
+    # 验证必填字段
+    required_fields = ['subject_id', 'tiku_id', 'question_type', 'stem', 'answer']
+    for field in required_fields:
+        if field not in data or (isinstance(data[field], str) and not data[field].strip()) or (not isinstance(data[field], str) and data[field] is None):
+            raise BadRequest(f"缺少或无效的必填字段: {field}")
+
+    # 验证题目类型
+    if data['question_type'] not in [0, 5, 10]: # Assuming 0: Single, 5: Multiple, 10: True/False
+        raise BadRequest("无效的题目类型")
+
+    # 对于单选题和多选题，验证选项 (adjust as per actual logic for options)
+    if data['question_type'] in [0, 5]: # Single and Multiple choice
+        if not data.get('option_a') or not data.get('option_b'):
+            raise BadRequest("单选题和多选题至少需要选项A和B")
+
+    # Call the new function in connectDB.py
+    result = create_question_and_update_tiku_count(data)
+
+    if result['success']:
+        logger.info(f"管理员新增题目: question_id={result['question_id']}, tiku_id={data['tiku_id']}")
+        practice_cache_manager.refresh_all_cache() # Refresh cache after successful creation
+        return create_response(True, result['message'], data={'question_id': result['question_id']})
+    else:
+        raise BadRequest(result.get('error', "创建题目失败"))
+
+
+@admin_bp.route('/questions/<int:question_id>', methods=['PUT'])
+@login_required
+@admin_required
+@handle_api_error
+def api_admin_update_question(question_id):
+    """更新题目"""
+    data = request.get_json()
+    if not data:
+        raise BadRequest("缺少请求数据")
+
+    valid_fields_to_update = [
+        'subject_id', 'tiku_id', 'question_type', 'stem', 
+        'option_a', 'option_b', 'option_c', 'option_d', 
+        'answer', 'explanation', 'difficulty', 'status'
+    ]
+    
+    update_payload = {key: value for key, value in data.items() if key in valid_fields_to_update}
+
+    if not update_payload:
+        return create_response(True, "没有有效的字段可更新，未执行操作")
+
+    # Call the function from connectDB.py
+    # update_question_details returns True if update was successful (rowcount > 0),
+    # and False if the question_id was not found by its internal check.
+    if update_question_details(question_id, update_payload):
+        logger.info(f"管理员更新题目: question_id={question_id}")
+        practice_cache_manager.refresh_all_cache() 
+        return create_response(True, "题目更新成功")
+    else:
+        # If update_question_details returns False, it implies the question was not found 
+        # by its internal check, or no rows were affected (e.g. data was the same).
+        # To be more precise, check existence if the update claims no rows were affected.
+        existing_question = get_question_details_by_id(question_id) # Uses the already refactored function
+        if not existing_question:
+            raise NotFound("题目不存在")
+        else:
+            # Question exists, but update_question_details returned False (meaning rowcount was 0)
+            # This indicates the data was likely identical to what's already in the DB.
+            return create_response(True, "题目数据无变化，未执行更新")
+
+
+@admin_bp.route('/questions/<int:question_id>', methods=['DELETE'])
+@login_required
+@admin_required
+@handle_api_error
+def api_admin_delete_question(question_id):
+    """删除题目"""
+    result = delete_question_and_update_tiku_count(question_id)
+
+    if result['success']:
+        logger.info(f"管理员删除题目: question_id={question_id}, tiku_id_affected={result.get('tiku_id_affected')}")
+        practice_cache_manager.refresh_all_cache()
+        return create_response(True, result['message'])
+    else:
+        error_message = result.get('error', "删除题目失败")
+        if error_message == "题目不存在":
+            raise NotFound(error_message)
+        else:
+            raise BadRequest(error_message)
+
+
+@admin_bp.route('/questions/<int:question_id>/toggle', methods=['POST'])
+@login_required
+@admin_required
+@handle_api_error
+def api_admin_toggle_question_status(question_id):
+    """切换题目状态"""
+    result = toggle_question_status_and_update_tiku_count(question_id)
+
+    if result['success']:
+        action = "启用" if result['status'] == 'active' else "禁用"
+        logger.info(f"管理员{action}题目: question_id={question_id}, tiku_id_affected={result.get('tiku_id_affected')}")
+        practice_cache_manager.refresh_all_cache()
+        return create_response(True, result['message'], data={'status': result['status']})
+    else:
+        error_message = result.get('error', "切换题目状态失败")
+        if error_message == "题目不存在":
+            raise NotFound(error_message)
+        else:
+            raise BadRequest(error_message)

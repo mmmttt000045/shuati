@@ -72,9 +72,11 @@ export interface Question {
 }
 
 export interface Progress {
-  round: number;
+  round_number: number;
   current: number;
   total: number;
+  correct_count?: number;
+  initial_total?: number;
 }
 
 export interface PracticeProgress {

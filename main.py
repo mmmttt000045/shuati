@@ -11,16 +11,15 @@ from flask import Flask, send_from_directory, session
 from flask_cors import CORS
 
 # 导入backend模块
-from backend.config import Config, ServerConfig, SUBJECT_DIRECTORY
+from backend.config import Config, ServerConfig
 from backend.connectDB import (
-    init_connection_pool, cleanup_expired_sessions, batch_update_tiku_usage
+    init_connection_pool, cleanup_expired_practice_sessions, batch_update_tiku_usage
 )
 from backend.utils import create_response
 from backend.routes.auth import auth_bp
-from backend.routes.practice import practice_bp, APP_WIDE_QUESTION_DATA, tiku_usage_stats, usage_stats_lock
+from backend.routes.practice import practice_bp, tiku_usage_stats, usage_stats_lock, cache_manager
 from backend.routes.admin import admin_bp
 from backend.routes.usage import usage_bp
-from backend.data_loader import load_all_banks_from_database, startup_sync
 
 # Configure logging
 logging.basicConfig(
@@ -72,9 +71,10 @@ def sync_usage_stats_to_database():
 
 
 def monitor_activity():
-    """后台活动监控"""
+    """后台活动监控 - 优化版本，包含session管理"""
     global request_counter
     cleanup_counter = 0
+    session_cleanup_counter = 0
 
     while not stop_event.is_set():
         time.sleep(30)
@@ -88,14 +88,25 @@ def monitor_activity():
         logger.info(f"Server active. Requests in last 30s: {current_count}")
 
         cleanup_counter += 1
+        session_cleanup_counter += 1
+        
+        # 每5分钟清理一次过期的练习会话
         if cleanup_counter >= 10:  # 每5分钟清理一次
             try:
-                cleaned = cleanup_expired_sessions()
+                cleaned = cleanup_expired_practice_sessions()
                 if cleaned > 0:
-                    logger.info(f"Cleaned {cleaned} expired sessions")
+                    logger.info(f"Cleaned {cleaned} expired practice sessions")
             except Exception as e:
-                logger.error(f"Error cleaning sessions: {e}")
+                logger.error(f"Error cleaning practice sessions: {e}")
             cleanup_counter = 0
+        
+        # 每10分钟记录一次session清理统计
+        if session_cleanup_counter >= 20:  # 每10分钟
+            try:
+                logger.info("Session清理任务：客户端会在下次请求时自动清理过期session")
+            except Exception as e:
+                logger.error(f"Error in session cleanup logging: {e}")
+            session_cleanup_counter = 0
 
         # 同步题库使用次数到数据库
         try:
@@ -128,25 +139,25 @@ def create_app():
     app.register_blueprint(practice_bp)
     app.register_blueprint(admin_bp)
     app.register_blueprint(usage_bp)
-    
-    # 添加直接的/practice路由（不使用蓝图前缀）
-    from backend.routes.practice import api_practice_url_params
-    from backend.decorators import login_required, handle_api_error
-    
-    @app.route('/practice', methods=['GET'])
-    @login_required 
-    @handle_api_error
-    def practice_url_route():
-        """直接的/practice路由，转发到practice模块的函数"""
-        return api_practice_url_params()
+
     
     @app.before_request
     def before_request():
-        """请求前处理"""
+        """请求前处理 - 优化版本，集成session管理"""
         global request_counter
         with request_counter_lock:
             request_counter += 1
+        
+        # 设置session为永久性
         session.permanent = True
+        
+        # 导入session管理器
+        from backend.session_manager import session_manager
+        
+        # 对于需要登录的路径，检查并清理过期session
+        if request.endpoint and any(need_auth in request.endpoint for need_auth in ['practice', 'admin', 'user']):
+            if session_manager.cleanup_expired_session():
+                logger.info("自动清理过期session")
 
     @app.after_request
     def after_request(response):
@@ -170,34 +181,19 @@ def create_app():
 
 
 if __name__ == '__main__':
-    # 创建目录
-    if not os.path.exists(SUBJECT_DIRECTORY):
-        os.makedirs(SUBJECT_DIRECTORY)
-
     # 配置日志 - 确保日志可以在后台运行时正常工作
     logging.getLogger('werkzeug').setLevel(logging.ERROR)
-
-    # 如果检测到nohup环境，重定向标准输入输出
-    if not sys.stdin.isatty() or not sys.stdout.isatty():
-        # 在nohup环境中，重定向标准输入到/dev/null（Windows上使用NUL）
-        try:
-            if os.name == 'nt':  # Windows
-                sys.stdin = open('NUL', 'r')
-            else:  # Unix/Linux
-                sys.stdin = open('/dev/null', 'r')
-        except Exception as e:
-            logger.warning(f"Failed to redirect stdin: {e}")
 
     # 初始化数据库连接池
     init_connection_pool()
 
-    # 加载题目数据
-    logger.info("正在加载题目数据...")
-    APP_WIDE_QUESTION_DATA.update(load_all_banks_from_database())
-
-    # 在后台线程中执行同步
-    sync_thread = threading.Thread(target=startup_sync, daemon=True)
-    sync_thread.start()
+    # 预热缓存 - 从数据库加载数据到缓存中
+    logger.info("正在预热缓存...")
+    try:
+        cache_manager.refresh_all_cache()
+        logger.info("缓存预热完成")
+    except Exception as e:
+        logger.error(f"缓存预热失败: {e}")
 
     # 启动后台监控线程
     activity_thread = threading.Thread(target=monitor_activity, daemon=True)

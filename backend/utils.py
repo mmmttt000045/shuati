@@ -4,11 +4,14 @@
 import os
 import hashlib
 import logging
-from typing import Optional, Any, Dict
+import math
+from datetime import datetime
+from typing import Optional, Any, Dict, List, Union
 from flask import Response, jsonify
+import pandas as pd
 from .config import (
     TRUE_ANSWER_STRINGS, FALSE_ANSWER_STRINGS, 
-    INTERNAL_TRUE, INTERNAL_FALSE
+    INTERNAL_TRUE, INTERNAL_FALSE, QUESTION_COLUMN, ANSWER_COLUMN
 )
 
 logger = logging.getLogger(__name__)
@@ -102,8 +105,6 @@ def ensure_subject_directory(subject_name: str, subject_directory: str = 'subjec
 
 def save_uploaded_file(file, subject_name: str, filename: str, subject_directory: str = 'subject') -> str:
     """保存上传的文件，返回文件路径"""
-    from datetime import datetime
-    
     subject_dir = ensure_subject_directory(subject_name, subject_directory)
 
     # 确保文件名有正确的扩展名
@@ -141,8 +142,85 @@ def format_file_size(size_bytes: int) -> str:
     if size_bytes == 0:
         return "0 B"
     size_names = ["B", "KB", "MB", "GB"]
-    import math
     i = int(math.floor(math.log(size_bytes, 1024)))
     p = math.pow(1024, i)
     s = round(size_bytes / p, 2)
-    return f"{s} {size_names[i]}" 
+    return f"{s} {size_names[i]}"
+
+
+def load_questions_from_excel(filepath: str, sheetname: Union[str, int]) -> List[Dict[str, Any]]:
+    """从Excel文件加载题目"""
+    if not os.path.exists(filepath):
+        logger.error(f"Question bank file '{filepath}' not found.")
+        return None
+
+    try:
+        df = pd.read_excel(filepath, sheet_name=sheetname, dtype=str)
+        df.columns = [col.strip() for col in df.columns]
+
+        required_cols = [QUESTION_COLUMN, ANSWER_COLUMN]
+        missing_cols = [col for col in required_cols if col not in df.columns]
+        if missing_cols:
+            logger.error(f"Missing required columns in '{filepath}': {', '.join(missing_cols)}")
+            return []
+
+        questions_data = []
+        for index, row in df.iterrows():
+            try:
+                question_text = str(row.get(QUESTION_COLUMN, '')).strip()
+                raw_answer_text = str(row.get(ANSWER_COLUMN, '')).strip()
+
+                if not question_text or not raw_answer_text or question_text.lower() == 'nan' or raw_answer_text.lower() == 'nan':
+                    continue
+
+                # 处理判断题
+                if is_tf_answer(raw_answer_text):
+                    processed_answer = standardize_tf_answer(raw_answer_text)
+                    if not processed_answer:
+                        continue
+                    question_type = '判断题'
+                    options_for_practice = None
+                else:
+                    # 处理选择题
+                    options_for_practice = {}
+                    for option_key in ['A', 'B', 'C', 'D']:
+                        option_text = str(row.get(option_key, '')).strip()
+                        if option_text and option_text.lower() != 'nan':
+                            options_for_practice[option_key] = option_text
+
+                    if not options_for_practice:
+                        processed_answer = standardize_tf_answer(raw_answer_text)
+                        if processed_answer:
+                            question_type = '判断题'
+                            options_for_practice = None
+                        else:
+                            continue
+                    else:
+                        processed_answer = raw_answer_text.strip().upper()
+                        if processed_answer.endswith(".0"):
+                            processed_answer = processed_answer[:-2]
+
+                        # 验证答案
+                        if not all(char in options_for_practice for char in processed_answer):
+                            continue
+
+                        question_type = '多选题' if len(processed_answer) > 1 else '单选题'
+
+                questions_data.append({
+                    'id': f"{filepath}_{index}",
+                    'type': question_type,
+                    'question': question_text,
+                    'options_for_practice': options_for_practice,
+                    'answer': processed_answer,
+                    'is_multiple_choice': question_type == '多选题'
+                })
+            except Exception as e:
+                logger.warning(f"Error processing question at index {index} in '{filepath}': {e}")
+                continue
+
+        logger.info(f"从文件加载 {len(questions_data)} 道题目: '{filepath}'")
+        return questions_data
+
+    except Exception as e:
+        logger.error(f"Critical error loading questions from '{filepath}': {e}")
+        return None 

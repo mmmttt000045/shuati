@@ -88,15 +88,21 @@ QUESTION_STATUS_NAMES = {
 class Config:
     SECRET_KEY = 'your-fixed-secret-key-here'
     
-    # Session 配置
+    # Session 配置 - 优化的2小时过期机制
     SESSION_COOKIE_SECURE = False  # Development setting
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = 'Lax'
     SESSION_COOKIE_NAME = 'quiz_session'
     SESSION_COOKIE_DOMAIN = None
-    PERMANENT_SESSION_LIFETIME = timedelta(hours=2)
+    PERMANENT_SESSION_LIFETIME = timedelta(hours=2)  # 2小时过期
     SESSION_COOKIE_MAX_AGE = 7200  # 2小时的秒数
-    SESSION_REFRESH_EACH_REQUEST = True
+    SESSION_REFRESH_EACH_REQUEST = True  # 每次请求都刷新session
+    SESSION_USE_SIGNER = True  # 启用session签名
+    
+    # Session活跃度管理配置
+    SESSION_ACTIVITY_THRESHOLD = timedelta(minutes=30)  # 30分钟无活动警告阈值
+    SESSION_WARNING_MINUTES = 10  # 过期前10分钟警告
+    SESSION_CLEANUP_INTERVAL = 300  # 5分钟清理一次过期session
     
     # CORS 配置
     CORS_ORIGINS = ["*"]

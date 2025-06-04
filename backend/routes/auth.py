@@ -7,13 +7,14 @@ from werkzeug.exceptions import BadRequest, NotFound
 
 from ..decorators import handle_api_error, login_required
 from ..utils import create_response
+from ..config import SESSION_KEYS
 from ..session_manager import (
-    load_session_from_db, save_session_to_db, 
+    load_session_from_db, 
     clear_all_session, get_user_session_info
 )
 from ..connectDB import (
     authenticate_user, create_user, verify_invitation_code,
-    get_user_info, update_session_timestamp
+    get_user_info
 )
 
 logger = logging.getLogger(__name__)
@@ -72,23 +73,32 @@ def api_login():
 
     result = authenticate_user(username, password)
     if result['success']:
-        session['user_id'] = result['user_id']
-        session['username'] = result['username']
+        # 设置session
+        session[SESSION_KEYS['USER_ID']] = result['user_id']
+        session[SESSION_KEYS['USERNAME']] = result['username']
+        session.modified = True
+        
+        # 设置session活跃度
+        from ..session_manager import session_manager
+        session_manager.update_activity()
+        
+        # 尝试从练习会话数据库恢复任何活跃的练习会话
         load_session_from_db()
-        update_session_timestamp(result['user_id'])
-
+        
         # 获取完整的用户信息，包括身份模型
         user_info = get_user_info(result['user_id'])
-
-        logger.info(f"User logged in: {username}")
+        
+        logger.info(f"User logged in: {result['username']}")
         return create_response(True, '登录成功', {
             'user': {
                 'user_id': user_info['user_id'] if user_info else result['user_id'],
                 'username': user_info['username'] if user_info else result['username'],
                 'model': user_info.get('model', 0) if user_info else 0
-            }
+            },
+            'session': session_manager.get_session_info()
         })
     else:
+        logger.warning(f"Failed login attempt for username: {username}")
         raise BadRequest(result['error'])
 
 
@@ -98,7 +108,6 @@ def api_logout():
     """用户登出"""
     if session.get('user_id'):
         username = session.get('username', 'Unknown')
-        save_session_to_db()
         clear_all_session()
         logger.info(f"User logged out: {username}")
         return create_response(True, '登出成功')
@@ -147,4 +156,51 @@ def api_check_auth():
             }
         })
     else:
-        return create_response(True, data={'authenticated': False}) 
+        return create_response(True, data={'authenticated': False})
+
+
+@auth_bp.route('/session/status', methods=['GET'])
+@handle_api_error
+def api_session_status():
+    """获取session状态详细信息"""
+    from ..session_manager import session_manager
+    
+    session_info = session_manager.get_session_info()
+    
+    if session_info['is_authenticated']:
+        return create_response(True, data={
+            'session': session_info,
+            'message': 'Session活跃' if session_info['session_valid'] else 'Session已过期'
+        })
+    else:
+        return create_response(True, data={
+            'session': {'is_authenticated': False, 'session_valid': False},
+            'message': '用户未登录'
+        })
+
+
+@auth_bp.route('/session/extend', methods=['POST'])
+@login_required
+@handle_api_error
+def api_extend_session():
+    """延长session时间"""
+    from ..session_manager import session_manager
+    
+    session_manager.extend_session()
+    logger.info(f"Session延长: user_id={session.get('user_id')}")
+    
+    return create_response(True, '会话时间已延长', data={
+        'session': session_manager.get_session_info()
+    })
+
+
+@auth_bp.route('/session/warning-shown', methods=['POST'])
+@login_required
+@handle_api_error
+def api_mark_warning_shown():
+    """标记过期警告已显示"""
+    from ..session_manager import session_manager
+    
+    session_manager.mark_warning_shown()
+    
+    return create_response(True, '警告状态已更新') 

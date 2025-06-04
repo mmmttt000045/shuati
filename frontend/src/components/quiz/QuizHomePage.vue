@@ -48,45 +48,6 @@
             <h2 class="selected-subject-title">{{ selectedSubject }}</h2>
           </div>
 
-          <!-- 题目顺序选择 -->
-          <div class="order-selection">
-            <div class="order-options">
-              <label class="order-option" :class="{ selected: questionOrder === 'random' }">
-                <input
-                  type="radio"
-                  value="random"
-                  v-model="questionOrder"
-                  name="questionOrder"
-                  class="order-radio"
-                />
-                <div class="option-content">
-                  <span class="option-icon">🎲</span>
-                  <div class="option-text">
-                    <span class="option-name">乱序练习</span>
-                    <span class="option-desc">题目随机打乱，提高练习效果</span>
-                  </div>
-                </div>
-              </label>
-
-              <label class="order-option" :class="{ selected: questionOrder === 'sequential' }">
-                <input
-                  type="radio"
-                  value="sequential"
-                  v-model="questionOrder"
-                  name="questionOrder"
-                  class="order-radio"
-                />
-                <div class="option-content">
-                  <span class="option-icon">📋</span>
-                  <div class="option-text">
-                    <span class="option-name">顺序练习</span>
-                    <span class="option-desc">按照原始顺序练习题目</span>
-                  </div>
-                </div>
-              </label>
-            </div>
-          </div>
-
           <div class="files-grid">
             <div
               v-for="file in subjects[selectedSubject].files"
@@ -168,7 +129,7 @@
                   :style="{ width: confirmData.progressPercent + '%' }"
                 ></div>
               </div>
-              <div class="progress-text-large">{{ confirmData.progressPercent }}% 完成</div>
+              <div class="progress-text-large">{{ confirmData.progressPercent.toFixed(2).replace(/\.?0+$/, '') }}% 完成</div>
             </div>
 
             <p class="confirm-message">
@@ -187,6 +148,142 @@
             </button>
             <button class="confirm-btn confirm-btn-cancel" @click="closeConfirmDialog">
               <span class="btn-icon">❌</span>
+              取消
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 配置对话框 -->
+      <div v-if="showConfigDialog" class="config-overlay" @click="closeConfigDialog">
+        <div class="config-dialog" @click.stop>
+          <div class="config-header">
+            <div class="config-icon">⚙️</div>
+            <h3 class="config-title">练习配置</h3>
+            <p class="config-subtitle">{{ configDialogData.fileDisplayName }}</p>
+          </div>
+
+          <div class="config-content">
+            <!-- 题目顺序选择 -->
+            <div class="config-section">
+              <h4 class="config-section-title">题目顺序</h4>
+              <div class="config-order-options">
+                <label class="config-order-option" :class="{ selected: dialogQuestionOrder === 'random' }">
+                  <input
+                    type="radio"
+                    value="random"
+                    v-model="dialogQuestionOrder"
+                    name="dialogQuestionOrder"
+                    class="config-order-radio"
+                  />
+                  <div class="config-option-content">
+                    <span class="config-option-icon">🎲</span>
+                    <div class="config-option-text">
+                      <span class="config-option-name">乱序练习</span>
+                      <span class="config-option-desc">题目随机打乱</span>
+                    </div>
+                  </div>
+                </label>
+
+                <label class="config-order-option" :class="{ selected: dialogQuestionOrder === 'sequential' }">
+                  <input
+                    type="radio"
+                    value="sequential"
+                    v-model="dialogQuestionOrder"
+                    name="dialogQuestionOrder"
+                    class="config-order-radio"
+                  />
+                  <div class="config-option-content">
+                    <span class="config-option-icon">📋</span>
+                    <div class="config-option-text">
+                      <span class="config-option-name">顺序练习</span>
+                      <span class="config-option-desc">按原始顺序</span>
+                    </div>
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            <!-- 题型选择 -->
+            <div class="config-section">
+              <div class="config-section-header">
+                <h4 class="config-section-title">选择题型</h4>
+                <div class="config-type-actions">
+                  <button 
+                    class="config-type-action-btn" 
+                    @click="selectAllDialogQuestionTypes"
+                    :disabled="dialogSelectedQuestionTypes.length === questionTypeOptions.length"
+                  >
+                    全选
+                  </button>
+                  <button 
+                    class="config-type-action-btn" 
+                    @click="clearAllDialogQuestionTypes"
+                    :disabled="dialogSelectedQuestionTypes.length === 0"
+                  >
+                    清空
+                  </button>
+                </div>
+              </div>
+              
+              <div class="config-type-options">
+                <div
+                  v-for="option in questionTypeOptions"
+                  :key="option.key"
+                  class="config-type-option"
+                  :class="{ selected: isDialogQuestionTypeSelected(option.key) }"
+                  @click="toggleDialogQuestionType(option.key)"
+                >
+                  <div class="config-type-checkbox">
+                    <input
+                      type="checkbox"
+                      :checked="isDialogQuestionTypeSelected(option.key)"
+                      @click.stop
+                      @change="toggleDialogQuestionType(option.key)"
+                      class="config-type-checkbox-input"
+                    />
+                    <span class="config-type-checkbox-mark">✓</span>
+                  </div>
+                  <div class="config-type-content">
+                    <span class="config-type-icon">{{ option.icon }}</span>
+                    <div class="config-type-text">
+                      <span class="config-type-name">{{ option.name }}</span>
+                      <span class="config-type-desc">{{ option.description }}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              <div class="config-type-summary">
+                <span class="config-summary-text">
+                  已选择 <strong>{{ dialogSelectedQuestionTypes.length }}</strong> 种题型
+                  <template v-if="dialogSelectedQuestionTypes.length > 0">
+                    ：{{ dialogSelectedQuestionTypes.map(type => questionTypeOptions.find(opt => opt.key === type)?.name).join('、') }}
+                  </template>
+                </span>
+              </div>
+            </div>
+
+            <!-- 题库信息 -->
+            <div class="config-info">
+              <div class="config-info-item">
+                <span class="config-info-label">题库：</span>
+                <span class="config-info-value">{{ configDialogData.fileDisplayName }}</span>
+              </div>
+              <div class="config-info-item">
+                <span class="config-info-label">总题数：</span>
+                <span class="config-info-value">{{ configDialogData.questionCount }}题</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="config-actions">
+            <button class="config-btn config-btn-start" @click="startPracticeWithConfig">
+              <span class="config-btn-icon">🚀</span>
+              开始练习
+            </button>
+            <button class="config-btn config-btn-cancel" @click="closeConfigDialog">
+              <span class="config-btn-icon">❌</span>
               取消
             </button>
           </div>
@@ -214,6 +311,43 @@ const messages = ref<FlashMessage[]>([])
 const loading = ref(false)
 const questionOrder = ref<'random' | 'sequential'>('random')
 const showConfirmDialog = ref(false)
+
+// 题型选择状态
+const selectedQuestionTypes = ref<string[]>([
+  'single_choice',
+  'multiple_choice', 
+  'judgment',
+  'other'
+])
+
+// 题型选项配置
+const questionTypeOptions = [
+  {
+    key: 'single_choice',
+    name: '单选题',
+    icon: '🔘',
+    description: '四选一的单项选择题'
+  },
+  {
+    key: 'multiple_choice', 
+    name: '多选题',
+    icon: '☑️',
+    description: '多项选择题，可选择多个答案'
+  },
+  {
+    key: 'judgment',
+    name: '判断题', 
+    icon: '✅',
+    description: '是非判断题，选择对或错'
+  },
+  {
+    key: 'other',
+    name: '其他题型',
+    icon: '📝', 
+    description: '填空题、简答题等其他类型'
+  }
+]
+
 const confirmData = ref<{
   fileName: string;
   subject: string;
@@ -266,66 +400,69 @@ const goBackToSubjects = () => {
 }
 
 const startPractice = async (subject: string, fileName: string) => {
-  loading.value = true
+  // 获取文件信息
+  const file = subjects.value[subject]?.files?.find(f => f.key === fileName)
+  if (!file || !file.tiku_id) {
+    toast.error('未找到题库ID信息', { timeout: 4000 })
+    return
+  }
 
-  try {
-    // 获取题库ID - 需要从subjects数据中找到对应的tiku_id
-    const file = subjects.value[subject]?.files?.find(f => f.key === fileName)
-    if (!file || !file.tiku_id) {
-      throw new Error('未找到题库ID信息')
-    }
-
-    // 正常启动练习，使用新的URL格式
-    const orderText = questionOrder.value === 'random' ? '乱序练习' : '顺序练习'
-    toast.success(`开始${orderText} 🎯`, {
-      timeout: 2000
-    })
-
-    router.push({
-      name: 'practice',
-      query: {
-        tikuid: file.tiku_id.toString(),
-        order: questionOrder.value,
+  // 如果有历史进度，显示确认对话框
+  if (file.progress) {
+    confirmData.value = {
+      fileName: file.display,
+      subject,
+      order: 'random', // 默认显示随机
+      progress: {
+        current: file.progress.current_question,
+        total: file.progress.total_questions,
+        round: file.progress.round_number
       },
-    })
-  } catch (error) {
-    console.error('Error starting practice:', error)
-    toast.error(error instanceof Error ? error.message : '启动练习失败', {
-      timeout: 4000
-    })
-  } finally {
-    loading.value = false
+      progressPercent: file.progress.progress_percent,
+      tikuId: file.tiku_id.toString()
+    }
+    showConfirmDialog.value = true
+  } else {
+    // 没有历史进度，显示配置对话框
+    configDialogData.value = {
+      subject,
+      fileName,
+      fileDisplayName: file.display,
+      tikuId: file.tiku_id.toString(),
+      questionCount: file.count
+    }
+    
+    // 重置配置对话框的状态为默认值
+    dialogSelectedQuestionTypes.value = [
+      'single_choice',
+      'multiple_choice', 
+      'judgment',
+      'other'
+    ]
+    dialogQuestionOrder.value = 'random'
+    
+    showConfigDialog.value = true
   }
 }
 
 const handleConfirmContinue = async () => {
   // 继续之前的练习
   showConfirmDialog.value = false
-  toast.success('继续之前的练习进度 📚', {
-    timeout: 2000
-  })
-  router.push({
-    name: 'practice',
-    query: {
-      tikuid: confirmData.value.tikuId,
-      order: 'random'  // 默认使用随机顺序
-    },
-  })
-}
-
-const handleConfirmRestart = async () => {
-  // 重新开始练习，使用新的URL格式
-  showConfirmDialog.value = false
   loading.value = true
 
   try {
-    toast.info('重新开始练习 🔄', {
-      timeout: 2000
-    })
+    // 调用API恢复练习会话（不强制重启，保持现有配置）
+    const response = await apiService.startPractice(
+      confirmData.value.tikuId,
+      false, // 不强制重启，保持现有会话
+      true   // 默认使用随机顺序
+    )
 
-    // 启动成功后跳转，使用新的URL格式
-    const orderText = questionOrder.value === 'random' ? '乱序练习' : '顺序练习'
-    toast.success(`开始${orderText} 🎯`, {
+    if (!response.success) {
+      throw new Error(response.message || '恢复练习失败')
+    }
+
+    toast.success('继续之前的练习进度 📚', {
       timeout: 2000
     })
 
@@ -333,17 +470,54 @@ const handleConfirmRestart = async () => {
       name: 'practice',
       query: {
         tikuid: confirmData.value.tikuId,
-        order: questionOrder.value,
+        order: 'random',  // 默认使用随机顺序
       },
     })
   } catch (error) {
-    console.error('Error restarting practice:', error)
-    toast.error(error instanceof Error ? error.message : '重新开始失败', {
+    console.error('Error continuing practice:', error)
+    toast.error(error instanceof Error ? error.message : '恢复练习失败', {
       timeout: 4000
     })
   } finally {
     loading.value = false
   }
+}
+
+const handleConfirmRestart = async () => {
+  // 重新开始练习，显示配置对话框
+  showConfirmDialog.value = false
+  
+  // 从确认数据中获取题库信息
+  const file = subjects.value[confirmData.value.subject]?.files?.find(f => f.tiku_id?.toString() === confirmData.value.tikuId)
+  if (!file || !file.tiku_id) {
+    toast.error('题库信息获取失败', { timeout: 4000 })
+    return
+  }
+
+  // 设置配置对话框数据
+  configDialogData.value = {
+    subject: confirmData.value.subject,
+    fileName: file.key,
+    fileDisplayName: file.display,
+    tikuId: confirmData.value.tikuId,
+    questionCount: file.count
+  }
+  
+  // 重置配置对话框的状态为默认值
+  dialogSelectedQuestionTypes.value = [
+    'single_choice',
+    'multiple_choice', 
+    'judgment',
+    'other'
+  ]
+  dialogQuestionOrder.value = 'random'
+  
+  // 显示配置对话框
+  showConfigDialog.value = true
+  
+  toast.info('请重新选择练习配置 🔄', {
+    timeout: 2000
+  })
 }
 
 const closeConfirmDialog = () => {
@@ -403,6 +577,140 @@ watch(questionOrder, (newOrder, oldOrder) => {
     })
   }
 })
+
+const selectAllQuestionTypes = () => {
+  selectedQuestionTypes.value = questionTypeOptions.map(option => option.key)
+  toast.success('已选择所有题型 📚', { timeout: 1500 })
+}
+
+const clearAllQuestionTypes = () => {
+  selectedQuestionTypes.value = []
+  toast.info('已取消选择所有题型 🧹', { timeout: 1500 })
+}
+
+const isQuestionTypeSelected = (key: string) => {
+  return selectedQuestionTypes.value.includes(key)
+}
+
+const toggleQuestionType = (key: string) => {
+  if (selectedQuestionTypes.value.includes(key)) {
+    selectedQuestionTypes.value = selectedQuestionTypes.value.filter(k => k !== key)
+    const typeName = questionTypeOptions.find(opt => opt.key === key)?.name
+    toast.info(`已移除 ${typeName} 🗑️`, { timeout: 1500 })
+  } else {
+    selectedQuestionTypes.value.push(key)
+    const typeName = questionTypeOptions.find(opt => opt.key === key)?.name
+    toast.success(`已添加 ${typeName} 📝`, { timeout: 1500 })
+  }
+}
+
+// 配置对话框状态
+const showConfigDialog = ref(false)
+const configDialogData = ref<{
+  subject: string;
+  fileName: string;
+  fileDisplayName: string;
+  tikuId: string;
+  questionCount: number;
+}>({
+  subject: '',
+  fileName: '',
+  fileDisplayName: '',
+  tikuId: '',
+  questionCount: 0
+})
+
+// 配置对话框中的题型选择状态
+const dialogSelectedQuestionTypes = ref<string[]>([
+  'single_choice',
+  'multiple_choice', 
+  'judgment',
+  'other'
+])
+
+// 配置对话框中的顺序选择状态
+const dialogQuestionOrder = ref<'random' | 'sequential'>('random')
+
+// 配置对话框相关函数
+const closeConfigDialog = () => {
+  showConfigDialog.value = false
+}
+
+const toggleDialogQuestionType = (typeKey: string) => {
+  const index = dialogSelectedQuestionTypes.value.indexOf(typeKey)
+  if (index === -1) {
+    dialogSelectedQuestionTypes.value.push(typeKey)
+  } else {
+    dialogSelectedQuestionTypes.value.splice(index, 1)
+  }
+}
+
+const selectAllDialogQuestionTypes = () => {
+  dialogSelectedQuestionTypes.value = questionTypeOptions.map(opt => opt.key)
+}
+
+const clearAllDialogQuestionTypes = () => {
+  dialogSelectedQuestionTypes.value = []
+}
+
+const isDialogQuestionTypeSelected = (typeKey: string) => {
+  return dialogSelectedQuestionTypes.value.includes(typeKey)
+}
+
+const startPracticeWithConfig = async () => {
+  // 验证是否选择了题型
+  if (dialogSelectedQuestionTypes.value.length === 0) {
+    toast.error('请至少选择一种题型', { timeout: 3000 })
+    return
+  }
+
+  showConfigDialog.value = false
+  loading.value = true
+
+  try {
+    // 调用API开始练习
+    const shuffleQuestions = dialogQuestionOrder.value === 'random'
+    const response = await apiService.startPractice(
+      configDialogData.value.tikuId,
+      true, // force_restart
+      shuffleQuestions,
+      dialogSelectedQuestionTypes.value
+    )
+
+    if (!response.success) {
+      throw new Error(response.message || '启动练习失败')
+    }
+
+    // API调用成功后跳转
+    const orderText = dialogQuestionOrder.value === 'random' ? '乱序练习' : '顺序练习'
+    const typeText = dialogSelectedQuestionTypes.value.length === questionTypeOptions.length 
+      ? '所有题型' 
+      : dialogSelectedQuestionTypes.value.map(type => 
+          questionTypeOptions.find(opt => opt.key === type)?.name
+        ).join('、')
+    
+    toast.success(`开始${orderText} - ${typeText} 🎯`, {
+      timeout: 2000
+    })
+
+    // 跳转到练习页面
+    router.push({
+      name: 'practice',
+      query: {
+        tikuid: configDialogData.value.tikuId,
+        order: dialogQuestionOrder.value,
+        types: dialogSelectedQuestionTypes.value.join(','),
+      },
+    })
+  } catch (error) {
+    console.error('Error starting practice:', error)
+    toast.error(error instanceof Error ? error.message : '启动练习失败', {
+      timeout: 4000
+    })
+  } finally {
+    loading.value = false
+  }
+}
 </script>
 
 <style scoped>
@@ -645,86 +953,6 @@ watch(questionOrder, (newOrder, oldOrder) => {
   padding-bottom: 1rem;
   border-bottom: 2px solid #e2e8f0;
   font-weight: 700;
-}
-
-.order-selection {
-  margin-bottom: 2.5rem;
-}
-
-.order-title {
-  font-size: 1.5rem;
-  color: #1e293b;
-  margin-bottom: 1rem;
-  font-weight: 600;
-}
-
-.order-options {
-  display: flex;
-  gap: 1rem;
-}
-
-.order-option {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  cursor: pointer;
-  padding: 1.25rem;
-  border: 2px solid #e2e8f0;
-  border-radius: 12px;
-  transition: all 0.3s ease;
-  background-color: white;
-  position: relative;
-}
-
-.order-option:hover {
-  background-color: #f8fafc;
-  border-color: #3b82f6;
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
-}
-
-.order-option.selected {
-  background-color: #eff6ff;
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
-}
-
-.order-radio {
-  position: absolute;
-  opacity: 0;
-  width: 1px;
-  height: 1px;
-}
-
-.option-content {
-  display: flex;
-  align-items: center;
-  width: 100%;
-}
-
-.option-icon {
-  font-size: 2rem;
-  margin-right: 1rem;
-  flex-shrink: 0;
-}
-
-.option-text {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-}
-
-.option-name {
-  font-size: 1.2rem;
-  font-weight: 600;
-  color: #1e293b;
-  margin-bottom: 0.5rem;
-}
-
-.option-desc {
-  font-size: 0.95rem;
-  color: #64748b;
-  line-height: 1.4;
 }
 
 .files-grid {
@@ -1297,6 +1525,20 @@ watch(questionOrder, (newOrder, oldOrder) => {
   .order-options {
     flex-direction: column;
   }
+
+  .type-options {
+    flex-direction: column;
+  }
+
+  .type-actions {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .type-action-btn {
+    width: 100%;
+    text-align: center;
+  }
 }
 
 @media (max-width: 576px) {
@@ -1392,5 +1634,556 @@ watch(questionOrder, (newOrder, oldOrder) => {
   border-color: #f59e0b;
   transform: translateY(-1px);
   box-shadow: 0 4px 8px rgba(251, 191, 36, 0.2);
+}
+
+.type-selection {
+  margin-bottom: 2.5rem;
+}
+
+.type-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.type-title {
+  font-size: 1.5rem;
+  color: #1e293b;
+  font-weight: 600;
+}
+
+.type-actions {
+  display: flex;
+  gap: 1rem;
+}
+
+.type-action-btn {
+  padding: 0.875rem 1.5rem;
+  background-color: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  color: #334155;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 1rem;
+}
+
+.type-action-btn:hover {
+  background-color: #f1f5f9;
+  transform: translateX(-2px);
+}
+
+.type-options {
+  display: flex;
+  gap: 1rem;
+}
+
+.type-option {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  padding: 1.25rem;
+  border: 2px solid #e2e8f0;
+  border-radius: 12px;
+  transition: all 0.3s ease;
+  background-color: white;
+  position: relative;
+}
+
+.type-option:hover {
+  background-color: #f8fafc;
+  border-color: #3b82f6;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
+}
+
+.type-option.selected {
+  background-color: #eff6ff;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.type-checkbox {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+}
+
+.type-checkbox-input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+}
+
+.type-checkbox-mark {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 1.2rem;
+  color: #3b82f6;
+}
+
+.type-content {
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.type-icon {
+  font-size: 2rem;
+  margin-right: 1rem;
+  flex-shrink: 0;
+}
+
+.type-text {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+.type-name {
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: #1e293b;
+  margin-bottom: 0.5rem;
+}
+
+.type-desc {
+  font-size: 0.95rem;
+  color: #64748b;
+  line-height: 1.4;
+}
+
+.type-summary {
+  margin-top: 1rem;
+  text-align: center;
+}
+
+.summary-text {
+  font-size: 1rem;
+  color: #64748b;
+  font-weight: 500;
+}
+
+/* 配置对话框样式 */
+.config-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1001;
+  backdrop-filter: blur(4px);
+  animation: overlayFadeIn 0.3s ease-out;
+}
+
+.config-dialog {
+  background: white;
+  border-radius: 20px;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  max-width: 600px;
+  width: 90%;
+  max-height: 85vh;
+  overflow-y: auto;
+  animation: dialogSlideIn 0.3s ease-out;
+}
+
+.config-header {
+  text-align: center;
+  padding: 2rem 2rem 1rem;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.config-icon {
+  font-size: 2.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.config-title {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: #1e293b;
+  margin: 0 0 0.5rem 0;
+}
+
+.config-subtitle {
+  font-size: 1rem;
+  color: #64748b;
+  margin: 0;
+  font-weight: 500;
+}
+
+.config-content {
+  padding: 2rem;
+}
+
+.config-section {
+  margin-bottom: 2rem;
+}
+
+.config-section:last-child {
+  margin-bottom: 0;
+}
+
+.config-section-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #1e293b;
+  margin: 0 0 1rem 0;
+}
+
+.config-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.config-order-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+.config-order-option {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  padding: 1rem;
+  border: 2px solid #e2e8f0;
+  border-radius: 12px;
+  transition: all 0.3s ease;
+  background-color: white;
+  position: relative;
+}
+
+.config-order-option:hover {
+  background-color: #f8fafc;
+  border-color: #3b82f6;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
+}
+
+.config-order-option.selected {
+  background-color: #eff6ff;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.config-order-radio {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+}
+
+.config-option-content {
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.config-option-icon {
+  font-size: 1.5rem;
+  margin-right: 0.75rem;
+  flex-shrink: 0;
+}
+
+.config-option-text {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+.config-option-name {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #1e293b;
+  margin-bottom: 0.25rem;
+}
+
+.config-option-desc {
+  font-size: 0.875rem;
+  color: #64748b;
+  line-height: 1.4;
+}
+
+.config-type-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.config-type-action-btn {
+  padding: 0.5rem 1rem;
+  background-color: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  color: #334155;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 0.875rem;
+}
+
+.config-type-action-btn:hover:not(:disabled) {
+  background-color: #f1f5f9;
+  color: #3b82f6;
+  border-color: #3b82f6;
+}
+
+.config-type-action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.config-type-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.config-type-option {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  padding: 1rem;
+  border: 2px solid #e2e8f0;
+  border-radius: 12px;
+  transition: all 0.3s ease;
+  background-color: white;
+  position: relative;
+}
+
+.config-type-option:hover {
+  background-color: #f8fafc;
+  border-color: #3b82f6;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
+}
+
+.config-type-option.selected {
+  background-color: #eff6ff;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.config-type-checkbox {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  width: 1.5rem;
+  height: 1.5rem;
+  background-color: white;
+  border: 2px solid #e2e8f0;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.config-type-option.selected .config-type-checkbox {
+  background-color: #3b82f6;
+  border-color: #3b82f6;
+}
+
+.config-type-checkbox-input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+}
+
+.config-type-checkbox-mark {
+  font-size: 0.875rem;
+  color: white;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.config-type-option.selected .config-type-checkbox-mark {
+  opacity: 1;
+}
+
+.config-type-content {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  margin-right: 2rem;
+}
+
+.config-type-icon {
+  font-size: 1.5rem;
+  margin-right: 0.75rem;
+  flex-shrink: 0;
+}
+
+.config-type-text {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+.config-type-name {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #1e293b;
+  margin-bottom: 0.25rem;
+}
+
+.config-type-desc {
+  font-size: 0.875rem;
+  color: #64748b;
+  line-height: 1.4;
+}
+
+.config-type-summary {
+  text-align: center;
+  padding: 1rem;
+  background-color: #f8fafc;
+  border-radius: 8px;
+}
+
+.config-summary-text {
+  font-size: 0.875rem;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.config-info {
+  background-color: #f8fafc;
+  border-radius: 12px;
+  padding: 1.5rem;
+  border-left: 4px solid #3b82f6;
+}
+
+.config-info-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.config-info-item:last-child {
+  margin-bottom: 0;
+}
+
+.config-info-label {
+  font-weight: 500;
+  color: #64748b;
+}
+
+.config-info-value {
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.config-actions {
+  padding: 1.5rem 2rem 2rem;
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+}
+
+.config-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.875rem 1.5rem;
+  border-radius: 12px;
+  font-weight: 600;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  border: 2px solid transparent;
+  min-width: 120px;
+  justify-content: center;
+}
+
+.config-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.config-btn-start {
+  background: linear-gradient(135deg, #10b981, #34d399);
+  color: white;
+}
+
+.config-btn-start:hover {
+  background: linear-gradient(135deg, #059669, #10b981);
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+}
+
+.config-btn-cancel {
+  background: #f8fafc;
+  color: #64748b;
+  border-color: #e2e8f0;
+}
+
+.config-btn-cancel:hover {
+  background: #f1f5f9;
+  color: #475569;
+  border-color: #cbd5e1;
+}
+
+.config-btn-icon {
+  font-size: 1.1rem;
+}
+
+/* 移动端配置对话框优化 */
+@media (max-width: 640px) {
+  .config-dialog {
+    width: 95%;
+    margin: 1rem;
+    max-height: 90vh;
+  }
+
+  .config-header {
+    padding: 1.5rem 1.5rem 1rem;
+  }
+
+  .config-content {
+    padding: 1.5rem;
+  }
+
+  .config-actions {
+    padding: 1rem 1.5rem 1.5rem;
+    flex-direction: column;
+  }
+
+  .config-btn {
+    width: 100%;
+    min-width: unset;
+  }
+
+  .config-order-options {
+    grid-template-columns: 1fr;
+  }
+
+  .config-type-options {
+    grid-template-columns: 1fr;
+  }
+
+  .config-type-actions {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .config-type-action-btn {
+    width: 100%;
+    text-align: center;
+  }
 }
 </style> 

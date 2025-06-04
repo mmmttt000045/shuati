@@ -108,6 +108,55 @@ export interface TikuItem {
   updated_at?: string;
 }
 
+// 题目管理相关接口
+export interface QuestionItem {
+  id: number;
+  subject_id: number;
+  tiku_id: number;
+  question_type: number;
+  stem: string;
+  option_a?: string;
+  option_b?: string;
+  option_c?: string;
+  option_d?: string;
+  answer: string;
+  explanation?: string;
+  difficulty?: number;
+  status: string;
+  created_at?: string;
+  updated_at?: string;
+  subject_name?: string;
+  tiku_name?: string;
+}
+
+export interface QuestionCreateData {
+  subject_id: number;
+  tiku_id: number;
+  question_type: number;
+  stem: string;
+  option_a?: string;
+  option_b?: string;
+  option_c?: string;
+  option_d?: string;
+  answer: string;
+  explanation?: string;
+  difficulty?: number;
+  status?: string;
+}
+
+export interface QuestionUpdateData {
+  question_type?: number;
+  stem?: string;
+  option_a?: string;
+  option_b?: string;
+  option_c?: string;
+  option_d?: string;
+  answer?: string;
+  explanation?: string;
+  difficulty?: number;
+  status?: string;
+}
+
 export interface UsageSubjectStat {
   subject_name: string;
   used_count: number;
@@ -151,7 +200,7 @@ export interface RealtimeUsageStats {
 
 export interface ApiService {
   getFileOptions(): Promise<SubjectsResponse>;
-  startPractice(tikuid: string, forceRestart?: boolean, shuffleQuestions?: boolean): Promise<{ message: string; success: boolean; resumed?: boolean }>;
+  startPractice(tikuid: string, forceRestart?: boolean, shuffleQuestions?: boolean, selectedTypes?: string[]): Promise<{ message: string; success: boolean; resumed?: boolean }>;
   getCurrentQuestion(): Promise<QuestionResponse>;
   submitAnswer(answer: string, questionId: string, isRevealed: boolean, isSkipped: boolean): Promise<Feedback>;
   jumpToQuestion(index: number): Promise<{ message: string; success: boolean }>;
@@ -208,6 +257,14 @@ export interface ApiService {
     uploadTiku(file: File, subjectId: number, tikuName?: string): Promise<{ success: boolean; tiku_id?: number; question_count?: number; message?: string }>;
     deleteTiku(tikuId: number): Promise<{ success: boolean; message?: string }>;
     toggleTiku(tikuId: number): Promise<{ success: boolean; is_active?: boolean; message?: string }>;
+    
+    // 题目管理
+    getQuestions(tikuId?: number, params?: SearchParams): Promise<{ success: boolean; questions?: QuestionItem[]; pagination?: Pagination; message?: string }>;
+    getQuestionDetail(questionId: number): Promise<{ success: boolean; question?: QuestionItem; message?: string }>;
+    createQuestion(data: QuestionCreateData): Promise<{ success: boolean; question_id?: number; message?: string }>;
+    updateQuestion(questionId: number, data: QuestionUpdateData): Promise<{ success: boolean; message?: string }>;
+    deleteQuestion(questionId: number): Promise<{ success: boolean; message?: string }>;
+    toggleQuestionStatus(questionId: number): Promise<{ success: boolean; status?: string; message?: string }>;
     
     // 系统管理
     syncFilesystem(): Promise<{ success: boolean; message?: string }>; // 已弃用 - 可能导致数据不一致
@@ -315,10 +372,20 @@ class ApiServiceImpl implements ApiService {
     return this.handleResponse<SubjectsResponse>(response);
   }
 
-  async startPractice(tikuid: string, forceRestart?: boolean, shuffleQuestions?: boolean): Promise<{ message: string; success: boolean; resumed?: boolean }> {
+  async startPractice(tikuid: string, forceRestart?: boolean, shuffleQuestions?: boolean, selectedTypes?: string[]): Promise<{ message: string; success: boolean; resumed?: boolean }> {
+    const body: any = { 
+      tikuid, 
+      force_restart: forceRestart, 
+      shuffle_questions: shuffleQuestions 
+    };
+    
+    if (selectedTypes && selectedTypes.length > 0) {
+      body.selected_types = selectedTypes;
+    }
+    
     const response = await this.fetchWithCredentials(`${API_BASE}/start_practice`, {
       method: 'POST',
-      body: JSON.stringify({ tikuid, force_restart: forceRestart, shuffle_questions: shuffleQuestions })
+      body: JSON.stringify(body)
     });
     return this.handleResponse<{ message: string; success: boolean; resumed?: boolean }>(response);
   }
@@ -546,6 +613,43 @@ class ApiServiceImpl implements ApiService {
         method: 'POST'
       });
       return this.handleResponse<{ success: boolean; is_active?: boolean; message?: string }>(response);
+    },
+    
+    // 题目管理
+    getQuestions: async (tikuId?: number, params?: SearchParams): Promise<{ success: boolean; questions?: QuestionItem[]; pagination?: Pagination; message?: string }> => {
+      const queryParams = new URLSearchParams(params as any).toString();
+      const response = await this.fetchWithCredentials(`${API_BASE}/admin/questions?tiku_id=${tikuId || ''}&${queryParams}`);
+      return this.handleResponse<{ success: boolean; questions?: QuestionItem[]; pagination?: Pagination; message?: string }>(response);
+    },
+    getQuestionDetail: async (questionId: number): Promise<{ success: boolean; question?: QuestionItem; message?: string }> => {
+      const response = await this.fetchWithCredentials(`${API_BASE}/admin/questions/${questionId}`);
+      return this.handleResponse<{ success: boolean; question?: QuestionItem; message?: string }>(response);
+    },
+    createQuestion: async (data: QuestionCreateData): Promise<{ success: boolean; question_id?: number; message?: string }> => {
+      const response = await this.fetchWithCredentials(`${API_BASE}/admin/questions`, {
+        method: 'POST',
+        body: JSON.stringify(data)
+      });
+      return this.handleResponse<{ success: boolean; question_id?: number; message?: string }>(response);
+    },
+    updateQuestion: async (questionId: number, data: QuestionUpdateData): Promise<{ success: boolean; message?: string }> => {
+      const response = await this.fetchWithCredentials(`${API_BASE}/admin/questions/${questionId}`, {
+        method: 'PUT',
+        body: JSON.stringify(data)
+      });
+      return this.handleResponse<{ success: boolean; message?: string }>(response);
+    },
+    deleteQuestion: async (questionId: number): Promise<{ success: boolean; message?: string }> => {
+      const response = await this.fetchWithCredentials(`${API_BASE}/admin/questions/${questionId}`, {
+        method: 'DELETE'
+      });
+      return this.handleResponse<{ success: boolean; message?: string }>(response);
+    },
+    toggleQuestionStatus: async (questionId: number): Promise<{ success: boolean; status?: string; message?: string }> => {
+      const response = await this.fetchWithCredentials(`${API_BASE}/admin/questions/${questionId}/toggle`, {
+        method: 'POST'
+      });
+      return this.handleResponse<{ success: boolean; status?: string; message?: string }>(response);
     },
     
     // 系统管理

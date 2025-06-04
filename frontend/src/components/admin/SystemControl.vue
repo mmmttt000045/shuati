@@ -64,6 +64,14 @@
       @reload-banks="reloadBanks"
       @toggle-tiku="toggleTiku"
       @delete-tiku="deleteTiku"
+      @show-questions="showQuestionManagement"
+    />
+
+    <!-- 题目管理 -->
+    <QuestionManagement
+      v-if="activeTab === 'questions'"
+      :tiku-info="selectedTiku"
+      @go-back="goBackToTiku"
     />
 
     <!-- 创建邀请码对话框 -->
@@ -124,6 +132,7 @@ import UserManagement from './UserManagement.vue'
 import InvitationManagement from './InvitationManagement.vue'
 import SubjectManagement from './SubjectManagement.vue'
 import TikuManagement from './TikuManagement.vue'
+import QuestionManagement from './QuestionManagement.vue'
 import CreateInvitationDialog from './CreateInvitationDialog.vue'
 import SubjectDialog from './SubjectDialog.vue'
 import UploadTikuDialog from './UploadTikuDialog.vue'
@@ -169,6 +178,9 @@ const currentSubject = ref<Subject | null>(null)
 // 题库管理状态
 const showUploadDialog = ref(false)
 const uploading = ref(false)
+
+// 题目管理状态
+const selectedTiku = ref<TikuItem | null>(null)
 
 // 权限变更相关状态
 const pendingPermissionChange = ref<PermissionChangeData | null>(null)
@@ -569,6 +581,19 @@ const reloadBanks = async () => {
   } finally {
     loading.value = false
   }
+}
+
+// 题目管理相关函数
+const showQuestionManagement = (tiku: TikuItem) => {
+  selectedTiku.value = tiku
+  activeTab.value = 'questions'
+  toast.info(`进入题目管理 - ${tiku.tiku_name} 📝`)
+}
+
+const goBackToTiku = () => {
+  selectedTiku.value = null
+  activeTab.value = 'tiku'
+  toast.info('返回题库列表 📖')
 }
 
 // 权限变更相关函数

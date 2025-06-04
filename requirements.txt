@@ -17,3 +17,4 @@ eventlet>=0.31.0
 # 其他常用依赖
 openpyxl>=3.0.0  # Excel文件读取支持
 mysql-connector-python
+cachetools>=4.2.0 # Added for LRU cache in practice routes

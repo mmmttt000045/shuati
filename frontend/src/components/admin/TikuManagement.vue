@@ -125,6 +125,15 @@
       <!-- 操作列 -->
       <template v-slot:item.actions="{ item }">
         <v-btn
+          color="info"
+          size="small"
+          variant="elevated"
+          @click="$emit('showQuestions', item)"
+          class="mr-2"
+        >
+          查看题目
+        </v-btn>
+        <v-btn
           :color="item.is_active ? 'warning' : 'success'"
           size="small"
           variant="elevated"
@@ -164,6 +173,7 @@ interface Emits {
   (e: 'reloadBanks'): void
   (e: 'toggleTiku', tiku: TikuItem): void
   (e: 'deleteTiku', tiku: TikuItem): void
+  (e: 'showQuestions', tiku: TikuItem): void
 }
 
 const props = defineProps<Props>()
@@ -189,7 +199,7 @@ const tikuHeaders = [
   { title: '状态', key: 'is_active', sortable: false, width: '100px', align: 'center' as const },
   { title: '创建时间', key: 'created_at', sortable: true, width: '160px' },
   { title: '更新时间', key: 'updated_at', sortable: true, width: '160px' },
-  { title: '操作', key: 'actions', sortable: false, width: '150px', align: 'center' as const }
+  { title: '操作', key: 'actions', sortable: false, width: '220px', align: 'center' as const }
 ]
 
 // 计算属性

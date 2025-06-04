@@ -82,14 +82,26 @@ def handle_api_error(func):
 
 
 def login_required(f):
-    """检查用户是否已登录的装饰器"""
+    """检查用户是否已登录的装饰器 - 优化版本，支持session过期检测"""
     @wraps(f)
     def decorated_function(*args, **kwargs):
+        # 导入session管理器（避免循环导入）
+        from .session_manager import session_manager
+        
         user_id = session.get('user_id')
         username = session.get('username')
 
         if not user_id or not username:
             return create_response(False, '请先登录', status_code=401)
+        
+        # 检查session是否过期
+        if session_manager.is_session_expired():
+            logger.info(f"Session过期，清理用户session: user_id={user_id}")
+            session_manager.cleanup_expired_session()
+            return create_response(False, 'Session已过期，请重新登录', status_code=401)
+        
+        # 更新session活跃度
+        session_manager.update_activity()
 
         return f(*args, **kwargs)
     return decorated_function

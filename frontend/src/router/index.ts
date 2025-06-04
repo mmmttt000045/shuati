@@ -48,7 +48,8 @@ const routes: RouteRecordRaw[] = [
     component: PracticePage,
     props: (route) => ({
       tikuid: route.query.tikuid as string,
-      order: route.query.order as string
+      order: route.query.order as string,
+      types: route.query.types as string
     }),
     meta: {
       title: '在线练习',

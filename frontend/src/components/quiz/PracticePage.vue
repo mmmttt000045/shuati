@@ -7,7 +7,11 @@
       <div class="practice-container">
         <!-- 标题区域 -->
         <header class="practice-title" :class="{ 'mobile-hidden': isMobileScreen }">
-          <h1>{{ fileDisplayName }}<span v-if="orderMode" class="order-mode-badge">{{ orderMode }}</span></h1>
+          <h1>
+            {{ fileDisplayName }}
+            <span v-if="orderMode" class="order-mode-badge">{{ orderMode }}</span>
+            <span v-if="questionTypesText" class="question-types-badge">{{ questionTypesText }}</span>
+          </h1>
         </header>
 
         <div class="practice-layout">
@@ -25,7 +29,7 @@
                     {{ progress.current }}/{{ progress.total }}
                   </template>
                   <template v-else>
-                    第 {{ progress.round }} 轮 - 题目 {{ progress.current }} / {{ progress.total }}
+                    第 {{ progress.round_number }} 轮 - 题目 {{ progress.current }} / {{ progress.total }}
                   </template>
                 </div>
                 <div class="progress-bar-visual">
@@ -137,6 +141,15 @@
                   <div v-if="isViewingHistory" class="history-notice">
                     <span class="history-icon">📋</span>
                     <span class="history-text">查看答题历史记录</span>
+                  </div>
+
+                  <!-- 自动跳转提示 -->
+                  <div v-if="showAutoNextHint && !isViewingHistory" class="auto-next-hint">
+                    <span class="countdown-icon">⏰</span>
+                    <span class="countdown-text">{{ autoNextCountdownText }}</span>
+                    <button class="btn-cancel-auto" @click="clearAutoNextTimer">
+                      取消自动跳转
+                    </button>
                   </div>
 
                   <div class="question-review-content">
@@ -263,6 +276,7 @@ interface QuestionStatus {
 const props = defineProps<{
   tikuid: string
   order?: string
+  types?: string  // 添加题型参数
 }>()
 
 const router = useRouter()
@@ -275,6 +289,7 @@ const showNavigationBar = ref(false)
 // 响应式状态
 const fileDisplayName = ref<string>('')
 const orderMode = ref<string>('')  // 添加练习模式状态
+const selectedQuestionTypes = ref<string[]>([])  // 添加题型状态
 const question = ref<Question | null>(null)
 const progress = ref<Progress | null>(null)
 const messages = ref<FlashMessage[]>([])
@@ -310,6 +325,14 @@ const tfOptions = {
   F: { text: '错误' },
 }
 
+// 题型映射
+const questionTypeNames = {
+  'single_choice': '单选题',
+  'multiple_choice': '多选题', 
+  'judgment': '判断题',
+  'other': '其他题型'
+}
+
 // 计算属性
 const progressPercentage = computed(() => {
   if (!progress.value) return 0
@@ -317,6 +340,21 @@ const progressPercentage = computed(() => {
 })
 
 const currentQuestionIndex = computed(() => (progress.value ? progress.value.current - 1 : 0))
+
+// 题型文本显示
+const questionTypesText = computed(() => {
+  if (selectedQuestionTypes.value.length === 0) return ''
+  
+  if (selectedQuestionTypes.value.length === Object.keys(questionTypeNames).length) {
+    return '全部题型'
+  }
+  
+  const typeNames = selectedQuestionTypes.value
+    .map(type => questionTypeNames[type as keyof typeof questionTypeNames])
+    .filter(Boolean)
+  
+  return typeNames.join('、')
+})
 
 // 小屏幕检测
 const isMobileScreen = computed(() => screenWidth.value <= 768)
@@ -507,18 +545,21 @@ const handleFeedbackAction = () => {
 
 // 自动跳转相关函数
 const startAutoNextTimer = () => {
-  showAutoNextHint.value = true
-  autoNextCountdown.value = 2
+  // 添加延迟，让反馈页面先稳定显示
+  setTimeout(() => {
+    showAutoNextHint.value = true
+    autoNextCountdown.value = 2
 
-  const countdownInterval = setInterval(() => {
-    autoNextCountdown.value -= 0.1
-    if (autoNextCountdown.value <= 0) {
-      clearInterval(countdownInterval)
-      executeAutoNext()
-    }
-  }, 100)
+    const countdownInterval = setInterval(() => {
+      autoNextCountdown.value -= 0.1
+      if (autoNextCountdown.value <= 0) {
+        clearInterval(countdownInterval)
+        executeAutoNext()
+      }
+    }, 100)
 
-  autoNextTimer.value = countdownInterval
+    autoNextTimer.value = countdownInterval
+  }, 300) // 延迟300ms显示自动跳转提示
 }
 
 const clearAutoNextTimer = () => {
@@ -532,9 +573,12 @@ const clearAutoNextTimer = () => {
 
 const executeAutoNext = () => {
   clearAutoNextTimer()
-  if (progress.value && currentQuestionIndex.value < progress.value.total - 1) {
-    goToNextQuestion()
-  }
+  // 添加短暂延迟让UI稍微稳定
+  setTimeout(() => {
+    if (progress.value && currentQuestionIndex.value < progress.value.total - 1) {
+      goToNextQuestion()
+    }
+  }, 100)
 }
 
 const handleOptionSelect = (key: string) => {
@@ -669,119 +713,205 @@ const syncQuestionStatuses = async () => {
   }
 }
 
+// Helper function to initialize display-related info from props and API
+const initializeSessionDisplayInfo = async () => {
+  try {
+    const fileOptions = await apiService.getFileOptions()
+    let tikuInfo = null
+    if (fileOptions.subjects && typeof fileOptions.subjects === 'object') {
+      for (const key in fileOptions.subjects) {
+        if (Object.prototype.hasOwnProperty.call(fileOptions.subjects, key)) {
+          const subjectData = (fileOptions.subjects as Record<string, any>)[key];
+          if (subjectData && Array.isArray(subjectData.files)) {
+            for (const file of subjectData.files as Array<{tiku_id: string | number, display: string}>) {
+              if (file.tiku_id && file.tiku_id.toString() === props.tikuid) {
+                tikuInfo = file;
+                break;
+              }
+            }
+          }
+        }
+        if (tikuInfo) break;
+      }
+    }
+
+    fileDisplayName.value = tikuInfo ? tikuInfo.display : `题库ID: ${props.tikuid}`
+    orderMode.value = props.order === 'random' ? '乱序练习' : '顺序练习'
+
+    if (props.types) {
+      try {
+        selectedQuestionTypes.value = [
+          ...new Set(props.types.split(',').map((t) => t.trim()).filter(Boolean)),
+        ]
+      } catch (error) {
+        console.warn('解析题型参数失败:', error)
+        selectedQuestionTypes.value = []
+      }
+    } else {
+      selectedQuestionTypes.value = []
+    }
+  } catch (error) {
+    console.warn('获取题库信息失败，将使用默认显示名:', error)
+    fileDisplayName.value = `题库ID: ${props.tikuid}`
+    orderMode.value = props.order === 'random' ? '乱序练习' : '顺序练习'
+    selectedQuestionTypes.value = []
+  }
+}
+
+// Helper function to process question data and update reactive state
+const processQuestionDataAndUpdateState = (responseData: any, isNewSessionContext: boolean = false) => {
+  const {
+    question: newQuestion,
+    progress: newProgress,
+    flash_messages,
+    session_config,
+  } = responseData
+
+  if (!newQuestion && !newProgress) { // If no question and no progress, likely nothing to practice
+    question.value = null
+    progress.value = null
+    messages.value = flash_messages || []
+    shuffledMcqOptions.value = {}
+    questionStatuses.value = []
+    if (selectedQuestionTypes.value.length === 0 && !props.types) {
+      selectedQuestionTypes.value = Object.keys(questionTypeNames) // Default if completely empty start
+    }
+    return false
+  }
+  
+  question.value = newQuestion || null
+  progress.value = newProgress || null
+  messages.value = flash_messages || []
+
+  // Set selectedQuestionTypes from session_config if not provided by props and not already populated
+  if (selectedQuestionTypes.value.length === 0 && !props.types) {
+    const typesFromSession = session_config?.question_types;
+    if (Array.isArray(typesFromSession) && typesFromSession.length > 0) {
+      const filteredStringTypes = typesFromSession.filter((type): type is string => typeof type === 'string');
+      if (filteredStringTypes.length > 0) {
+        selectedQuestionTypes.value = [...new Set(filteredStringTypes)];
+      } else {
+        // If original typesFromSession had items but filtered list is empty, means non-string types were present.
+        if (typesFromSession.length > 0) {
+            console.warn("session_config.question_types contained non-string items. Defaulting to all types.");
+        }
+        selectedQuestionTypes.value = Object.keys(questionTypeNames);
+      }
+    } else {
+      // No types from session or empty array, default to all types.
+      selectedQuestionTypes.value = Object.keys(questionTypeNames);
+    }
+  }
+  // If props.types existed, selectedQuestionTypes would have been populated by initializeSessionDisplayInfo.
+  // If selectedQuestionTypes is STILL empty here (e.g. props.types was empty/invalid AND session had no types),
+  // a final fallback in onMounted will set it to all types.
+
+  if (newProgress) {
+    const total = newProgress.total
+    // Always ensure questionStatuses array is correctly sized.
+    // If it's a new session context or total count differs, reset with UNANSWERED.
+    // Otherwise, existing statuses are preserved for syncQuestionStatuses to update.
+    if (isNewSessionContext || questionStatuses.value.length !== total) {
+      questionStatuses.value = new Array(total).fill(QUESTION_STATUS.UNANSWERED)
+    }
+  } else {
+    // No progress data, clear statuses. This case should be rare if questions exist.
+    questionStatuses.value = []
+  }
+
+  if (newQuestion?.options_for_practice) {
+    shuffledMcqOptions.value = { ...newQuestion.options_for_practice }
+  } else {
+    shuffledMcqOptions.value = {}
+  }
+  return !!newQuestion // Return true if a question was processed
+}
+
 onMounted(async () => {
   try {
-    // 添加屏幕尺寸监听
     if (typeof window !== 'undefined') {
       window.addEventListener('resize', handleResize)
     }
-    
-    // 隐藏导航栏，提供专注的练习体验
-    showNavigationBar.value = false
-    
-    // 首先确保用户已认证
+    showNavigationBar.value = false // Focus mode
+
     if (!authStore.isAuthenticated) {
       await authStore.checkAuth()
       if (!authStore.isAuthenticated) {
-        toast.error('用户认证已过期，请重新登录', {
-          timeout: 3000,
-        })
+        toast.error('用户认证已过期，请重新登录', { timeout: 3000 })
         router.push('/login')
         return
       }
     }
 
-    // 验证tikuid参数
     if (!props.tikuid) {
       toast.error('缺少题库ID参数', { timeout: 3000 })
       router.push('/')
       return
     }
 
-    // 获取文件选项以找到对应的题库信息（用于显示题库名称）
-    try {
-      const fileOptions = await apiService.getFileOptions()
-      let tikuInfo = null
+    await initializeSessionDisplayInfo()
 
-      // 查找对应的题库信息
-      for (const [subject, data] of Object.entries(fileOptions.subjects)) {
-        for (const file of data.files) {
-          if (file.tiku_id && file.tiku_id.toString() === props.tikuid) {
-            tikuInfo = file
-            break
-          }
-        }
-        if (tikuInfo) break
-      }
+    let questionResponse = await apiService.getCurrentQuestion()
 
-      // 设置题库信息
-      if (tikuInfo) {
-        fileDisplayName.value = tikuInfo.display
-      } else {
-        fileDisplayName.value = `题库ID: ${props.tikuid}`
-      }
-      
-      const orderText = props.order === 'random' ? '乱序练习' : '顺序练习'
-      orderMode.value = orderText
-    } catch (error) {
-      console.warn('获取题库信息失败，将使用默认显示名:', error)
-      fileDisplayName.value = `题库ID: ${props.tikuid}`
-      orderMode.value = props.order === 'random' ? '乱序练习' : '顺序练习'
-    }
-
-    // 使用apiService.startPractice启动练习
-    const shuffleQuestions = (props.order || 'random') === 'random'
-    const startResponse = await apiService.startPractice(props.tikuid, true, shuffleQuestions)
-    
-    if (!startResponse.success) {
-      throw new Error(startResponse.message || '启动练习失败')
-    }
-
-    // 获取第一道题目
-    const questionResponse = await apiService.getCurrentQuestion()
-    
     if (questionResponse.redirect_to_completed) {
       router.push('/completed')
       return
     }
 
+    let isNewSession = false
     if (questionResponse.success && questionResponse.question) {
-      // 处理返回的数据
-      question.value = questionResponse.question
-      progress.value = questionResponse.progress
-      messages.value = questionResponse.flash_messages || []
-
-      // 初始化答题卡状态
-      if (progress.value) {
-        const newLength = progress.value.total
-        questionStatuses.value = new Array(newLength).fill(QUESTION_STATUS.UNANSWERED)
-      }
-
-      // 重置选项
-      if (question.value && question.value.options_for_practice) {
-        shuffledMcqOptions.value = { ...question.value.options_for_practice }
-      } else {
-        shuffledMcqOptions.value = {}
-      }
-
-      // 同步答题卡状态
-      await syncQuestionStatuses()
-
-      toast.success('练习启动成功', { timeout: 2000 })
+      processQuestionDataAndUpdateState(questionResponse, false)
     } else {
-      throw new Error(questionResponse.message || '获取题目失败')
+      console.warn('没有找到活跃的练习会话或题目，尝试启动新的练习会话')
+      const shuffleQuestions = (props.order || 'random') === 'random'
+      // Ensure selectedQuestionTypes is passed to startPractice if available from props
+      const typesToStart = selectedQuestionTypes.value.length > 0 ? selectedQuestionTypes.value : undefined
+
+      const startResponse = await apiService.startPractice(
+        props.tikuid,
+        true, // assume new round if no current question
+        shuffleQuestions,
+        typesToStart
+      )
+
+      if (!startResponse.success) {
+        throw new Error(startResponse.message || '启动练习失败')
+      }
+      
+      isNewSession = true
+      // After starting, fetch the first question
+      questionResponse = await apiService.getCurrentQuestion()
+
+      if (questionResponse.redirect_to_completed) {
+        router.push('/completed')
+        return
+      }
+
+      if (!questionResponse.success || !questionResponse.question) {
+        throw new Error(questionResponse.message || '获取题目失败')
+      }
+      processQuestionDataAndUpdateState(questionResponse, true)
     }
+    
+    // Always sync statuses after processing initial data
+    await syncQuestionStatuses()
+    
+    // If after all attempts, selectedQuestionTypes is still empty (e.g. props were empty, session was empty)
+    // default to all types. This is a fallback.
+    if (selectedQuestionTypes.value.length === 0) {
+        selectedQuestionTypes.value = Object.keys(questionTypeNames);
+    }
+
+    toast.success(`练习${isNewSession ? '启动' : '加载'}成功`, { timeout: 2000 })
 
   } catch (error) {
     console.error('Error initializing practice:', error)
     toast.error(error instanceof Error ? error.message : '练习会话初始化失败', {
       timeout: 5000,
     })
-    setTimeout(() => {
-      router.push('/')
-    }, 3000)
+    setTimeout(() => router.push('/'), 3000)
   } finally {
-    initializing.value = false // 初始化完成
+    initializing.value = false
   }
 })
 
@@ -794,35 +924,16 @@ const loadQuestion = async () => {
       return
     }
 
-    if (response.question) {
-      question.value = response.question
-      progress.value = response.progress
-      messages.value = response.flash_messages || []
-      displayMode.value = 'question'
+    if (response.success) { // Check for success flag
+      processQuestionDataAndUpdateState(response, false) // Not a new session context
+      resetState() // Reset answers, mode to question
       isViewingHistory.value = false
-      resetState()
-
-      // 确保答题卡状态数组长度匹配
-      if (progress.value && questionStatuses.value.length !== progress.value.total) {
-        const newLength = progress.value.total
-        if (questionStatuses.value.length < newLength) {
-          const additionalStatuses = new Array(newLength - questionStatuses.value.length).fill(
-            QUESTION_STATUS.UNANSWERED,
-          )
-          questionStatuses.value = [...questionStatuses.value, ...additionalStatuses]
-        } else {
-          questionStatuses.value = questionStatuses.value.slice(0, newLength)
-        }
-      }
-
-      // 重置选项
-      if (question.value && question.value.options_for_practice) {
-        shuffledMcqOptions.value = { ...question.value.options_for_practice }
-      } else {
-        shuffledMcqOptions.value = {}
-      }
+      // No need to call syncQuestionStatuses here usually, as jumpToQuestion handles history
+      // and regular navigation implies statuses are managed.
+      // However, if progress.total could change, statuses array length is handled by processQuestionDataAndUpdateState.
     } else {
-      throw new Error('Failed to load question data')
+      // Throw error if not successful or no question, to be caught by catch block
+      throw new Error(response.message || 'Failed to load question data')
     }
   } catch (error) {
     console.error('Error loading question:', error)
@@ -997,21 +1108,6 @@ const formatAnswerWithOptions = (
   return `${answer}. ${options[answer] || ''}`
 }
 
-// 监听器
-watch(
-  () => progress.value?.total,
-  (newTotal) => {
-    if (newTotal && newTotal > 0 && questionStatuses.value.length !== newTotal) {
-      const newStatuses = new Array(newTotal).fill(QUESTION_STATUS.UNANSWERED)
-      for (let i = 0; i < Math.min(questionStatuses.value.length, newTotal); i++) {
-        newStatuses[i] = questionStatuses.value[i]
-      }
-      questionStatuses.value = newStatuses
-    }
-  },
-  { immediate: true },
-)
-
 // 生命周期
 onBeforeUnmount(() => {
   clearAutoNextTimer()
@@ -1092,7 +1188,9 @@ onBeforeUnmount(() => {
 /* 内容容器 */
 .content-container {
   position: relative;
-  min-height: 500px; /* 保持稳定的高度 */
+  min-height: 600px; /* 增加最小高度，提供更稳定的布局 */
+  display: flex;
+  flex-direction: column;
 }
 
 /* 页面头部 */
@@ -1202,8 +1300,11 @@ onBeforeUnmount(() => {
   padding: 2rem;
   margin-bottom: 2rem;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
-  min-height: 500px; /* 添加最小高度防止布局跳跃 */
+  min-height: 550px; /* 增加最小高度防止布局跳跃 */
   transition: opacity 0.3s ease;
+  flex: 1; /* 填充可用空间 */
+  display: flex;
+  flex-direction: column;
 }
 
 .question-section.content-loading {
@@ -1461,6 +1562,43 @@ onBeforeUnmount(() => {
   border: 1px solid #0ea5e9;
   border-radius: 8px;
   margin: 1rem 0;
+  animation: slideInFromTop 0.3s ease-out;
+  position: relative;
+  overflow: hidden;
+}
+
+@keyframes slideInFromTop {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.countdown-icon {
+  font-size: 1.25rem;
+  animation: bounce 1s infinite;
+}
+
+@keyframes bounce {
+  0%, 20%, 50%, 80%, 100% {
+    transform: translateY(0);
+  }
+  40% {
+    transform: translateY(-3px);
+  }
+  60% {
+    transform: translateY(-2px);
+  }
+}
+
+.countdown-text {
+  font-weight: 500;
+  color: #0369a1;
+  font-size: 0.95rem;
 }
 
 .btn-cancel-auto {
@@ -1473,6 +1611,12 @@ onBeforeUnmount(() => {
   font-weight: 600;
   cursor: pointer;
   transition: all 0.3s ease;
+  flex-shrink: 0;
+}
+
+.btn-cancel-auto:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.25);
 }
 
 .question-review-content {
@@ -1480,6 +1624,8 @@ onBeforeUnmount(() => {
   padding: 2rem;
   border-radius: 12px;
   margin-bottom: 2rem;
+  flex: 1; /* 填充可用空间 */
+  min-height: 300px; /* 确保有最小高度 */
 }
 
 .question-text-review {
@@ -1634,10 +1780,14 @@ onBeforeUnmount(() => {
   font-size: 0.9rem;
 }
 
-/* 过渡动画 */
-.content-fade-enter-active,
+/* 过渡动画优化 */
+.content-fade-enter-active {
+  transition: opacity 0.15s ease-in;
+  transition-delay: 0.1s; /* 增加延迟，确保前一个元素完全消失 */
+}
+
 .content-fade-leave-active {
-  transition: opacity 0.2s ease-out;
+  transition: opacity 0.1s ease-out;
 }
 
 .content-fade-enter-from {
@@ -1646,10 +1796,6 @@ onBeforeUnmount(() => {
 
 .content-fade-leave-to {
   opacity: 0;
-}
-
-.content-fade-enter-active {
-  transition-delay: 0.05s; /* 轻微延迟进入动画，确保离开动画完成 */
 }
 
 /* 响应式设计 */
@@ -1789,5 +1935,25 @@ onBeforeUnmount(() => {
   font-weight: 600;
   border-radius: 999px;
   vertical-align: middle;
+}
+
+/* 题型标识 */
+.question-types-badge {
+  display: inline-block;
+  margin-left: 1rem;
+  padding: 0.5rem 1rem;
+  background: linear-gradient(135deg, #8b5cf6, #c084fc);
+  color: white;
+  font-size: 0.9rem;
+  font-weight: 600;
+  border-radius: 999px;
+  vertical-align: middle;
+}
+
+.feedback-actions {
+  margin-top: auto; /* 将按钮推到底部 */
+  padding-top: 1rem;
+  display: flex;
+  justify-content: center;
 }
 </style>

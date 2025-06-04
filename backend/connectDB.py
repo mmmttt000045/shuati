@@ -254,7 +254,7 @@ def get_user_model(cursor, user_id: int) -> Optional[int]:
 def get_user_info(cursor, user_id: int) -> Optional[Dict[str, Any]]:
     """根据用户ID获取用户信息"""
     query = """
-            SELECT id, username, is_enabled, created_at, model
+            SELECT id , username, is_enabled, created_at, model
             FROM user_accounts
             WHERE id = %s
             """ # Removed trailing backslash

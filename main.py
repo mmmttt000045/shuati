@@ -7,7 +7,7 @@ import sys
 import threading
 import time
 
-from flask import Flask, send_from_directory, session
+from flask import Flask, send_from_directory, session, request
 from flask_cors import CORS
 
 # 导入backend模块

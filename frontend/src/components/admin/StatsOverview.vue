@@ -14,7 +14,7 @@
       <div class="stat-content">
         <div class="stat-number">{{ stats.invitations.unused }}</div>
         <div class="stat-label">可用邀请码</div>
-        <div class="stat-detail">已用: {{ (stats.invitations.total - stats.invitations.unused) || 0 }} / 总计: {{ stats.invitations.total }}</div>
+        <div class="stat-detail">已用: {{ stats.invitations.used }} / 总计: {{ stats.invitations.total }}</div>
       </div>
     </div>
 
@@ -42,7 +42,7 @@
 
 <script lang="ts" setup>
 import IconSubject from '@/components/icons/IconSubject.vue'
-import type { AdminStats } from '@/services/api'
+import type { AdminStats } from '@/types'
 
 interface Props {
   stats: AdminStats | null

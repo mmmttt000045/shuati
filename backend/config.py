@@ -89,6 +89,8 @@ class Config:
     SECRET_KEY = 'your-fixed-secret-key-here'
     
     # Session 配置 - 优化的2小时过期机制
+    # 优化: 大型session数据(如题目索引、答题状态等)现在存储在数据库中,
+    # 只有关键信息存储在cookie中, 以避免超过4KB浏览器限制
     SESSION_COOKIE_SECURE = False  # Development setting
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = 'Lax'
@@ -106,7 +108,7 @@ class Config:
     
     # CORS 配置
     CORS_ORIGINS = ["*"]
-    CORS_METHODS = ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+    CORS_METHODS = ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"]
     CORS_HEADERS = ["Content-Type", "Authorization", "Accept", "Origin",
                     "X-Requested-With", "Cache-Control", "Pragma"]
     CORS_SUPPORTS_CREDENTIALS = True

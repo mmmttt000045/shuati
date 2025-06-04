@@ -89,11 +89,12 @@ def api_login():
         user_info = get_user_info(result['user_id'])
         
         logger.info(f"User logged in: {result['username']}")
-        return create_response(True, '登录成功', {
+        return create_response(True, '登录成功',
+        {
             'user': {
-                'user_id': user_info['user_id'] if user_info else result['user_id'],
-                'username': user_info['username'] if user_info else result['username'],
-                'model': user_info.get('model', 0) if user_info else 0
+                'user_id': user_info['id'],
+                'username': user_info['username'],
+                'model': user_info.get('model', 0)
             },
             'session': session_manager.get_session_info()
         })
@@ -126,7 +127,7 @@ def api_get_user_info():
     if user_info:
         return create_response(True, data={
             'user': {
-                'user_id': user_info['user_id'],
+                'user_id': user_info['id'],
                 'username': user_info['username'],
                 'is_enabled': user_info['is_enabled'],
                 'created_at': user_info['created_at'].isoformat() if user_info['created_at'] else None,
@@ -150,7 +151,7 @@ def api_check_auth():
         return create_response(True, data={
             'authenticated': True,
             'user': {
-                'user_id': user_info['user_id'] if user_info else user_id,
+                'user_id': user_info['id'] if user_info else user_id,
                 'username': user_info['username'] if user_info else session.get('username'),
                 'model': user_info.get('model', 0) if user_info else 0
             }

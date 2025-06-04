@@ -294,7 +294,7 @@
 </template>
 
 <script lang="ts" setup>
-import { onMounted, ref, watch } from 'vue'
+import { onMounted, ref, watch, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useToast } from 'vue-toastification'
 import { apiService } from '@/services/api'
@@ -541,17 +541,36 @@ onMounted(async () => {
     }
 
     const response = await apiService.getFileOptions()
-    subjects.value = response.subjects
-    if (response.message) {
-      // 显示欢迎或状态信息
-      toast.info(response.message, {
-        timeout: 3000
-      })
-      // 同时在页面上保留重要信息
-      messages.value.push({
-        category: 'info',
-        text: response.message,
-      })
+    
+    if (response.success) {
+      // 后端的 create_response 会将 dict 类型的 data 直接合并到响应中
+      // 所以 subjects 字段直接在 response.data 的顶层
+      let subjectsData: Record<string, SubjectData>
+      
+      if (response.data && 'subjects' in response.data) {
+        // 标准情况：subjects 在 response.data 中
+        subjectsData = (response.data as any).subjects
+      } else {
+        // 备用情况：空数据
+        subjectsData = {}
+      }
+      
+      subjects.value = subjectsData
+      
+      const message = response.data?.message || response.message
+      if (message) {
+        // 显示欢迎或状态信息
+        toast.info(message, {
+          timeout: 3000
+        })
+        // 同时在页面上保留重要信息
+        messages.value.push({
+          category: 'info',
+          text: message,
+        })
+      }
+    } else {
+      throw new Error(response.message || response.error || '获取题库数据失败')
     }
   } catch (error) {
     console.error('Error fetching subjects:', error)
@@ -1176,17 +1195,6 @@ const startPracticeWithConfig = async () => {
   max-height: 80vh;
   overflow-y: auto;
   animation: dialogSlideIn 0.3s ease-out;
-}
-
-@keyframes dialogSlideIn {
-  from {
-    opacity: 0;
-    transform: translateY(-20px) scale(0.95);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
 }
 
 .confirm-header {

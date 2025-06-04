@@ -143,15 +143,6 @@
                     <span class="history-text">查看答题历史记录</span>
                   </div>
 
-                  <!-- 自动跳转提示 -->
-                  <div v-if="showAutoNextHint && !isViewingHistory" class="auto-next-hint">
-                    <span class="countdown-icon">⏰</span>
-                    <span class="countdown-text">{{ autoNextCountdownText }}</span>
-                    <button class="btn-cancel-auto" @click="clearAutoNextTimer">
-                      取消自动跳转
-                    </button>
-                  </div>
-
                   <div class="question-review-content">
                     <h4>题目回顾：</h4>
                     <p :class="questionReviewClass">{{ question?.question }}</p>
@@ -174,12 +165,6 @@
 
                       <!-- 答错时的答案对比 -->
                       <template v-if="currentFeedback && !currentFeedback.is_correct">
-                        <div class="answer-item">
-                          <strong>你的答案：</strong>
-                          <span class="user-answer-text-incorrect">{{
-                            currentFeedback.user_answer_display
-                          }}</span>
-                        </div>
                         <div class="answer-item">
                           <strong>正确答案：</strong>
                           <span class="correct-answer-text">{{
@@ -652,17 +637,17 @@ const jumpToQuestion = async (index: number) => {
       try {
         const historyResponse = await apiService.getQuestionHistory(index)
 
-        if (historyResponse.success && historyResponse.question && historyResponse.feedback) {
-          question.value = historyResponse.question
-          currentFeedback.value = historyResponse.feedback
+        if (historyResponse.success && historyResponse.data?.question && historyResponse.data?.feedback) {
+          question.value = historyResponse.data.question
+          currentFeedback.value = historyResponse.data.feedback
 
           if (progress.value) {
             progress.value.current = index + 1
           }
 
           // 更新选项数据以确保反馈模式正常显示
-          if (historyResponse.question.options_for_practice) {
-            shuffledMcqOptions.value = { ...historyResponse.question.options_for_practice }
+          if (historyResponse.data.question.options_for_practice) {
+            shuffledMcqOptions.value = { ...historyResponse.data.question.options_for_practice }
           } else {
             shuffledMcqOptions.value = {}
           }
@@ -700,12 +685,12 @@ const jumpToQuestion = async (index: number) => {
 const syncQuestionStatuses = async () => {
   try {
     const statusResponse = await apiService.getQuestionStatuses()
-    if (statusResponse.success && statusResponse.statuses.length > 0) {
+    if (statusResponse.success && statusResponse.data?.statuses && statusResponse.data.statuses.length > 0) {
       const currentStatusStr = JSON.stringify(questionStatuses.value)
-      const newStatusStr = JSON.stringify(statusResponse.statuses)
+      const newStatusStr = JSON.stringify(statusResponse.data.statuses)
 
       if (currentStatusStr !== newStatusStr) {
-        questionStatuses.value = [...statusResponse.statuses]
+        questionStatuses.value = [...statusResponse.data.statuses]
       }
     }
   } catch (error) {
@@ -718,10 +703,10 @@ const initializeSessionDisplayInfo = async () => {
   try {
     const fileOptions = await apiService.getFileOptions()
     let tikuInfo = null
-    if (fileOptions.subjects && typeof fileOptions.subjects === 'object') {
-      for (const key in fileOptions.subjects) {
-        if (Object.prototype.hasOwnProperty.call(fileOptions.subjects, key)) {
-          const subjectData = (fileOptions.subjects as Record<string, any>)[key];
+    if (fileOptions.success && fileOptions.data?.subjects && typeof fileOptions.data.subjects === 'object') {
+      for (const key in fileOptions.data.subjects) {
+        if (Object.prototype.hasOwnProperty.call(fileOptions.data.subjects, key)) {
+          const subjectData = (fileOptions.data.subjects as Record<string, any>)[key];
           if (subjectData && Array.isArray(subjectData.files)) {
             for (const file of subjectData.files as Array<{tiku_id: string | number, display: string}>) {
               if (file.tiku_id && file.tiku_id.toString() === props.tikuid) {
@@ -833,7 +818,17 @@ onMounted(async () => {
       window.addEventListener('resize', handleResize)
     }
     showNavigationBar.value = false // Focus mode
+    
+    
+    // 隐藏导航栏，提供专注的练习体验
+    showNavigationBar.value = false
+    
+    // 首先确保用户已认证
 
+    // 隐藏导航栏，提供专注的练习体验
+    showNavigationBar.value = false
+    
+    // 首先确保用户已认证
     if (!authStore.isAuthenticated) {
       await authStore.checkAuth()
       if (!authStore.isAuthenticated) {
@@ -853,14 +848,14 @@ onMounted(async () => {
 
     let questionResponse = await apiService.getCurrentQuestion()
 
-    if (questionResponse.redirect_to_completed) {
+    if (questionResponse.success && questionResponse.data?.redirect_to_completed) {
       router.push('/completed')
       return
     }
 
     let isNewSession = false
-    if (questionResponse.success && questionResponse.question) {
-      processQuestionDataAndUpdateState(questionResponse, false)
+    if (questionResponse.success && questionResponse.data?.question) {
+      processQuestionDataAndUpdateState(questionResponse.data, false)
     } else {
       console.warn('没有找到活跃的练习会话或题目，尝试启动新的练习会话')
       const shuffleQuestions = (props.order || 'random') === 'random'
@@ -882,15 +877,15 @@ onMounted(async () => {
       // After starting, fetch the first question
       questionResponse = await apiService.getCurrentQuestion()
 
-      if (questionResponse.redirect_to_completed) {
+      if (questionResponse.success && questionResponse.data?.redirect_to_completed) {
         router.push('/completed')
         return
       }
 
-      if (!questionResponse.success || !questionResponse.question) {
+      if (!questionResponse.success || !questionResponse.data?.question) {
         throw new Error(questionResponse.message || '获取题目失败')
       }
-      processQuestionDataAndUpdateState(questionResponse, true)
+      processQuestionDataAndUpdateState(questionResponse.data, true)
     }
     
     // Always sync statuses after processing initial data
@@ -919,13 +914,13 @@ const loadQuestion = async () => {
   try {
     const response = await apiService.getCurrentQuestion()
 
-    if (response.redirect_to_completed) {
+    if (response.success && response.data?.redirect_to_completed) {
       router.push('/completed')
       return
     }
 
-    if (response.success) { // Check for success flag
-      processQuestionDataAndUpdateState(response, false) // Not a new session context
+    if (response.success && response.data) { // Check for success flag and data
+      processQuestionDataAndUpdateState(response.data, false) // Not a new session context
       resetState() // Reset answers, mode to question
       isViewingHistory.value = false
       // No need to call syncQuestionStatuses here usually, as jumpToQuestion handles history
@@ -954,30 +949,34 @@ const submitAnswer = async () => {
       ? Array.from(selectedAnswers.value).sort().join('')
       : selectedAnswer.value
 
-    const feedback = await apiService.submitAnswer(answer, question.value.id, false, false)
+    const feedbackResponse = await apiService.submitAnswer(answer, question.value.id, false, false)
 
-    currentFeedback.value = feedback
-    displayMode.value = 'feedback'
-    isViewingHistory.value = false
+    if (feedbackResponse.success && feedbackResponse.data) {
+      currentFeedback.value = feedbackResponse.data
+      displayMode.value = 'feedback'
+      isViewingHistory.value = false
 
-    if (feedback.is_correct) {
-      toast.success('回答正确！🎉', { timeout: 2000 })
+      if (feedbackResponse.data.is_correct) {
+        toast.success('回答正确！🎉', { timeout: 2000 })
 
-      // 启动自动跳转（如果不是最后一题）
-      if (progress.value && currentQuestionIndex.value < progress.value.total - 1) {
-        startAutoNextTimer()
+        // 启动自动跳转（如果不是最后一题）
+        if (progress.value && currentQuestionIndex.value < progress.value.total - 1) {
+          startAutoNextTimer()
+        }
+      } else {
+        toast.warning('回答错误，查看解析学习一下吧 📚', { timeout: 3000 })
       }
+
+      // 更新答题卡状态
+      updateQuestionStatus(currentQuestionIndex.value, feedbackResponse.data.is_correct)
+
+      // 同步后端状态
+      setTimeout(async () => {
+        await syncQuestionStatuses()
+      }, 100)
     } else {
-      toast.warning('回答错误，查看解析学习一下吧 📚', { timeout: 3000 })
+      throw new Error(feedbackResponse.message || '答案提交处理失败')
     }
-
-    // 更新答题卡状态
-    updateQuestionStatus(currentQuestionIndex.value, feedback.is_correct)
-
-    // 同步后端状态
-    setTimeout(async () => {
-      await syncQuestionStatuses()
-    }, 100)
   } catch (error) {
     console.error('Error submitting answer:', error)
     toast.error(error instanceof Error ? error.message : '答案提交失败', {
@@ -1016,11 +1015,11 @@ const revealAnswer = async () => {
       current_index: currentIndex,
     }
 
-    if (analysisResponse.success) {
+    if (analysisResponse.success && analysisResponse.data) {
       question.value = {
         ...question.value,
-        analysis: analysisResponse.analysis,
-        knowledge_points: analysisResponse.knowledge_points,
+        analysis: analysisResponse.data.analysis,
+        knowledge_points: analysisResponse.data.knowledge_points,
       }
     }
 

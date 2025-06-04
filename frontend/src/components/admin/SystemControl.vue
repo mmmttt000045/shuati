@@ -112,17 +112,17 @@
 import { ref, onMounted, computed, onUnmounted } from 'vue'
 import { useToast } from 'vue-toastification'
 import { useAuthStore } from '@/stores/auth'
-import { 
-  apiService, 
-  type AdminUser, 
-  type AdminInvitation, 
-  type Subject, 
-  type TikuItem, 
-  type UserSearchParams, 
-  type SearchParams, 
-  type Pagination,
-  type AdminStats
-} from '@/services/api'
+import { apiService } from '@/services/api'
+import type { 
+  AdminUser, 
+  AdminInvitation, 
+  AdminSubject as Subject, 
+  TikuItem, 
+  SearchParams, 
+  Pagination,
+  AdminStats,
+  UserModel
+} from '@/types'
 import Loading from '@/components/common/Loading.vue'
 import IconSubject from '@/components/icons/IconSubject.vue'
 
@@ -217,7 +217,8 @@ const loadStats = async () => {
   try {
     const response = await apiService.admin.getStats()
     if (response.success) {
-      stats.value = response.stats || null
+      // 后端返回的数据结构是 { data: { stats: {...} } }，需要提取 stats
+      stats.value = response.data?.stats || null
     } else {
       handleError(new Error(response.message), '获取统计信息')
     }
@@ -238,7 +239,7 @@ const loadUsers = async () => {
       per_page: 1000
     })
     if (response.success) {
-      users.value = response.users || []
+      users.value = response.data?.users || []
     } else {
       handleError(new Error(response.message), '获取用户列表')
     }
@@ -253,9 +254,9 @@ const toggleUser = async (userId: number) => {
   try {
     const response = await apiService.admin.toggleUser(userId)
     if (response.success) {
-      const user = users.value.find(u => u.id === userId)
+      const user = users.value.find((u: AdminUser) => u.id === userId)
       if (user) {
-        user.is_enabled = response.is_enabled || false
+        user.is_enabled = response.data?.is_enabled || false
       }
       handleSuccess(response.message || '操作成功', () => loadStats())
     } else {
@@ -267,7 +268,7 @@ const toggleUser = async (userId: number) => {
 }
 
 const updateUserModel = async (userId: number, model: number) => {
-  const user = users.value.find(u => u.id === userId)
+  const user = users.value.find((u: AdminUser) => u.id === userId)
   if (!user) {
     toast.error('用户不存在')
     return
@@ -298,7 +299,7 @@ const loadInvitations = async () => {
       per_page: 1000
     })
     if (response.success) {
-      invitations.value = response.invitations || []
+      invitations.value = response.data?.invitations || []
     } else {
       toast.error(response.message || '获取邀请码列表失败')
     }
@@ -368,7 +369,7 @@ const loadSubjects = async () => {
       per_page: 1000
     })
     if (response.success) {
-      subjects.value = response.subjects || []
+      subjects.value = response.data?.subjects || []
     } else {
       toast.error(response.message || '获取科目列表失败')
     }
@@ -461,7 +462,7 @@ const loadTiku = async (subjectId?: number) => {
       per_page: 1000
     })
     if (response.success) {
-      tikuList.value = response.tiku_list || []
+      tikuList.value = response.data?.tiku_list || []
     } else {
       toast.error(response.message || '获取题库列表失败')
     }
@@ -503,7 +504,7 @@ const uploadTiku = async (file: File, tikuName: string) => {
     )
     
     if (response.success) {
-      toast.success(`题库上传成功！共${response.question_count}道题目`)
+      toast.success(`题库上传成功！共${response.data?.question_count}道题目`)
       showUploadDialog.value = false
       loadTiku(selectedSubjectId.value)
       loadStats()
@@ -546,7 +547,7 @@ const toggleTiku = async (tiku: TikuItem) => {
   try {
     const response = await apiService.admin.toggleTiku(tiku.tiku_id)
     if (response.success) {
-      tiku.is_active = response.is_active || false
+      tiku.is_active = response.data?.is_active || false
       toast.success(response.message || '操作成功')
     } else {
       toast.error(response.message || '操作失败')
@@ -604,9 +605,9 @@ const confirmPermissionChange = async () => {
   try {
     const response = await apiService.admin.updateUserModel(pendingPermissionChange.value.userId, pendingPermissionChange.value.newModel)
     if (response.success) {
-      const user = users.value.find(u => u.id === pendingPermissionChange.value?.userId)
+      const user = users.value.find((u: AdminUser) => u.id === pendingPermissionChange.value?.userId)
       if (user) {
-        user.model = response.model || pendingPermissionChange.value.newModel
+        user.model = (response.data?.model || pendingPermissionChange.value.newModel) as UserModel
       }
       handleSuccess(response.message || '权限更新成功', () => loadStats())
       closePermissionChangeDialog()

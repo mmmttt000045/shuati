@@ -23,6 +23,14 @@ SESSION_LAST_ACTIVITY_KEY = 'last_activity'
 SESSION_LOGIN_TIME_KEY = 'login_time'
 SESSION_WARNING_SHOWN_KEY = 'warning_shown'
 
+# 优化：大数据存储在数据库中的keys - 这些不应该存储在cookie中
+DATABASE_STORED_KEYS = {
+    SESSION_KEYS['QUESTION_INDICES'],
+    SESSION_KEYS['WRONG_INDICES'], 
+    SESSION_KEYS['QUESTION_STATUSES'],
+    SESSION_KEYS['ANSWER_HISTORY']
+}
+
 
 class SessionManager:
     """优化的Session管理器"""
@@ -128,14 +136,86 @@ session_manager = SessionManager()
 
 
 def get_session_value(key: str, default: Any = None) -> Any:
-    """安全获取session值"""
+    """
+    优化的session值获取 - 大数据从数据库获取，小数据从cookie获取
+    """
+    # 如果是大数据key，从数据库获取
+    if key in DATABASE_STORED_KEYS:
+        return get_database_session_value(key, default)
+    
+    # 小数据从cookie获取
     return session.get(key, default)
 
 
 def set_session_value(key: str, value: Any) -> None:
-    """安全设置session值"""
+    """
+    优化的session值设置 - 大数据存储在数据库，小数据存储在cookie
+    """
+    # 如果是大数据key，存储到数据库
+    if key in DATABASE_STORED_KEYS:
+        set_database_session_value(key, value)
+        return
+    
+    # 小数据存储在cookie
     session[key] = value
     session.modified = True
+
+
+def get_database_session_value(key: str, default: Any = None) -> Any:
+    """从数据库获取session数据"""
+    session_id = session.get(PRACTICE_SESSION_ID_KEY)
+    if not session_id:
+        return default
+    
+    try:
+        from .connectDB import get_practice_session
+        session_data = get_practice_session(session_id)
+        
+        if not session_data:
+            return default
+        
+        # 映射session key到数据库字段
+        key_mapping = {
+            SESSION_KEYS['QUESTION_INDICES']: 'question_indices',
+            SESSION_KEYS['WRONG_INDICES']: 'wrong_indices',
+            SESSION_KEYS['QUESTION_STATUSES']: 'question_statuses',
+            SESSION_KEYS['ANSWER_HISTORY']: 'answer_history'
+        }
+        
+        db_field = key_mapping.get(key)
+        if db_field and db_field in session_data:
+            return session_data[db_field]
+            
+        return default
+        
+    except Exception as e:
+        logger.error(f"从数据库获取session数据失败: {e}")
+        return default
+
+
+def set_database_session_value(key: str, value: Any) -> None:
+    """设置数据库session数据"""
+    session_id = session.get(PRACTICE_SESSION_ID_KEY)
+    if not session_id:
+        logger.warning(f"尝试设置数据库session值 {key}，但没有找到session ID")
+        return
+    
+    try:
+        # 映射session key到数据库字段
+        key_mapping = {
+            SESSION_KEYS['QUESTION_INDICES']: 'question_indices',
+            SESSION_KEYS['WRONG_INDICES']: 'wrong_indices',
+            SESSION_KEYS['QUESTION_STATUSES']: 'question_statuses',
+            SESSION_KEYS['ANSWER_HISTORY']: 'answer_history'
+        }
+        
+        db_field = key_mapping.get(key)
+        if db_field:
+            update_data = {db_field: value}
+            update_current_practice_session(**update_data)
+        
+    except Exception as e:
+        logger.error(f"设置数据库session数据失败: {e}")
 
 
 def get_user_session_info() -> dict:
@@ -150,7 +230,7 @@ def get_user_session_info() -> dict:
 def create_and_store_practice_session(user_id: int, tiku_id: int, session_type: str = 'normal',
                                     shuffle_enabled: bool = True, selected_types: list = None,
                                     total_questions: int = 0, question_indices: list = None) -> Optional[int]:
-    """创建练习会话并存储到数据库和Flask session中"""
+    """创建练习会话并存储到数据库和Flask session中 - 优化版本"""
     try:
         result = create_practice_session(
             user_id=user_id,
@@ -164,11 +244,16 @@ def create_and_store_practice_session(user_id: int, tiku_id: int, session_type: 
         
         if result['success']:
             session_id = result['session_id']
-            # 将会话ID存储到Flask session中
+            # 只将会话ID和基本信息存储到Flask session cookie中
             session[PRACTICE_SESSION_ID_KEY] = session_id
+            session[SESSION_KEYS['CURRENT_TIKU_ID']] = tiku_id
+            session[SESSION_KEYS['CURRENT_INDEX']] = 0
+            session[SESSION_KEYS['ROUND_NUMBER']] = 1
+            session[SESSION_KEYS['INITIAL_TOTAL']] = total_questions
+            session[SESSION_KEYS['CORRECT_FIRST_TRY']] = 0
             session.modified = True
             
-            logger.info(f"创建练习会话成功: session_id={session_id}")
+            logger.info(f"创建练习会话成功: session_id={session_id} (大数据存储在数据库中)")
             return session_id
         else:
             logger.error(f"创建练习会话失败: {result['error']}")
@@ -201,7 +286,7 @@ def update_current_practice_session(**kwargs) -> bool:
 
 
 def complete_current_practice_session(final_stats: dict = None) -> bool:
-    """完成当前的练习会话"""
+    """完成当前的练习会话 - 优化版本"""
     session_id = session.get(PRACTICE_SESSION_ID_KEY)
     if not session_id:
         logger.warning("没有找到当前练习会话ID")
@@ -210,8 +295,13 @@ def complete_current_practice_session(final_stats: dict = None) -> bool:
     try:
         result = complete_practice_session(session_id, final_stats)
         if result['success']:
-            # 清除Flask session中的会话ID
+            # 清除Flask session中的会话ID和所有练习相关数据
             session.pop(PRACTICE_SESSION_ID_KEY, None)
+            session.pop(SESSION_KEYS['CURRENT_TIKU_ID'], None)
+            session.pop(SESSION_KEYS['CURRENT_INDEX'], None)
+            session.pop(SESSION_KEYS['ROUND_NUMBER'], None)
+            session.pop(SESSION_KEYS['INITIAL_TOTAL'], None)
+            session.pop(SESSION_KEYS['CORRECT_FIRST_TRY'], None)
             session.modified = True
             
             logger.info(f"完成练习会话成功: session_id={session_id}")
@@ -231,34 +321,21 @@ def get_current_practice_session_id() -> Optional[int]:
 
 
 def check_and_resume_practice_session(user_id: int, tiku_id: int = None) -> Optional[dict]:
-    """检查并恢复用户的活跃练习会话"""
+    """检查并恢复用户的活跃练习会话 - 优化版本：只存储关键信息到cookie"""
     try:
         active_session = get_user_active_practice_session(user_id, tiku_id)
         if active_session:
-            # 将会话ID存储到Flask session中
+            # 只将会话ID和基本信息存储到Flask session中，大数据保留在数据库
             session[PRACTICE_SESSION_ID_KEY] = active_session['id']
-            session.modified = True
-            
-            # 恢复Flask session中的练习数据
-            if active_session.get('question_indices'):
-                session[SESSION_KEYS['QUESTION_INDICES']] = active_session['question_indices']
-            if active_session.get('current_question_index') is not None:
-                session[SESSION_KEYS['CURRENT_INDEX']] = active_session['current_question_index']
-            if active_session.get('wrong_indices'):
-                session[SESSION_KEYS['WRONG_INDICES']] = active_session['wrong_indices']
-            if active_session.get('round_number'):
-                session[SESSION_KEYS['ROUND_NUMBER']] = active_session['round_number']
-            if active_session.get('total_questions'):
-                session[SESSION_KEYS['INITIAL_TOTAL']] = active_session['total_questions']
-            if active_session.get('correct_first_try') is not None:
-                session[SESSION_KEYS['CORRECT_FIRST_TRY']] = active_session['correct_first_try']
-            if active_session.get('question_statuses'):
-                session[SESSION_KEYS['QUESTION_STATUSES']] = active_session['question_statuses']
-            if active_session.get('answer_history'):
-                session[SESSION_KEYS['ANSWER_HISTORY']] = active_session['answer_history']
-            
             session[SESSION_KEYS['CURRENT_TIKU_ID']] = active_session['tiku_id']
+            session[SESSION_KEYS['CURRENT_INDEX']] = active_session.get('current_question_index', 0)
+            session[SESSION_KEYS['ROUND_NUMBER']] = active_session.get('round_number', 1)
+            session[SESSION_KEYS['INITIAL_TOTAL']] = active_session.get('total_questions', 0)
+            session[SESSION_KEYS['CORRECT_FIRST_TRY']] = active_session.get('correct_first_try', 0)
             session.modified = True
+            
+            # 大数据（question_indices, wrong_indices, question_statuses, answer_history）
+            # 已经在数据库中，通过get_session_value会自动从数据库获取
             
             logger.info(f"恢复活跃练习会话: session_id={active_session['id']}")
             return active_session
@@ -271,24 +348,23 @@ def check_and_resume_practice_session(user_id: int, tiku_id: int = None) -> Opti
 
 
 def clear_practice_session() -> None:
-    """清除练习相关的session数据"""
-    # 定义需要清除的练习相关键
+    """清除练习相关的session数据 - 优化版本：只清除cookie中的数据"""
+    # 只清除cookie中的练习相关键（大数据在数据库中会通过会话管理自动清理）
     practice_keys = [
         SESSION_KEYS['CURRENT_TIKU_ID'],
-        SESSION_KEYS['QUESTION_INDICES'],
         SESSION_KEYS['CURRENT_INDEX'],
         SESSION_KEYS['WRONG_INDICES'],
         SESSION_KEYS['ROUND_NUMBER'],
         SESSION_KEYS['INITIAL_TOTAL'],
         SESSION_KEYS['CORRECT_FIRST_TRY'],
-        SESSION_KEYS['QUESTION_STATUSES'],
-        SESSION_KEYS['ANSWER_HISTORY'],
-        PRACTICE_SESSION_ID_KEY  # 新增：清除练习会话ID
+        PRACTICE_SESSION_ID_KEY  # 清除会话ID以断开与数据库的连接
     ]
 
     for key in practice_keys:
         session.pop(key, None)
     session.modified = True
+    
+    # 大数据在数据库中，会话结束时会自动标记为完成状态
 
 
 def clear_all_session() -> None:

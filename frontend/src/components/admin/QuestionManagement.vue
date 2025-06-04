@@ -396,8 +396,8 @@ const loadQuestions = async () => {
     const response = await apiService.admin.getQuestions(props.tikuInfo.tiku_id)
     
     // 转换后端数据格式为前端期望的格式
-    if (response.questions) {
-      questions.value = response.questions.map((backendQ: any) => {
+    if (response.data?.questions) {
+      questions.value = response.data.questions.map((backendQ: any) => {
         // 从 options_for_practice 对象中提取选项
         const options = backendQ.options_for_practice || {}
         

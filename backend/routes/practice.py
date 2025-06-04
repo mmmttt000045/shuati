@@ -56,10 +56,10 @@ QUESTION_TYPE_MAPPING = {
 class CacheManager:
     def __init__(self):
         self._lock = threading.RLock()
-        self._tiku_cache = {'data': None, 'timestamp': 0}
-        self._file_options_cache = {'data': None, 'timestamp': 0}
-        self._question_bank_cache = LRUCache(maxsize=10)  # Cache for question banks
-        self._question_bank_lock = threading.RLock()  # Lock for question bank cache
+        self._tiku_list_cache = {'data': None, 'timestamp': 0}  # 题库列表缓存
+        self._file_options_cache = {'data': None, 'timestamp': 0}  # 文件选项缓存
+        self._question_bank_cache = LRUCache(maxsize=10)  # 题目缓存，key为tiku_id
+        self._question_bank_lock = threading.RLock()
         self._cache_ttl = 3600  # 1小时TTL
 
     def _is_cache_valid(self, cache_entry: dict) -> bool:
@@ -70,9 +70,9 @@ class CacheManager:
     def get_tiku_list(self):
         """获取缓存的题库列表"""
         with self._lock:
-            if self._is_cache_valid(self._tiku_cache):
+            if self._is_cache_valid(self._tiku_list_cache):
                 logger.debug("使用缓存的题库列表数据")
-                return self._tiku_cache['data']
+                return self._tiku_list_cache['data']
 
             logger.info("重新加载题库列表缓存")
             try:
@@ -87,14 +87,16 @@ class CacheManager:
 
                 subjects_exam_time = {s['subject_name']: s['exam_time'] for s in all_subjects}
 
-                self._tiku_cache['data'] = {
+                cache_data = {
                     'tiku_list': db_tiku_list,
                     'subjects_exam_time': subjects_exam_time
                 }
-                self._tiku_cache['timestamp'] = time.time()
+                
+                self._tiku_list_cache['data'] = cache_data
+                self._tiku_list_cache['timestamp'] = time.time()
 
                 logger.info(f"成功加载并缓存了 {len(db_tiku_list)} 个题库")
-                return self._tiku_cache['data']
+                return cache_data
 
             except Exception as e:
                 logger.error(f"从数据库加载题库列表失败: {e}")
@@ -152,13 +154,38 @@ class CacheManager:
                 logger.error(f"处理文件选项缓存失败: {e}")
                 raise
 
+    def get_question_bank(self, tiku_id: int) -> List[Dict[str, Any]]:
+        """获取指定题库的题目列表，使用缓存"""
+        with self._question_bank_lock:
+            if tiku_id in self._question_bank_cache:
+                logger.debug(f"使用缓存的题目数据，题库ID: {tiku_id}")
+                return self._question_bank_cache[tiku_id]
+
+        logger.info(f"从数据库获取题库 {tiku_id} 的题目数据")
+        try:
+            # 从数据库获取题目列表
+            question_bank_list = get_questions_by_tiku(tiku_id)
+
+            if not question_bank_list:
+                logger.warning(f"题库 {tiku_id} 为空或不存在")
+                return []
+
+            with self._question_bank_lock:
+                self._question_bank_cache[tiku_id] = question_bank_list
+                logger.info(f"成功缓存题库 {tiku_id} 的 {len(question_bank_list)} 道题目")
+                return question_bank_list
+
+        except Exception as e:
+            logger.error(f"获取题库 {tiku_id} 的题目数据失败: {e}")
+            return []
+
     def refresh_all_cache(self):
         """刷新所有缓存"""
         with self._lock:
-            self._tiku_cache['data'] = None
+            self._tiku_list_cache['data'] = None
             self._file_options_cache['data'] = None
 
-            # Clear question bank cache as well
+            # 清空题目缓存
             with self._question_bank_lock:
                 self._question_bank_cache.clear()
 
@@ -166,40 +193,13 @@ class CacheManager:
             tiku_data = self.get_tiku_list()
             file_options_data = self.get_file_options()
 
-            logger.info("All caches cleared, including question banks.")
+            logger.info("所有缓存已刷新，包括题库列表和题目缓存")
 
             return {
                 'tiku_count': len(tiku_data['tiku_list']) if tiku_data else 0,
                 'subjects_count': len(file_options_data) if file_options_data else 0,
                 'message': '缓存刷新成功'
             }
-
-    def get_question_bank(self, tiku_id: int) -> List[Dict[str, Any]]:
-        """获取指定题库的题目列表，使用缓存"""
-        with self._question_bank_lock:
-            if tiku_id in self._question_bank_cache:
-                logger.debug(f"Using cached question bank for tiku_id: {tiku_id}")
-                return self._question_bank_cache[tiku_id]
-
-        logger.info(f"Fetching question bank for tiku_id: {tiku_id} from DB.")
-        # Assuming get_questions_by_tiku returns a list of question dicts
-        # This function is imported from ..connectDB
-        question_bank_list = get_questions_by_tiku(tiku_id)
-
-        if not question_bank_list:
-            # It's important to handle the case where a tiku might be empty or non-existent
-            # rather than caching an empty list indefinitely without context.
-            # Depending on desired behavior, could raise NotFound or return empty list.
-            # For now, consistent with previous logic, an empty bank is a problem for starting practice.
-            logger.warning(f"Question bank for tiku_id: {tiku_id} is empty or not found.")
-            # We will not cache an empty/non-existent bank here to allow retries 
-            # or to let calling functions handle the NotFound scenario appropriately.
-            return []  # Or raise NotFound(f"题库 {tiku_id} 为空或不存在") - returning [] for now
-
-        with self._question_bank_lock:
-            self._question_bank_cache[tiku_id] = question_bank_list
-            logger.info(f"Cached question bank for tiku_id: {tiku_id}, {len(question_bank_list)} questions.")
-            return question_bank_list
 
 
 # 单例缓存管理器
@@ -401,9 +401,34 @@ def api_start_practice():
     except ValueError:
         raise BadRequest("无效的题库ID格式")
 
+    # 首先验证题库是否存在和可用
+    try:
+        cached_tiku_data = cache_manager.get_tiku_list()
+        tiku_list = cached_tiku_data['tiku_list']
+        tiku_info = None
+        
+        for tiku in tiku_list:
+            if tiku['tiku_id'] == tiku_id:
+                tiku_info = tiku
+                break
+        
+        if not tiku_info:
+            raise BadRequest(f"题库ID {tiku_id} 不存在")
+        
+        if not tiku_info['is_active']:
+            raise BadRequest(f"题库已禁用: {tiku_info['tiku_name']}")
+            
+    except BadRequest:
+        # 重新抛出BadRequest异常
+        raise
+    except Exception as e:
+        logger.error(f"验证题库失败: {e}")
+        raise BadRequest(f"题库 {tiku_id} 不可用")
+
+    # 获取题库的题目数据
     question_bank = cache_manager.get_question_bank(tiku_id)
-    if not question_bank:  # Check if bank is empty or failed to load
-        raise BadRequest(f"题库 {tiku_id} 不可用或为空")
+    if not question_bank:
+        raise BadRequest(f"题库 {tiku_id} 为空或加载失败")
 
     user_info = get_user_session_info()
     user_id = user_info['user_id']
@@ -1214,3 +1239,50 @@ def api_practice_url_params():
     except Exception as e:
         logger.error(f"获取题目失败: {e}")
         raise BadRequest(f"获取题目失败: {str(e)}")
+
+
+@practice_bp.route('/cache/test', methods=['GET'])
+@login_required  
+@handle_api_error
+def api_test_cache():
+    """测试缓存系统是否正常工作"""
+    try:
+        # 测试题库列表缓存
+        tiku_data = cache_manager.get_tiku_list()
+        tiku_count = len(tiku_data['tiku_list']) if tiku_data and 'tiku_list' in tiku_data else 0
+        
+        # 测试文件选项缓存
+        file_options = cache_manager.get_file_options()
+        subjects_count = len(file_options) if file_options else 0
+        
+        # 测试题目缓存（如果有活跃的题库）
+        question_bank_test = None
+        if tiku_count > 0:
+            first_tiku = tiku_data['tiku_list'][0]
+            if first_tiku['is_active']:
+                test_tiku_id = first_tiku['tiku_id']
+                question_bank_test = cache_manager.get_question_bank(test_tiku_id)
+                
+        cache_test_result = {
+            'tiku_list_cache': {
+                'status': 'ok' if tiku_count > 0 else 'empty',
+                'count': tiku_count
+            },
+            'file_options_cache': {
+                'status': 'ok' if subjects_count > 0 else 'empty', 
+                'subjects_count': subjects_count
+            },
+            'question_bank_cache': {
+                'status': 'ok' if question_bank_test else 'not_tested',
+                'test_questions': len(question_bank_test) if question_bank_test else 0
+            }
+        }
+        
+        return create_response(True, '缓存系统测试完成', {
+            'cache_test': cache_test_result,
+            'timestamp': time.time()
+        })
+        
+    except Exception as e:
+        logger.error(f"缓存测试失败: {e}")
+        return create_response(False, f'缓存测试失败: {str(e)}', status_code=500)

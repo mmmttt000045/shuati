@@ -1,9 +1,5 @@
 import { AUTH_API_BASE_URL } from '@/config/api';
-import type { User, AuthResponse as BaseAuthResponse } from '@/types';
-
-interface AuthResponse extends BaseAuthResponse {
-  error?: string;
-}
+import type { User, LoginSuccessPayload, SessionInfo, AuthCheckClientResponseData, ServiceResponse } from '@/types';
 
 interface RegisterData {
   username: string;
@@ -14,13 +10,6 @@ interface RegisterData {
 interface LoginData {
   username: string;
   password: string;
-}
-
-interface AuthCheckResponse {
-  success: boolean;
-  authenticated: boolean;
-  user?: User;
-  error?: string;
 }
 
 class AuthService {
@@ -57,7 +46,7 @@ class AuthService {
     return fetch(url, finalOptions);
   }
 
-  async register(data: RegisterData): Promise<AuthResponse> {
+  async register(data: RegisterData): Promise<ServiceResponse<null>> {
     try {
       const response = await this.makeRequest(`${this.baseURL}/register`, {
         method: 'POST',
@@ -67,23 +56,26 @@ class AuthService {
       const result = await response.json();
       
       if (!response.ok || !result.success) {
-        const rawError = result.message || result.error || '注册失败，请重试';
+        const rawError = result.message || (result.error ? String(result.error) : '注册失败，请重试');
         return {
           success: false,
+          message: this.cleanErrorMessage(rawError),
           error: this.cleanErrorMessage(rawError)
         };
       }
       
-      return result;
-    } catch (error) {
+      return { success: true, message: result.message };
+    } catch (error: any) {
+      console.error('Register API error:', error);
       return {
         success: false,
-        error: '网络请求失败，请检查网络连接'
+        message: '网络请求失败，请检查网络连接',
+        error: error.message || '网络请求失败'
       };
     }
   }
 
-  async login(data: LoginData): Promise<AuthResponse> {
+  async login(data: LoginData): Promise<ServiceResponse<LoginSuccessPayload>> {
     try {
       const response = await this.makeRequest(`${this.baseURL}/login`, {
         method: 'POST',
@@ -93,68 +85,160 @@ class AuthService {
       const result = await response.json();
       
       if (!response.ok || !result.success) {
-        const rawError = result.message || result.error || '登录失败，请重试';
+        const rawError = result.message || (result.error ? String(result.error) : '登录失败，请重试');
         return {
           success: false,
-          error: this.cleanErrorMessage(rawError)
+          message: this.cleanErrorMessage(rawError),
+          error: this.cleanErrorMessage(rawError),
         };
       }
       
-      return result;
-    } catch (error) {
+      return { success: true, message: result.message, data: { user: result.user, session: result.session } };
+    } catch (error: any) {
+      console.error('Login API error:', error);
       return {
         success: false,
-        error: '网络请求失败，请检查网络连接'
+        message: '网络请求失败，请检查网络连接',
+        error: error.message || '网络请求失败',
+        data: undefined
       };
     }
   }
 
-  async logout(): Promise<AuthResponse> {
+  async logout(): Promise<ServiceResponse<null>> {
     try {
       const response = await this.makeRequest(`${this.baseURL}/logout`, {
         method: 'POST',
       });
-
-      return await response.json();
-    } catch (error) {
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+         const rawError = result.message || (result.error ? String(result.error) : '登出失败');
+         return { success: false, message: this.cleanErrorMessage(rawError), error: this.cleanErrorMessage(rawError) };
+      }
+      return result;
+    } catch (error: any) {
+      console.error('Logout API error:', error);
       return {
         success: false,
-        error: '网络请求失败'
+        message: '网络请求失败',
+        error: error.message || '网络请求失败'
       };
     }
   }
 
-  async checkAuth(): Promise<AuthCheckResponse> {
+  async checkAuth(): Promise<ServiceResponse<AuthCheckClientResponseData>> {
     try {
       const response = await this.makeRequest(`${this.baseURL}/check`, {
         method: 'GET',
       });
+      const result = await response.json();
 
-      return await response.json();
-    } catch (error) {
+      if (!response.ok || !result.success) {
+        const rawError = result.message || (result.error ? String(result.error) : '状态检查失败');
+        return { 
+          success: false,
+          message: this.cleanErrorMessage(rawError),
+          error: this.cleanErrorMessage(rawError),
+          data: { authenticated: false }
+        };
+      }
+      
+      return { success: true, data: result.data };
+    } catch (error: any) {
+      console.error('CheckAuth API error:', error);
       return {
         success: false,
-        authenticated: false,
-        error: '网络请求失败'
+        message: '网络请求失败',
+        error: error.message || '网络请求失败',
+        data: { authenticated: false }
       };
     }
   }
 
-  async getUserInfo(): Promise<AuthResponse> {
+  async getUserInfo(): Promise<ServiceResponse<{ user: User }>> {
     try {
       const response = await this.makeRequest(`${this.baseURL}/user`, {
         method: 'GET',
       });
-
-      return await response.json();
-    } catch (error) {
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+        const rawError = result.message || (result.error ? String(result.error) : '获取用户信息失败');
+        return { success: false, message: this.cleanErrorMessage(rawError), error: this.cleanErrorMessage(rawError) };
+      }
+      return result;
+    } catch (error: any) {
+      console.error('GetUserInfo API error:', error);
       return {
         success: false,
-        error: '网络请求失败'
+        message: '网络请求失败',
+        error: error.message || '网络请求失败'
+      };
+    }
+  }
+
+  async getSessionStatus(): Promise<ServiceResponse<{ session: SessionInfo, message?: string }>> {
+    try {
+      const response = await this.makeRequest(`${this.baseURL}/session/status`, {
+        method: 'GET',
+      });
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+        const rawError = result.message || (result.error ? String(result.error) : '获取会话状态失败');
+        return { success: false, message: this.cleanErrorMessage(rawError), error: this.cleanErrorMessage(rawError) };
+      }
+      return result;
+    } catch (error: any) {
+      console.error('GetSessionStatus API error:', error);
+      return {
+        success: false,
+        message: '网络请求失败',
+        error: error.message || '网络请求失败'
+      };
+    }
+  }
+
+  async extendSession(): Promise<ServiceResponse<{ session: SessionInfo }>> {
+    try {
+      const response = await this.makeRequest(`${this.baseURL}/session/extend`, {
+        method: 'POST',
+      });
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+        const rawError = result.message || (result.error ? String(result.error) : '延长会话失败');
+        return { success: false, message: this.cleanErrorMessage(rawError), error: this.cleanErrorMessage(rawError) };
+      }
+      return result;
+    } catch (error: any) {
+      console.error('ExtendSession API error:', error);
+      return {
+        success: false,
+        message: '网络请求失败',
+        error: error.message || '网络请求失败'
+      };
+    }
+  }
+
+  async markWarningShown(): Promise<ServiceResponse<null>> {
+    try {
+      const response = await this.makeRequest(`${this.baseURL}/session/warning-shown`, {
+        method: 'POST',
+      });
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+        const rawError = result.message || (result.error ? String(result.error) : '标记警告失败');
+        return { success: false, message: this.cleanErrorMessage(rawError), error: this.cleanErrorMessage(rawError) };
+      }
+      return result;
+    } catch (error: any) {
+      console.error('MarkWarningShown API error:', error);
+      return {
+        success: false,
+        message: '网络请求失败',
+        error: error.message || '网络请求失败'
       };
     }
   }
 }
 
 export const authService = new AuthService();
-export type { AuthResponse, RegisterData, LoginData, AuthCheckResponse }; 
+export type { RegisterData, LoginData }; 

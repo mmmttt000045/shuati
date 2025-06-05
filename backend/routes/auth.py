@@ -9,13 +9,15 @@ from ..decorators import handle_api_error, login_required
 from ..utils import create_response
 from ..config import SESSION_KEYS
 from ..session_manager import (
-    load_session_from_db, 
-    clear_all_session, get_user_session_info
+    load_session_from_db,
+    clear_all_session, get_user_session_info, check_and_resume_practice_session
 )
 from ..connectDB import (
     authenticate_user, create_user, verify_invitation_code,
     get_user_info
 )
+
+from ..session_manager import session_manager
 
 logger = logging.getLogger(__name__)
 
@@ -73,30 +75,31 @@ def api_login():
 
     result = authenticate_user(username, password)
     if result['success']:
+        user_id=result['user_id']
         # 设置session
-        session[SESSION_KEYS['USER_ID']] = result['user_id']
+        session[SESSION_KEYS['USER_ID']] = user_id
         session[SESSION_KEYS['USERNAME']] = result['username']
         session.modified = True
         
         # 设置session活跃度
-        from ..session_manager import session_manager
         session_manager.update_activity()
-        
-        # 尝试从练习会话数据库恢复任何活跃的练习会话
-        load_session_from_db()
-        
-        # 获取完整的用户信息，包括身份模型
-        user_info = get_user_info(result['user_id'])
-        
+
+        check_and_resume_practice_session(user_id)
+
         logger.info(f"User logged in: {result['username']}")
         return create_response(True, '登录成功',
         {
             'user': {
-                'user_id': user_info['id'],
-                'username': user_info['username'],
-                'model': user_info.get('model', 0)
+                'user_id': user_id,
+                'username': result['username'],
+                'model': result['model']
             },
-            'session': session_manager.get_session_info()
+            'session': {
+                'is_authenticated': True,
+                'session_valid': True,
+                'user_id': user_id,
+                'username': result['username']
+            }
         })
     else:
         logger.warning(f"Failed login attempt for username: {username}")

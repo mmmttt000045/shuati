@@ -1,12 +1,16 @@
 """
 会话管理模块 - 包含session相关的所有操作
+支持Redis + 数据库的混合存储方式
 """
 import logging
 import time
+
 from datetime import datetime, timedelta
 from typing import Any, Optional, List, Dict
 from flask import session, request, g
+
 from .config import SESSION_KEYS, Config
+from .redis_session import get_hybrid_session_value,set_hybrid_session_value
 from .connectDB import (
     create_practice_session, update_practice_session, 
     complete_practice_session, get_user_active_practice_session,
@@ -23,8 +27,8 @@ SESSION_LAST_ACTIVITY_KEY = 'last_activity'
 SESSION_LOGIN_TIME_KEY = 'login_time'
 SESSION_WARNING_SHOWN_KEY = 'warning_shown'
 
-# 优化：大数据存储在数据库中的keys - 这些不应该存储在cookie中
-DATABASE_STORED_KEYS = {
+# 优化：大数据存储在Redis/数据库中的keys - 这些不应该存储在cookie中
+LARGE_DATA_KEYS = {
     SESSION_KEYS['QUESTION_INDICES'],
     SESSION_KEYS['WRONG_INDICES'], 
     SESSION_KEYS['QUESTION_STATUSES'],
@@ -33,7 +37,29 @@ DATABASE_STORED_KEYS = {
 
 
 class SessionManager:
-    """优化的Session管理器"""
+    """增强的Session管理器，支持Redis混合存储"""
+    
+    def __init__(self):
+        self._redis_session_manager = None
+        self._init_redis_support()
+    
+    def _init_redis_support(self):
+        """初始化Redis支持"""
+        try:
+            from .redis_session import redis_session_manager
+            self._redis_session_manager = redis_session_manager
+            if self._redis_session_manager.is_available:
+                logger.info("Redis session支持已启用")
+            else:
+                logger.warning("Redis不可用，将使用数据库存储")
+        except ImportError as e:
+            logger.warning(f"Redis模块导入失败，将使用数据库存储: {e}")
+    
+    @property
+    def redis_available(self) -> bool:
+        """检查Redis是否可用"""
+        return (self._redis_session_manager is not None and 
+                self._redis_session_manager.is_available)
     
     @staticmethod
     def update_activity():
@@ -47,6 +73,12 @@ class SessionManager:
         
         session.modified = True
         session.permanent = True
+        
+        # 同时更新Redis session的TTL
+        session_id = session.get('session_id')
+        if session_id:
+            from .redis_session import redis_session_manager
+            redis_session_manager.extend_session_ttl(session_id)
     
     @staticmethod
     def get_session_info() -> Dict[str, Any]:
@@ -65,7 +97,8 @@ class SessionManager:
             'login_time': login_time_str,
             'session_valid': True,
             'time_remaining': None,
-            'warning_needed': False
+            'warning_needed': False,
+            'storage_info': SessionManager._get_storage_info()
         }
         
         if last_activity_str:
@@ -92,6 +125,16 @@ class SessionManager:
                 result['session_valid'] = False
         
         return result
+    
+    @staticmethod
+    def _get_storage_info() -> Dict[str, str]:
+        """获取存储信息"""
+        from .redis_session import redis_session_manager
+        return {
+            'redis_available': redis_session_manager.is_available,
+            'session_id': session.get('session_id'),
+            'storage_strategy': 'Redis+DB' if redis_session_manager.is_available else 'Database'
+        }
     
     @staticmethod
     def mark_warning_shown():
@@ -126,6 +169,13 @@ class SessionManager:
         """清理过期的session"""
         if SessionManager.is_session_expired():
             logger.info(f"清理过期session: user_id={session.get(SESSION_KEYS['USER_ID'])}")
+            
+            # 清理Redis数据
+            session_id = session.get('session_id')
+            if session_id:
+                from .redis_session import redis_session_manager
+                redis_session_manager.delete_session_data(session_id)
+            
             session.clear()
             return True
         return False
@@ -137,11 +187,11 @@ session_manager = SessionManager()
 
 def get_session_value(key: str, default: Any = None) -> Any:
     """
-    优化的session值获取 - 大数据从数据库获取，小数据从cookie获取
+    混合session值获取 - 大数据优先从Redis获取，回退到数据库，小数据从cookie获取
     """
-    # 如果是大数据key，从数据库获取
-    if key in DATABASE_STORED_KEYS:
-        return get_database_session_value(key, default)
+    # 如果是大数据key，使用混合存储策略
+    if key in LARGE_DATA_KEYS:
+        return get_hybrid_session_value(key, default)
     
     # 小数据从cookie获取
     return session.get(key, default)
@@ -149,11 +199,11 @@ def get_session_value(key: str, default: Any = None) -> Any:
 
 def set_session_value(key: str, value: Any) -> None:
     """
-    优化的session值设置 - 大数据存储在数据库，小数据存储在cookie
+    混合session值设置 - 大数据存储在Redis/数据库，小数据存储在cookie
     """
-    # 如果是大数据key，存储到数据库
-    if key in DATABASE_STORED_KEYS:
-        set_database_session_value(key, value)
+    # 如果是大数据key，使用混合存储策略
+    if key in LARGE_DATA_KEYS:
+        set_hybrid_session_value(key, value)
         return
     
     # 小数据存储在cookie

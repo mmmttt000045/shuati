@@ -65,11 +65,11 @@ onMounted(async () => {
   try {
     const response = await apiService.getCompletedSummary();
     if (response.success) {
-      if (response.summary) {
-        summary.value = response.summary;
+      if (response.data?.summary) {
+        summary.value = response.data.summary;
       }
-      if (response.flash_messages) {
-        messages.value = response.flash_messages;
+      if (response.data?.flash_messages) {
+        messages.value = response.data.flash_messages;
       }
     } else {
       messages.value.push({

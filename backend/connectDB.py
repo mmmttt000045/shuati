@@ -191,7 +191,7 @@ def authenticate_user(cursor, username: str, password: str) -> Dict[str, Any]:
     """验证用户登录"""
     # connection, cursor, try/except/finally are managed by the decorator
     query = """
-            SELECT id, username, password_hash, is_enabled
+            SELECT id, username, password_hash, is_enabled, model
             FROM user_accounts
             WHERE username = %s
             """ # Removed trailing backslash from query
@@ -206,6 +206,7 @@ def authenticate_user(cursor, username: str, password: str) -> Dict[str, Any]:
     db_username = user_record['username']
     stored_password_hash = user_record['password_hash']
     is_enabled = user_record['is_enabled']
+    model = user_record['model']
 
     if not is_enabled:
         return {"success": False, "error": "账户已被禁用"}
@@ -225,6 +226,7 @@ def authenticate_user(cursor, username: str, password: str) -> Dict[str, Any]:
         "success": True,
         "user_id": user_id,
         "username": db_username,
+        "model": model,
         "message": "登录成功"
     }
 
@@ -1551,28 +1553,30 @@ def get_practice_session(session_id: int) -> Optional[Dict[str, Any]]:
         if connection.is_connected():
             connection.close()
 
-
-def get_user_active_practice_session(user_id: int, tiku_id: int = None) -> Optional[Dict[str, Any]]:
-    """获取用户当前活跃的练习会话"""
-    connection = get_db_connection()
-    if not connection:
-        return None
-
+@with_db_connection
+def get_user_active_practice_session(cursor, user_id: int, tiku_id: int = None) -> Optional[Dict[str, Any]]:
+    """获取用户当前活跃的练习会话 - 优化版本"""
     try:
-        cursor = connection.cursor()
-        
         if tiku_id:
-            # 查找特定题库的活跃会话
+            # 查找特定题库的活跃会话，直接获取完整信息
             query = """
-            SELECT id FROM practice_sessions 
+            SELECT id, user_id, tiku_id, session_type, shuffle_enabled, selected_types,
+                   total_questions, current_question_index, correct_first_try, round_number,
+                   status, question_indices, wrong_indices, question_statuses, answer_history,
+                   created_at, updated_at, completed_at
+            FROM practice_sessions 
             WHERE user_id = %s AND tiku_id = %s AND status = 'active'
             ORDER BY updated_at DESC LIMIT 1
             """
             cursor.execute(query, (user_id, tiku_id))
         else:
-            # 查找任意活跃会话
+            # 查找任意活跃会话，直接获取完整信息
             query = """
-            SELECT id FROM practice_sessions 
+            SELECT id, user_id, tiku_id, session_type, shuffle_enabled, selected_types,
+                   total_questions, current_question_index, correct_first_try, round_number,
+                   status, question_indices, wrong_indices, question_statuses, answer_history,
+                   created_at, updated_at, completed_at
+            FROM practice_sessions 
             WHERE user_id = %s AND status = 'active'
             ORDER BY updated_at DESC LIMIT 1
             """
@@ -1580,18 +1584,33 @@ def get_user_active_practice_session(user_id: int, tiku_id: int = None) -> Optio
         
         result = cursor.fetchone()
         if result:
-            return get_practice_session(result[0])
+            # 直接解析结果，避免额外的数据库查询
+            return {
+                'id': result[0],
+                'user_id': result[1],
+                'tiku_id': result[2],
+                'session_type': result[3],
+                'shuffle_enabled': result[4],
+                'selected_types': json.loads(result[5]) if result[5] else None,
+                'total_questions': result[6],
+                'current_question_index': result[7],
+                'correct_first_try': result[8],
+                'round_number': result[9],
+                'status': result[10],
+                'question_indices': json.loads(result[11]) if result[11] else None,
+                'wrong_indices': json.loads(result[12]) if result[12] else None,
+                'question_statuses': json.loads(result[13]) if result[13] else None,
+                'answer_history': json.loads(result[14]) if result[14] else None,
+                'created_at': result[15],
+                'updated_at': result[16],
+                'completed_at': result[17]
+            }
         
         return None
         
     except Error as e:
         print(f"获取用户活跃练习会话失败: {e}")
         return None
-    finally:
-        if cursor:
-            cursor.close()
-        if connection.is_connected():
-            connection.close()
 
 
 def update_practice_statistics(session_id: int, stats: dict) -> bool:
@@ -2290,6 +2309,38 @@ def get_question_by_db_id(cursor, question_db_id: int) -> Optional[Dict[str, Any
         'subject_name': subject_name,
         'tiku_name': tiku_name
     }
+
+
+@with_db_connection
+def reset_user_password(cursor, user_id: int, new_password: str) -> Dict[str, Any]:
+    """重置用户密码"""
+    try:
+        # 检查用户是否存在
+        cursor.execute("SELECT id, username FROM user_accounts WHERE id = %s", (user_id,))
+        user_record = cursor.fetchone()
+        
+        if not user_record:
+            return {"success": False, "error": "用户不存在"}
+        
+        # 生成新密码哈希
+        new_password_hash = hash_password(new_password)
+        
+        # 更新密码
+        update_query = "UPDATE user_accounts SET password_hash = %s WHERE id = %s"
+        cursor.execute(update_query, (new_password_hash, user_id))
+        
+        if cursor.rowcount == 0:
+            return {"success": False, "error": "密码重置失败"}
+        
+        return {
+            "success": True,
+            "message": "密码重置成功",
+            "user_id": user_id,
+            "username": user_record['username']
+        }
+        
+    except Error as e:
+        return {"success": False, "error": f"重置密码失败: {str(e)}"}
 
 
 if __name__ == "__main__":

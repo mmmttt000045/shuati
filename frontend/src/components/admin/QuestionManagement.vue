@@ -266,9 +266,9 @@ import { apiService } from '@/services/api'
 import QuestionEditDialog from './QuestionEditDialog.vue'
 import QuestionViewDialog from './QuestionViewDialog.vue'
 
-// 题目数据类型定义
+// 题目数据类型定义 - 匹配 QuestionEditDialog 期望的格式
 interface Question {
-  id: number
+  id?: number
   subject_id: number
   tiku_id: number
   question_type: number
@@ -279,7 +279,7 @@ interface Question {
   option_d?: string
   answer: string
   explanation?: string
-  difficulty?: number
+  difficulty: number
   status: string
   created_at?: string
   updated_at?: string
@@ -452,7 +452,7 @@ const deleteQuestion = (question: Question) => {
 }
 
 const confirmDelete = async () => {
-  if (!selectedQuestion.value) return
+  if (!selectedQuestion.value || !selectedQuestion.value.id) return
 
   deleting.value = true
   try {

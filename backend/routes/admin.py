@@ -19,7 +19,8 @@ from ..connectDB import (
     get_all_invitations_detailed, get_detailed_question_stats,
     get_question_details_by_id, create_question_and_update_tiku_count,
     update_question_details, delete_question_and_update_tiku_count,
-    toggle_question_status_and_update_tiku_count, get_questions_paginated
+    toggle_question_status_and_update_tiku_count, get_questions_paginated,
+    reset_user_password
 )
 from ..decorators import handle_api_error, login_required, admin_required, permission_cache
 from ..utils import (
@@ -101,25 +102,26 @@ def api_admin_create_invitation():
             raise BadRequest("邀请码长度必须在6-64个字符之间")
 
         # 处理过期天数参数
+        expire_days_processed = expire_days  # 保存原始值
         if expire_days is not None:
             try:
                 # 尝试转换为整数
                 if isinstance(expire_days, str):
                     if expire_days.strip() == '':
-                        expires_days = None
+                        expire_days_processed = None
                     else:
-                        expires_days = int(expire_days.strip())
+                        expire_days_processed = int(expire_days.strip())
                 else:
-                    expires_days = int(expire_days)
+                    expire_days_processed = int(expire_days)
 
                 # 验证天数范围
-                if expires_days is not None and (expires_days <= 0 or expires_days > 3650):
+                if expire_days_processed is not None and (expire_days_processed <= 0 or expire_days_processed > 3650):
                     raise BadRequest("过期天数必须在1-3650天之间")
 
             except (ValueError, TypeError):
                 raise BadRequest("过期天数必须是有效的整数")
 
-        result = create_invitation_code(code, expires_days)
+        result = create_invitation_code(code, expire_days_processed)
         if result['success']:
             return create_response(True, result['message'], data={'invitation_code': result['code']})
         else:
@@ -585,6 +587,49 @@ def api_admin_update_user_model(user_id):
 
     except Exception as e:
         logger.error(f"Error updating user model {user_id}: {e}")
+        raise
+
+
+@admin_bp.route('/users/<int:user_id>/reset-password', methods=['POST'])
+@login_required
+@admin_required
+@handle_api_error
+def api_admin_reset_user_password(user_id):
+    """重置用户密码"""
+    try:
+        data = request.get_json()
+        if not data or 'new_password' not in data:
+            raise BadRequest("缺少新密码参数")
+
+        new_password = data['new_password'].strip()
+        if not new_password:
+            raise BadRequest("新密码不能为空")
+        
+        if len(new_password) < 6:
+            raise BadRequest("密码长度至少6位")
+        
+        if len(new_password) > 64:
+            raise BadRequest("密码长度不能超过64位")
+
+        # 不能操作自己
+        current_user_id = session.get('user_id')
+        if user_id == current_user_id:
+            raise BadRequest("不能重置自己的密码")
+
+        # 调用connectDB中的函数
+        result = reset_user_password(user_id, new_password)
+
+        if result['success']:
+            logger.info(f"管理员重置用户密码: user_id={user_id}, username={result['username']}")
+            return create_response(True, result['message'], data={
+                'user_id': result['user_id'],
+                'username': result['username']
+            })
+        else:
+            raise BadRequest(result['error'])
+
+    except Exception as e:
+        logger.error(f"Error resetting user password {user_id}: {e}")
         raise
 
 

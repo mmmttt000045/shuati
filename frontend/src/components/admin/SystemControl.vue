@@ -28,6 +28,7 @@
       @refresh="loadUsers"
       @update-user-model="updateUserModel"
       @toggle-user="toggleUser"
+      @reset-password="handleResetPassword"
     />
 
     <!-- 邀请码管理 -->
@@ -105,6 +106,14 @@
       @confirm="confirmPermissionChange"
       @cancel="cancelPermissionChange"
     />
+
+    <!-- 重置密码对话框 -->
+    <ResetPasswordDialog
+      v-model="showResetPasswordDialog"
+      :user="selectedUser"
+      :loading="resettingPassword"
+      @reset="resetUserPassword"
+    />
   </div>
 </template>
 
@@ -137,6 +146,7 @@ import CreateInvitationDialog from './CreateInvitationDialog.vue'
 import SubjectDialog from './SubjectDialog.vue'
 import UploadTikuDialog from './UploadTikuDialog.vue'
 import PermissionChangeDialog from './PermissionChangeDialog.vue'
+import ResetPasswordDialog from './ResetPasswordDialog.vue'
 
 // 类型定义
 interface PermissionChangeData {
@@ -186,6 +196,11 @@ const selectedTiku = ref<TikuItem | null>(null)
 const pendingPermissionChange = ref<PermissionChangeData | null>(null)
 const updatingPermission = ref(false)
 const showPermissionChangeDialog = ref(false)
+
+// 重置密码相关状态
+const showResetPasswordDialog = ref(false)
+const resettingPassword = ref(false)
+const selectedUser = ref<AdminUser | null>(null)
 
 // 标签页配置
 const tabs: Tab[] = [
@@ -631,6 +646,32 @@ const cancelPermissionChange = () => {
 const closePermissionChangeDialog = () => {
   showPermissionChangeDialog.value = false
   pendingPermissionChange.value = null
+}
+
+// 重置密码相关函数
+const handleResetPassword = (user: AdminUser) => {
+  selectedUser.value = user
+  showResetPasswordDialog.value = true
+}
+
+const resetUserPassword = async (newPassword: string) => {
+  if (!selectedUser.value) return
+
+  resettingPassword.value = true
+  try {
+    const response = await apiService.admin.resetUserPassword(selectedUser.value.id, newPassword)
+    if (response.success) {
+      toast.success(`用户 ${selectedUser.value.username} 的密码重置成功`)
+      showResetPasswordDialog.value = false
+      loadUsers()
+    } else {
+      handleError(new Error(response.message), '重置用户密码')
+    }
+  } catch (error) {
+    handleError(error, '重置用户密码')
+  } finally {
+    resettingPassword.value = false
+  }
 }
 
 // 错误处理优化

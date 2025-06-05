@@ -1,6 +1,7 @@
 """
 练习相关的路由模块 - 性能优化版本
 """
+import json
 import logging
 import random
 import threading
@@ -9,7 +10,6 @@ from collections import defaultdict
 from functools import lru_cache, wraps
 from typing import Dict, List, Optional, Any
 
-from cachetools import LRUCache
 from flask import Blueprint, request, jsonify
 from werkzeug.exceptions import BadRequest, NotFound
 
@@ -19,6 +19,7 @@ from ..connectDB import (
     get_question_by_db_id
 )
 from ..decorators import handle_api_error, login_required
+from ..redis_session import RedisSessionManager
 from ..session_manager import (
     get_session_value, set_session_value, clear_practice_session,
     get_current_tiku_info,
@@ -52,114 +53,164 @@ QUESTION_TYPE_MAPPING = {
 }
 
 
-# 优化的缓存结构
-class CacheManager:
-    def __init__(self):
-        self._lock = threading.RLock()
-        self._tiku_list_cache = {'data': None, 'timestamp': 0}  # 题库列表缓存
-        self._file_options_cache = {'data': None, 'timestamp': 0}  # 文件选项缓存
-        self._question_bank_cache = LRUCache(maxsize=10)  # 题目缓存，key为tiku_id
-        self._question_bank_lock = threading.RLock()
-        self._cache_ttl = 3600  # 1小时TTL
+# 基于Redis的缓存管理器
+class RedisCacheManager:
+    """基于Redis的缓存管理器"""
 
-    def _is_cache_valid(self, cache_entry: dict) -> bool:
-        """检查缓存是否有效"""
-        return (cache_entry['data'] is not None and
-                time.time() - cache_entry['timestamp'] < self._cache_ttl)
+    def __init__(self):
+        self.redis_manager = RedisSessionManager()
+        self._cache_ttl = 3600  # 1小时TTL
+        self._cache_prefix = 'cache:'
+
+    def _get_cache_key(self, key: str) -> str:
+        """生成缓存键"""
+        return f"{self._cache_prefix}{key}"
+
+    def _is_redis_available(self) -> bool:
+        """检查Redis是否可用"""
+        return self.redis_manager.is_available
+
+    def _get_from_redis(self, key: str, default=None):
+        """从Redis获取数据"""
+        if not self._is_redis_available():
+            return default
+
+        try:
+            redis_key = self._get_cache_key(key)
+            data = self.redis_manager._redis_client.get(redis_key)
+            if data is None:
+                return default
+            return json.loads(data)
+        except Exception as e:
+            logger.error(f"从Redis获取缓存失败 {key}: {e}")
+            return default
+
+    def _set_to_redis(self, key: str, value, ttl: int = None):
+        """存储数据到Redis"""
+        if not self._is_redis_available():
+            return False
+
+        try:
+            redis_key = self._get_cache_key(key)
+            data = json.dumps(value, ensure_ascii=False)
+            if ttl is None:
+                ttl = self._cache_ttl
+            self.redis_manager._redis_client.setex(redis_key, ttl, data)
+            return True
+        except Exception as e:
+            logger.error(f"存储缓存到Redis失败 {key}: {e}")
+            return False
+
+    def _delete_from_redis(self, key: str):
+        """从Redis删除数据"""
+        if not self._is_redis_available():
+            return False
+
+        try:
+            redis_key = self._get_cache_key(key)
+            self.redis_manager._redis_client.delete(redis_key)
+            return True
+        except Exception as e:
+            logger.error(f"从Redis删除缓存失败 {key}: {e}")
+            return False
 
     def get_tiku_list(self):
         """获取缓存的题库列表"""
-        with self._lock:
-            if self._is_cache_valid(self._tiku_list_cache):
-                logger.debug("使用缓存的题库列表数据")
-                return self._tiku_list_cache['data']
+        cache_key = 'tiku_list'
+        cached_data = self._get_from_redis(cache_key)
 
-            logger.info("重新加载题库列表缓存")
-            try:
-                # 并行获取数据
-                import concurrent.futures
-                with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-                    future_tiku = executor.submit(get_tiku_by_subject)
-                    future_subjects = executor.submit(get_all_subjects)
+        if cached_data is not None:
+            logger.debug("使用Redis缓存的题库列表数据")
+            return cached_data
 
-                    db_tiku_list = future_tiku.result()
-                    all_subjects = future_subjects.result()
+        logger.info("从数据库重新加载题库列表")
+        try:
+            # 并行获取数据
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+                future_tiku = executor.submit(get_tiku_by_subject)
+                future_subjects = executor.submit(get_all_subjects)
 
-                subjects_exam_time = {s['subject_name']: s['exam_time'] for s in all_subjects}
+                db_tiku_list = future_tiku.result()
+                all_subjects = future_subjects.result()
 
-                cache_data = {
-                    'tiku_list': db_tiku_list,
-                    'subjects_exam_time': subjects_exam_time
-                }
-                
-                self._tiku_list_cache['data'] = cache_data
-                self._tiku_list_cache['timestamp'] = time.time()
+            subjects_exam_time = {s['subject_name']: s['exam_time'] for s in all_subjects}
 
-                logger.info(f"成功加载并缓存了 {len(db_tiku_list)} 个题库")
-                return cache_data
+            cache_data = {
+                'tiku_list': db_tiku_list,
+                'subjects_exam_time': subjects_exam_time
+            }
 
-            except Exception as e:
-                logger.error(f"从数据库加载题库列表失败: {e}")
-                raise
+            # 存储到Redis
+            self._set_to_redis(cache_key, cache_data)
+            logger.info(f"成功加载并缓存了 {len(db_tiku_list)} 个题库到Redis")
+            return cache_data
+
+        except Exception as e:
+            logger.error(f"从数据库加载题库列表失败: {e}")
+            raise
 
     def get_file_options(self):
         """获取缓存的文件选项数据"""
-        with self._lock:
-            if self._is_cache_valid(self._file_options_cache):
-                logger.debug("使用缓存的文件选项数据")
-                return self._file_options_cache['data']
+        cache_key = 'file_options'
+        cached_data = self._get_from_redis(cache_key)
 
-            logger.info("重新构建文件选项缓存")
-            try:
-                cached_tiku_data = self.get_tiku_list()
-                db_tiku_list = cached_tiku_data['tiku_list']
-                subjects_exam_time = cached_tiku_data['subjects_exam_time']
+        if cached_data is not None:
+            logger.debug("使用Redis缓存的文件选项数据")
+            return cached_data
 
-                # 使用defaultdict优化数据处理
-                db_tiku_map = defaultdict(lambda: {'files': [], 'exam_time': None})
+        logger.info("重新构建文件选项缓存")
+        try:
+            cached_tiku_data = self.get_tiku_list()
+            db_tiku_list = cached_tiku_data['tiku_list']
+            subjects_exam_time = cached_tiku_data['subjects_exam_time']
 
-                for tiku in db_tiku_list:
-                    if not tiku['is_active']:
-                        continue
+            # 使用defaultdict优化数据处理
+            db_tiku_map = defaultdict(lambda: {'files': [], 'exam_time': None})
 
-                    subject_name = tiku['subject_name']
-                    if db_tiku_map[subject_name]['exam_time'] is None:
-                        db_tiku_map[subject_name]['exam_time'] = subjects_exam_time.get(subject_name)
+            for tiku in db_tiku_list:
+                if not tiku['is_active']:
+                    continue
 
-                    db_tiku_map[subject_name]['files'].append({
-                        'key': tiku['tiku_position'],
-                        'display': tiku['tiku_name'],
-                        'count': tiku['tiku_nums'],
-                        'file_size': tiku['file_size'],
-                        'updated_at': tiku['updated_at'],
-                        'tiku_id': tiku['tiku_id']
-                    })
+                subject_name = tiku['subject_name']
+                if db_tiku_map[subject_name]['exam_time'] is None:
+                    db_tiku_map[subject_name]['exam_time'] = subjects_exam_time.get(subject_name)
 
-                # 批量排序优化
-                sorted_subjects = {
-                    subject: {
-                        'files': sorted(data['files'], key=lambda x: x['display']),
-                        'exam_time': data['exam_time']
-                    }
-                    for subject, data in sorted(db_tiku_map.items())
+                db_tiku_map[subject_name]['files'].append({
+                    'key': tiku['tiku_position'],
+                    'display': tiku['tiku_name'],
+                    'count': tiku['tiku_nums'],
+                    'file_size': tiku['file_size'],
+                    'updated_at': tiku['updated_at'],
+                    'tiku_id': tiku['tiku_id']
+                })
+
+            # 批量排序优化
+            sorted_subjects = {
+                subject: {
+                    'files': sorted(data['files'], key=lambda x: x['display']),
+                    'exam_time': data['exam_time']
                 }
+                for subject, data in sorted(db_tiku_map.items())
+            }
 
-                self._file_options_cache['data'] = sorted_subjects
-                self._file_options_cache['timestamp'] = time.time()
+            # 存储到Redis
+            self._set_to_redis(cache_key, sorted_subjects)
+            logger.info(f"成功处理并缓存了 {len(sorted_subjects)} 个科目的文件选项到Redis")
+            return sorted_subjects
 
-                logger.info(f"成功处理并缓存了 {len(sorted_subjects)} 个科目的文件选项")
-                return sorted_subjects
-
-            except Exception as e:
-                logger.error(f"处理文件选项缓存失败: {e}")
-                raise
+        except Exception as e:
+            logger.error(f"处理文件选项缓存失败: {e}")
+            raise
 
     def get_question_bank(self, tiku_id: int) -> List[Dict[str, Any]]:
-        """获取指定题库的题目列表，使用缓存"""
-        with self._question_bank_lock:
-            if tiku_id in self._question_bank_cache:
-                logger.debug(f"使用缓存的题目数据，题库ID: {tiku_id}")
-                return self._question_bank_cache[tiku_id]
+        """获取指定题库的题目列表，使用Redis缓存"""
+        cache_key = f'question_bank_{tiku_id}'
+        cached_data = self._get_from_redis(cache_key)
+
+        if cached_data is not None:
+            logger.debug(f"使用Redis缓存的题目数据，题库ID: {tiku_id}")
+            return cached_data
 
         logger.info(f"从数据库获取题库 {tiku_id} 的题目数据")
         try:
@@ -170,10 +221,10 @@ class CacheManager:
                 logger.warning(f"题库 {tiku_id} 为空或不存在")
                 return []
 
-            with self._question_bank_lock:
-                self._question_bank_cache[tiku_id] = question_bank_list
-                logger.info(f"成功缓存题库 {tiku_id} 的 {len(question_bank_list)} 道题目")
-                return question_bank_list
+            # 存储到Redis，题目数据缓存时间稍长一些
+            self._set_to_redis(cache_key, question_bank_list, ttl=7200)  # 2小时
+            logger.info(f"成功缓存题库 {tiku_id} 的 {len(question_bank_list)} 道题目到Redis")
+            return question_bank_list
 
         except Exception as e:
             logger.error(f"获取题库 {tiku_id} 的题目数据失败: {e}")
@@ -181,29 +232,56 @@ class CacheManager:
 
     def refresh_all_cache(self):
         """刷新所有缓存"""
-        with self._lock:
-            self._tiku_list_cache['data'] = None
-            self._file_options_cache['data'] = None
+        logger.info("开始刷新所有Redis缓存")
 
-            # 清空题目缓存
-            with self._question_bank_lock:
-                self._question_bank_cache.clear()
+        try:
+            # 如果Redis不可用，直接返回
+            if not self._is_redis_available():
+                logger.warning("Redis不可用，无法刷新缓存")
+                return {
+                    'tiku_count': 0,
+                    'subjects_count': 0,
+                    'message': 'Redis不可用，缓存刷新失败'
+                }
+
+            # 删除所有相关缓存
+            cache_keys = ['tiku_list', 'file_options']
+            for key in cache_keys:
+                self._delete_from_redis(key)
+
+            # 删除所有题目缓存（使用模式匹配）
+            try:
+                pattern = self._get_cache_key('question_bank_*')
+                keys = self.redis_manager._redis_client.keys(pattern)
+                if keys:
+                    self.redis_manager._redis_client.delete(*keys)
+                    logger.info(f"删除了 {len(keys)} 个题目缓存")
+            except Exception as e:
+                logger.error(f"删除题目缓存失败: {e}")
 
             # 预热缓存
             tiku_data = self.get_tiku_list()
             file_options_data = self.get_file_options()
 
-            logger.info("所有缓存已刷新，包括题库列表和题目缓存")
+            logger.info("所有Redis缓存已刷新完成")
 
             return {
                 'tiku_count': len(tiku_data['tiku_list']) if tiku_data else 0,
                 'subjects_count': len(file_options_data) if file_options_data else 0,
-                'message': '缓存刷新成功'
+                'message': 'Redis缓存刷新成功'
+            }
+
+        except Exception as e:
+            logger.error(f"刷新Redis缓存失败: {e}")
+            return {
+                'tiku_count': 0,
+                'subjects_count': 0,
+                'message': f'缓存刷新失败: {str(e)}'
             }
 
 
 # 单例缓存管理器
-cache_manager = CacheManager()
+cache_manager = RedisCacheManager()
 
 
 # 性能监控装饰器
@@ -406,18 +484,18 @@ def api_start_practice():
         cached_tiku_data = cache_manager.get_tiku_list()
         tiku_list = cached_tiku_data['tiku_list']
         tiku_info = None
-        
+
         for tiku in tiku_list:
             if tiku['tiku_id'] == tiku_id:
                 tiku_info = tiku
                 break
-        
+
         if not tiku_info:
             raise BadRequest(f"题库ID {tiku_id} 不存在")
-        
+
         if not tiku_info['is_active']:
             raise BadRequest(f"题库已禁用: {tiku_info['tiku_name']}")
-            
+
     except BadRequest:
         # 重新抛出BadRequest异常
         raise
@@ -1242,7 +1320,7 @@ def api_practice_url_params():
 
 
 @practice_bp.route('/cache/test', methods=['GET'])
-@login_required  
+@login_required
 @handle_api_error
 def api_test_cache():
     """测试缓存系统是否正常工作"""
@@ -1250,11 +1328,11 @@ def api_test_cache():
         # 测试题库列表缓存
         tiku_data = cache_manager.get_tiku_list()
         tiku_count = len(tiku_data['tiku_list']) if tiku_data and 'tiku_list' in tiku_data else 0
-        
+
         # 测试文件选项缓存
         file_options = cache_manager.get_file_options()
         subjects_count = len(file_options) if file_options else 0
-        
+
         # 测试题目缓存（如果有活跃的题库）
         question_bank_test = None
         if tiku_count > 0:
@@ -1262,14 +1340,14 @@ def api_test_cache():
             if first_tiku['is_active']:
                 test_tiku_id = first_tiku['tiku_id']
                 question_bank_test = cache_manager.get_question_bank(test_tiku_id)
-                
+
         cache_test_result = {
             'tiku_list_cache': {
                 'status': 'ok' if tiku_count > 0 else 'empty',
                 'count': tiku_count
             },
             'file_options_cache': {
-                'status': 'ok' if subjects_count > 0 else 'empty', 
+                'status': 'ok' if subjects_count > 0 else 'empty',
                 'subjects_count': subjects_count
             },
             'question_bank_cache': {
@@ -1277,12 +1355,12 @@ def api_test_cache():
                 'test_questions': len(question_bank_test) if question_bank_test else 0
             }
         }
-        
+
         return create_response(True, '缓存系统测试完成', {
             'cache_test': cache_test_result,
             'timestamp': time.time()
         })
-        
+
     except Exception as e:
         logger.error(f"缓存测试失败: {e}")
         return create_response(False, f'缓存测试失败: {str(e)}', status_code=500)

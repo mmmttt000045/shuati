@@ -19,9 +19,45 @@ class DatabaseConfig:
         'autocommit': True,  # 默认自动提交
         'charset': 'utf8mb4',
         'collation': 'utf8mb4_unicode_ci',
-        'connect_timeout': 10,  # 连接超时时间(秒)
+        'connect_timeout': 30,  # 连接超时时间(秒) - 增加到30秒
+        'use_unicode': True,    # 使用Unicode
+        'auth_plugin': 'mysql_native_password',  # 指定认证插件
         'sql_mode': 'STRICT_TRANS_TABLES,NO_ZERO_DATE,NO_ZERO_IN_DATE,ERROR_FOR_DIVISION_BY_ZERO'
     }
+    
+    # 连接重试配置
+    CONNECTION_RETRY_CONFIG = {
+        'max_retries': 3,
+        'retry_delay': 1,  # 秒
+        'backoff_factor': 2
+    }
+
+# --- Redis 配置 ---
+class RedisConfig:
+    """Redis 连接和session存储配置"""
+    # Redis 连接配置
+    REDIS_HOST = '127.0.0.1'
+    REDIS_PORT = 6379
+    REDIS_DB = 0
+    REDIS_PASSWORD = None  # 如果Redis设置了密码
+    REDIS_DECODE_RESPONSES = False  # 改为False以正确处理二进制数据
+    
+    # Redis 连接池配置
+    REDIS_POOL_CONFIG = {
+        'max_connections': 20,
+        'retry_on_timeout': True,
+        'socket_connect_timeout': 5,
+        'socket_timeout': 5,
+        'health_check_interval': 30
+    }
+    
+    # Session 存储配置
+    REDIS_SESSION_PREFIX = 'session:'
+    REDIS_SESSION_TTL = 7200  # 2小时，与Flask session保持一致
+    
+    # 压缩配置
+    ENABLE_COMPRESSION = True  # 启用数据压缩以节省内存
+    COMPRESSION_THRESHOLD = 1024  # 大于1KB的数据才压缩
 
 # --- 配置 ---
 SUBJECT_DIRECTORY = 'subject'  # 科目目录

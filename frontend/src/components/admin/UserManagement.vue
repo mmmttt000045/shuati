@@ -100,15 +100,26 @@
 
       <!-- 操作列 -->
       <template v-slot:item.actions="{ item }">
-        <v-btn
-          :color="item.is_enabled ? 'error' : 'success'"
-          :disabled="item.id === currentUserId"
-          @click="$emit('toggleUser', item.id)"
-          size="small"
-          variant="elevated"
-        >
-          {{ item.is_enabled ? '禁用' : '启用' }}
-        </v-btn>
+        <div class="d-flex gap-2">
+          <v-btn
+            :color="item.is_enabled ? 'error' : 'success'"
+            :disabled="item.id === currentUserId"
+            @click="$emit('toggleUser', item.id)"
+            size="small"
+            variant="elevated"
+          >
+            {{ item.is_enabled ? '禁用' : '启用' }}
+          </v-btn>
+          <v-btn
+            color="warning"
+            :disabled="item.id === currentUserId"
+            @click="$emit('resetPassword', item)"
+            size="small"
+            variant="elevated"
+          >
+            重置密码
+          </v-btn>
+        </div>
       </template>
     </v-data-table>
   </div>
@@ -127,6 +138,7 @@ interface Emits {
   (e: 'refresh'): void
   (e: 'updateUserModel', userId: number, model: number): void
   (e: 'toggleUser', userId: number): void
+  (e: 'resetPassword', user: any): void
 }
 
 const props = defineProps<Props>()
@@ -153,7 +165,7 @@ const userHeaders = [
   { title: '注册时间', key: 'created_at', sortable: true, width: '160px' },
   { title: '最后登录', key: 'last_time_login', sortable: true, width: '160px' },
   { title: '邀请码', key: 'invitation_code', sortable: false, width: '150px' },
-  { title: '操作', key: 'actions', sortable: false, width: '120px', align: 'center' as const }
+  { title: '操作', key: 'actions', sortable: false, width: '200px', align: 'center' as const }
 ]
 
 const modelOptions = [

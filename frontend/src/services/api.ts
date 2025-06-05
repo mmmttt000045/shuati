@@ -28,6 +28,20 @@ import { API_BASE_URL, enableApiLogging } from '@/config/api';
 import { useAuthStore } from '@/stores/auth';
 import router from '@/router';
 
+// Re-export types for component imports
+export type {
+  AdminInvitation,
+  TikuItem,
+  QuestionCreateData,
+  QuestionUpdateData,
+  AdminSubject as Subject, // Alias for compatibility
+  AdminQuestionItem as QuestionItem, // Alias for compatibility
+  UsageSummary,
+  UsageSubjectStat,
+  UsageTikuStat,
+  UsageStats
+} from '@/types';
+
 // 使用配置文件中的API基地址
 const API_BASE = API_BASE_URL;
 
@@ -72,6 +86,7 @@ export interface ApiService {
     getUsers(params?: SearchParams): Promise<ServiceResponse<{ users: AdminUser[]; pagination: Pagination }>>;
     toggleUser(userId: number): Promise<ServiceResponse<{ is_enabled?: boolean }>>;
     updateUserModel(userId: number, model: number): Promise<ServiceResponse<{ model?: number }>>;
+    resetUserPassword(userId: number, newPassword: string): Promise<ServiceResponse<{ user_id?: number; username?: string }>>;
     getInvitations(params?: SearchParams): Promise<ServiceResponse<{ invitations: AdminInvitation[]; pagination?: Pagination }>>;
     createInvitation(code?: string, expireDays?: number): Promise<ServiceResponse<{ invitation_code?: string }>>;
     deleteInvitation(invitationId: number): Promise<ServiceResponse<null>>;
@@ -356,6 +371,14 @@ class ApiServiceImpl implements ApiService {
         body: JSON.stringify({ model }),
       });
       return (this as ApiServiceImpl).handleResponse<{ model?: number }>(response);
+    },
+
+    resetUserPassword: async (userId: number, newPassword: string): Promise<ServiceResponse<{ user_id?: number; username?: string }>> => {
+      const response = await (this as ApiServiceImpl).fetchWithCredentials(`${API_BASE}/admin/users/${userId}/reset-password`, { 
+        method: 'POST',
+        body: JSON.stringify({ new_password: newPassword }),
+      });
+      return (this as ApiServiceImpl).handleResponse<{ user_id?: number; username?: string }>(response);
     },
 
     getInvitations: async (params?: SearchParams): Promise<ServiceResponse<{ invitations: AdminInvitation[]; pagination?: Pagination }>> => {

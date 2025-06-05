@@ -151,7 +151,7 @@ const filteredSubjects = computed(() => {
 })
 
 // 工具函数
-const formatDate = (dateString?: string) => {
+const formatDate = (dateString?: string | null) => {
   if (!dateString) return '-'
   try {
     return new Date(dateString).toLocaleString('zh-CN')

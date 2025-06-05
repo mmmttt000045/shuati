@@ -768,28 +768,23 @@ const processQuestionDataAndUpdateState = (responseData: any, isNewSessionContex
   progress.value = newProgress || null
   messages.value = flash_messages || []
 
-  // Set selectedQuestionTypes from session_config if not provided by props and not already populated
-  if (selectedQuestionTypes.value.length === 0 && !props.types) {
-    const typesFromSession = session_config?.question_types;
-    if (Array.isArray(typesFromSession) && typesFromSession.length > 0) {
-      const filteredStringTypes = typesFromSession.filter((type): type is string => typeof type === 'string');
-      if (filteredStringTypes.length > 0) {
-        selectedQuestionTypes.value = [...new Set(filteredStringTypes)];
-      } else {
-        // If original typesFromSession had items but filtered list is empty, means non-string types were present.
-        if (typesFromSession.length > 0) {
-            console.warn("session_config.question_types contained non-string items. Defaulting to all types.");
-        }
-        selectedQuestionTypes.value = Object.keys(questionTypeNames);
-      }
+  // 优先从session_config恢复题型信息，这样能保证恢复历史进度时显示正确的题型
+  if (session_config?.question_types && Array.isArray(session_config.question_types)) {
+    const typesFromSession = session_config.question_types
+    const validTypes = typesFromSession.filter((type: any): type is string => 
+      typeof type === 'string' && Object.keys(questionTypeNames).includes(type)
+    )
+    
+    if (validTypes.length > 0) {
+      selectedQuestionTypes.value = validTypes as string[]
     } else {
-      // No types from session or empty array, default to all types.
-      selectedQuestionTypes.value = Object.keys(questionTypeNames);
+      // 如果session中的题型都无效，使用全部题型作为后备
+      selectedQuestionTypes.value = Object.keys(questionTypeNames)
     }
+  } else if (selectedQuestionTypes.value.length === 0 && !props.types) {
+    // 只有在没有session_config题型信息且没有props传入时，才使用默认值
+    selectedQuestionTypes.value = Object.keys(questionTypeNames)
   }
-  // If props.types existed, selectedQuestionTypes would have been populated by initializeSessionDisplayInfo.
-  // If selectedQuestionTypes is STILL empty here (e.g. props.types was empty/invalid AND session had no types),
-  // a final fallback in onMounted will set it to all types.
 
   if (newProgress) {
     const total = newProgress.total

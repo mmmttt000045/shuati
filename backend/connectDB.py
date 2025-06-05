@@ -1017,8 +1017,7 @@ def get_questions_by_tiku(tiku_id: int = None) -> list:
                 is_multiple_choice = False
 
             questions.append({
-                'id': f"db_{question_id}",
-                'db_id': question_id,
+                'id': question_id,
                 'subject_id': subject_id,
                 'tiku_id': tiku_id,
                 'type': type_name,

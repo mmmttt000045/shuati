@@ -13,13 +13,13 @@ from typing import Dict, List, Optional, Any
 from flask import Blueprint, request, jsonify
 from werkzeug.exceptions import BadRequest, NotFound
 
+from ..RedisManager import redis_manager
 from ..config import SESSION_KEYS, QUESTION_STATUS
 from ..connectDB import (
     get_questions_by_tiku, get_user_practice_history, get_tiku_by_subject, get_all_subjects,
     get_question_by_db_id
 )
 from ..decorators import handle_api_error, login_required
-from ..redis_session import RedisSessionManager
 from ..session_manager import (
     get_session_value, set_session_value, clear_practice_session,
     get_current_tiku_info,
@@ -58,7 +58,7 @@ class RedisCacheManager:
     """基于Redis的缓存管理器"""
 
     def __init__(self):
-        self.redis_manager = RedisSessionManager()
+        self.redis_manager = redis_manager
         self._cache_ttl = 3600  # 1小时TTL
         self._cache_prefix = 'cache:'
 
@@ -209,8 +209,22 @@ class RedisCacheManager:
         cached_data = self._get_from_redis(cache_key)
 
         if cached_data is not None:
-            logger.debug(f"使用Redis缓存的题目数据，题库ID: {tiku_id}")
-            return cached_data
+            logger.debug(f"使用Redis缓存的题库ID列表，题库ID: {tiku_id}")
+            # 从缓存的ID列表获取完整题目数据
+            question_ids = cached_data.get('question_ids', [])
+            questions_data = []
+
+            for question_id in question_ids:
+                question_data = self.get_question_by_id(question_id)
+                if question_data:
+                    questions_data.append(question_data)
+                else:
+                    logger.warning(f"题目 {question_id} 在缓存中不存在，将从数据库重新加载")
+
+            if len(questions_data) == len(question_ids):
+                return questions_data
+            else:
+                logger.warning(f"题库 {tiku_id} 缓存不完整，重新从数据库加载")
 
         logger.info(f"从数据库获取题库 {tiku_id} 的题目数据")
         try:
@@ -221,14 +235,73 @@ class RedisCacheManager:
                 logger.warning(f"题库 {tiku_id} 为空或不存在")
                 return []
 
-            # 存储到Redis，题目数据缓存时间稍长一些
-            self._set_to_redis(cache_key, question_bank_list, ttl=7200)  # 2小时
-            logger.info(f"成功缓存题库 {tiku_id} 的 {len(question_bank_list)} 道题目到Redis")
+            # 提取题目ID列表用于题库缓存
+            question_ids = []
+
+            # 缓存每道题的完整数据
+            for question in question_bank_list:
+                question_id = question['id']
+                question_ids.append(question_id)
+
+                # 缓存单个题目数据
+                question_cache_key = f'question_{question_id}'
+                self._set_to_redis(question_cache_key, question, ttl=10800)  # 3小时
+
+            # 缓存题库的ID列表（而不是完整数据）
+            tiku_cache_data = {
+                'question_ids': question_ids,
+                'total_count': len(question_ids),
+                'cached_at': time.time()
+            }
+            self._set_to_redis(cache_key, tiku_cache_data, ttl=7200)  # 2小时
+
+            logger.info(f"成功缓存题库 {tiku_id} 的 {len(question_ids)} 道题目ID列表到Redis")
+            logger.info(f"同时缓存了 {len(question_bank_list)} 道题目的完整数据")
+
             return question_bank_list
 
         except Exception as e:
             logger.error(f"获取题库 {tiku_id} 的题目数据失败: {e}")
             return []
+
+    def get_question_by_id(self, question_id: int) -> Optional[Dict[str, Any]]:
+        """根据题目ID获取单个题目，使用Redis缓存"""
+        cache_key = f'question_{question_id}'
+        cached_data = self._get_from_redis(cache_key)
+
+        if cached_data is not None:
+            logger.debug(f"使用Redis缓存的题目数据，题目ID: {question_id}")
+            return cached_data
+
+        logger.debug(f"从数据库获取题目 {question_id} 的数据")
+        try:
+            # 从数据库获取单个题目
+            question_data = get_question_by_db_id(question_id)
+
+            if not question_data:
+                logger.warning(f"题目 {question_id} 不存在或已禁用")
+                return None
+
+            # 存储到Redis，单个题目缓存时间更长
+            self._set_to_redis(cache_key, question_data, ttl=10800)  # 3小时
+            logger.debug(f"成功缓存题目 {question_id} 到Redis")
+            return question_data
+
+        except Exception as e:
+            logger.error(f"获取题目 {question_id} 的数据失败: {e}")
+            return None
+
+    def get_question_ids_by_tiku(self, tiku_id: int) -> List[int]:
+        """获取题库的题目ID列表（仅ID，用于轻量级操作）"""
+        cache_key = f'question_bank_{tiku_id}'
+        cached_data = self._get_from_redis(cache_key)
+
+        if cached_data is not None:
+            return cached_data.get('question_ids', [])
+
+        # 如果缓存中没有，从数据库获取并建立缓存
+        question_bank = self.get_question_bank(tiku_id)
+        return [q['id'] for q in question_bank]
 
     def refresh_all_cache(self):
         """刷新所有缓存"""
@@ -241,6 +314,7 @@ class RedisCacheManager:
                 return {
                     'tiku_count': 0,
                     'subjects_count': 0,
+                    'prewarmed_questions': 0,
                     'message': 'Redis不可用，缓存刷新失败'
                 }
 
@@ -249,26 +323,72 @@ class RedisCacheManager:
             for key in cache_keys:
                 self._delete_from_redis(key)
 
-            # 删除所有题目缓存（使用模式匹配）
+            # 删除所有题库缓存（使用模式匹配）
             try:
                 pattern = self._get_cache_key('question_bank_*')
                 keys = self.redis_manager._redis_client.keys(pattern)
                 if keys:
                     self.redis_manager._redis_client.delete(*keys)
-                    logger.info(f"删除了 {len(keys)} 个题目缓存")
+                    logger.info(f"删除了 {len(keys)} 个题库缓存")
             except Exception as e:
-                logger.error(f"删除题目缓存失败: {e}")
+                logger.error(f"删除题库缓存失败: {e}")
 
-            # 预热缓存
+            # 删除所有单个题目缓存（使用模式匹配）
+            try:
+                pattern = self._get_cache_key('question_*')
+                keys = self.redis_manager._redis_client.keys(pattern)
+                if keys:
+                    self.redis_manager._redis_client.delete(*keys)
+                    logger.info(f"删除了 {len(keys)} 个单题目缓存")
+            except Exception as e:
+                logger.error(f"删除单题目缓存失败: {e}")
+
+            # 预热基础缓存
+            logger.info("开始预热基础缓存...")
             tiku_data = self.get_tiku_list()
             file_options_data = self.get_file_options()
+
+            # 预热题目缓存 - 只预热活跃的题库
+            prewarmed_questions = 0
+            if tiku_data and 'tiku_list' in tiku_data:
+                logger.info("开始预热题目缓存...")
+                active_tiku_list = [tiku for tiku in tiku_data['tiku_list'] if tiku.get('is_active', False)]
+                
+                # 根据题库使用统计排序，优先预热常用题库
+                with usage_stats_lock:
+                    active_tiku_list.sort(key=lambda x: tiku_usage_stats.get(x['tiku_id'], 0), reverse=True)
+                
+                # 限制预热的题库数量，避免一次加载过多数据
+                max_prewarm_tiku = 10  # 最多预热10个题库
+                tiku_to_prewarm = active_tiku_list[:max_prewarm_tiku]
+                
+                for tiku in tiku_to_prewarm:
+                    try:
+                        tiku_id = tiku['tiku_id']
+                        tiku_name = tiku.get('tiku_name', f'题库{tiku_id}')
+                        logger.info(f"预热题库 {tiku_id} ({tiku_name}) 的题目缓存...")
+                        question_bank = self.get_question_bank(tiku_id)
+                        if question_bank:
+                            prewarmed_questions += len(question_bank)
+                            logger.debug(f"成功预热题库 {tiku_id} 的 {len(question_bank)} 道题目")
+                        else:
+                            logger.warning(f"题库 {tiku_id} 为空或加载失败")
+                    except Exception as e:
+                        logger.error(f"预热题库 {tiku.get('tiku_id', 'unknown')} 失败: {e}")
+                        continue
+                
+                if len(active_tiku_list) > max_prewarm_tiku:
+                    logger.info(f"活跃题库共 {len(active_tiku_list)} 个，已预热最常用的 {max_prewarm_tiku} 个题库")
+                else:
+                    logger.info(f"所有 {len(active_tiku_list)} 个活跃题库已预热完成")
 
             logger.info("所有Redis缓存已刷新完成")
 
             return {
                 'tiku_count': len(tiku_data['tiku_list']) if tiku_data else 0,
                 'subjects_count': len(file_options_data) if file_options_data else 0,
-                'message': 'Redis缓存刷新成功'
+                'prewarmed_questions': prewarmed_questions,
+                'message': f'Redis缓存刷新成功，预热了 {prewarmed_questions} 道题目'
             }
 
         except Exception as e:
@@ -276,6 +396,7 @@ class RedisCacheManager:
             return {
                 'tiku_count': 0,
                 'subjects_count': 0,
+                'prewarmed_questions': 0,
                 'message': f'缓存刷新失败: {str(e)}'
             }
 
@@ -355,31 +476,32 @@ def inject_user_progress(subjects_data: dict, current_tiku_id: int, current_prog
 def generate_questions(question_bank: List[dict], selected_types: Optional[List[str]] = None,
                        shuffle_enabled: bool = True) -> List[int]:
     """
-    优化的题目生成函数 - 单次遍历 + 预分配列表
+    优化的题目生成函数 - 返回题目ID列表
     """
     if not question_bank:
         return []
 
     # 预分配列表避免动态扩容
-    indices_by_type = {
+    ids_by_type = {
         QUESTION_TYPE_SINGLE: [],
         QUESTION_TYPE_MULTIPLE: [],
         QUESTION_TYPE_JUDGMENT: [],
         QUESTION_TYPE_OTHER: []
     }
 
-    # 单次遍历分类
-    for i, question in enumerate(question_bank):
+    # 单次遍历分类，直接使用题目ID而不是索引
+    for question in question_bank:
         question_type = _classify_question_type(
             question.get('type', ''),
             question.get('is_multiple_choice', False)
         )
-        indices_by_type[question_type].append(i)
+        question_id = question['id']
+        ids_by_type[question_type].append(question_id)
 
     # 批量打乱（如果需要）
     if shuffle_enabled:
-        for indices_list in indices_by_type.values():
-            random.shuffle(indices_list)
+        for ids_list in ids_by_type.values():
+            random.shuffle(ids_list)
 
     # 确定要包含的题型
     if selected_types is None:
@@ -398,7 +520,7 @@ def generate_questions(question_bank: List[dict], selected_types: Optional[List[
             return []
 
     # 组合结果
-    result_indices = []
+    result_ids = []
     type_names = {
         QUESTION_TYPE_SINGLE: "单选题",
         QUESTION_TYPE_MULTIPLE: "多选题",
@@ -408,16 +530,16 @@ def generate_questions(question_bank: List[dict], selected_types: Optional[List[
 
     summary_parts = []
     for q_type in types_to_include:
-        indices = indices_by_type[q_type]
-        result_indices.extend(indices)
-        if indices:
-            summary_parts.append(f"{type_names[q_type]} {len(indices)} 道")
+        ids = ids_by_type[q_type]
+        result_ids.extend(ids)
+        if ids:
+            summary_parts.append(f"{type_names[q_type]} {len(ids)} 道")
 
     shuffle_status = "已打乱" if shuffle_enabled else "未打乱"
     if summary_parts:
-        logger.info(f"题目生成完成 ({shuffle_status}): {', '.join(summary_parts)}, 总计 {len(result_indices)} 道")
+        logger.info(f"题目生成完成 ({shuffle_status}): {', '.join(summary_parts)}, 总计 {len(result_ids)} 道")
 
-    return result_indices
+    return result_ids
 
 
 @practice_bp.route('/file_options', methods=['GET'])
@@ -584,24 +706,6 @@ def api_practice_question():
         clear_practice_session()  # Defensive clear
         raise BadRequest("没有选择题库或会话已过期，请重新开始练习")
 
-    try:
-        current_tiku_id = int(current_tiku_id)
-        question_bank = cache_manager.get_question_bank(current_tiku_id)
-    except ValueError:
-        clear_practice_session()
-        raise BadRequest("无效的题库ID格式，请重新开始练习")
-    except Exception as e:  # Catch potential errors from get_question_bank (e.g., DB issues)
-        logger.error(f"Error fetching question bank for tiku {current_tiku_id}: {e}")
-        clear_practice_session()
-        raise BadRequest("加载题库数据失败，请稍后重试或重新开始练习")
-
-    if not question_bank:
-        # This implies the tiku was valid at start_practice but now isn't in cache and can't be reloaded,
-        # or it was empty to begin with.
-        logger.warning(f"Question bank for tiku {current_tiku_id} is unavailable. Clearing session.")
-        clear_practice_session()
-        raise BadRequest("题库数据丢失或无效，您的练习会话已清除，请重新开始")
-
     q_indices = get_session_value(SESSION_KEYS['QUESTION_INDICES'])
     if not q_indices:
         raise NotFound("没有可用题目或会话已过期")
@@ -640,8 +744,18 @@ def api_practice_question():
         current_idx = 0
         q_indices = new_round_indices
 
-    question_index = q_indices[current_idx]
-    question_obj = question_bank[question_index]
+    # 使用单个题目ID直接获取题目数据，而不是加载整个题库
+    question_id = q_indices[current_idx]
+
+    try:
+        question_obj = cache_manager.get_question_by_id(question_id)
+        if not question_obj:
+            logger.error(f"题目 {question_id} 不存在或已禁用")
+            raise BadRequest("当前题目不可用，请重新开始练习")
+
+    except Exception as e:
+        logger.error(f"获取题目 {question_id} 失败: {e}")
+        raise BadRequest("加载题目失败，请稍后重试")
 
     # 预构建响应数据
     question_data = {
@@ -681,7 +795,7 @@ def api_practice_question():
 @handle_api_error
 @performance_monitor
 def api_submit_answer():
-    """提交答案 - 优化版本"""
+    """提交答案 - 优化版本（使用单题目缓存）"""
     data = request.get_json()
     if not data:
         raise BadRequest("缺少请求数据")
@@ -689,43 +803,23 @@ def api_submit_answer():
     user_answer = data.get('answer', '').upper()
     question_id = data.get('question_id')
     peeked = data.get('peeked', False)
-    is_review = data.get('is_review', False)
 
     if not question_id:
         raise BadRequest("缺少题目ID")
 
-    current_tiku_id = get_session_value(SESSION_KEYS['CURRENT_TIKU_ID'])
-    if not current_tiku_id:
-        clear_practice_session()
-        raise BadRequest("无效的会话或题库，请重新开始练习")
-
-    try:
-        current_tiku_id = int(current_tiku_id)
-        question_bank = cache_manager.get_question_bank(current_tiku_id)
-    except ValueError:
-        clear_practice_session()
-        raise BadRequest("无效的题库ID格式，请重新开始练习")
-    except Exception as e:
-        logger.error(f"Error fetching question bank for tiku {current_tiku_id} during submit: {e}")
-        clear_practice_session()
-        raise BadRequest("加载题库数据失败，请稍后重试或重新开始练习")
-
-    if not question_bank:
-        logger.warning(f"Question bank for tiku {current_tiku_id} unavailable during submit. Clearing session.")
-        clear_practice_session()
-        raise BadRequest("题库数据丢失或无效，您的练习会话已清除，请重新开始")
-
-    q_indices = get_session_value(SESSION_KEYS['QUESTION_INDICES'], [])
     current_idx = get_session_value(SESSION_KEYS['CURRENT_INDEX'], 0)
 
-    if current_idx >= len(q_indices):
-        raise BadRequest("没有更多题目")
+    try:
+        question_data = cache_manager.get_question_by_id(question_id)
+        if not question_data:
+            raise BadRequest(f"题目 {question_id} 不存在或已禁用")
 
-    question_index = q_indices[current_idx]
-    question_data = question_bank[question_index]
+    except Exception as e:
+        logger.error(f"获取提交题目 {question_id} 失败: {e}")
+        raise BadRequest("加载题目数据失败")
 
-    # 验证题目ID匹配
-    if question_data['id'] != question_id:
+    # 验证题目ID匹配（如果前端传递了ID）
+    if question_id and question_data['id'] != question_id:
         logger.warning(f"题目ID不匹配: 期望 {question_data['id']}, 实际 {question_id}")
 
     is_multiple_choice = question_data.get('is_multiple_choice', False)
@@ -740,22 +834,19 @@ def api_submit_answer():
                                                                                       is_multiple_choice)
     correct_answer_display = format_answer_display(correct_answer, options, is_multiple_choice)
 
-    if not is_review:
-        update_practice_record(question_data, is_correct, peeked, current_idx, user_answer)
+    update_practice_record(question_id, is_correct, peeked, current_idx, user_answer)
 
     return create_response(True, data={
         "is_correct": is_correct,
         "user_answer_display": user_answer_display,
         "correct_answer_display": correct_answer_display,
-        "question_id": question_id,
+        "question_id": question_data['id'],
         "current_index": current_idx
     })
 
 
-def update_practice_record(question_data, is_correct: bool, peeked: bool, current_idx: int, user_answer: str):
-    """更新练习记录 - 优化版本"""
-    q_indices = get_session_value(SESSION_KEYS['QUESTION_INDICES'], [])
-    actual_question_index = q_indices[current_idx]
+def update_practice_record(question_id: int, is_correct: bool, peeked: bool, current_idx: int, user_answer: str):
+    """更新练习记录 - 优化版本（处理题目ID）"""
 
     # 批量获取session值避免多次调用
     question_statuses = get_session_value(SESSION_KEYS['QUESTION_STATUSES'], [])
@@ -767,18 +858,17 @@ def update_practice_record(question_data, is_correct: bool, peeked: bool, curren
         question_statuses[current_idx] = QUESTION_STATUS['CORRECT'] if (is_correct and not peeked) else QUESTION_STATUS[
             'WRONG']
 
-    # 保存答题历史
+    # 保存答题历史 - 存储题目ID
     answer_history[str(current_idx)] = {
         'user_answer': user_answer,
         'is_correct': is_correct,
-        'peeked': peeked,
-        'question_data': question_data
+        'question_id': question_id  # 直接存储题目ID，因为q_indices现在存储的就是ID
     }
 
-    # 处理错题和正确题
+    # 处理错题和正确题 - 现在wrong_indices存储的是题目ID
     if not is_correct or peeked:
-        if actual_question_index not in wrong_indices:
-            wrong_indices.append(actual_question_index)
+        if question_id not in wrong_indices:
+            wrong_indices.append(question_id)
     else:
         if get_session_value(SESSION_KEYS['ROUND_NUMBER'], 1) == 1:
             correct_count = get_session_value(SESSION_KEYS['CORRECT_FIRST_TRY'], 0) + 1
@@ -808,13 +898,22 @@ def update_practice_record(question_data, is_correct: bool, peeked: bool, curren
             'answer_history': answer_history
         }
 
-        if update_current_practice_session(**update_data):
-            logger.debug("练习会话数据库记录更新成功")
-        else:
-            logger.warning("练习会话数据库记录更新失败")
+        # 异步执行数据库更新，避免阻塞主线程
+        def async_update_session():
+            try:
+                if update_current_practice_session(**update_data):
+                    logger.debug("练习会话数据库记录更新成功")
+                else:
+                    logger.warning("练习会话数据库记录更新失败")
+            except Exception as e:
+                logger.error(f"异步更新练习会话数据库记录时发生错误: {e}")
+
+        # 在后台线程中执行数据库更新
+        update_thread = threading.Thread(target=async_update_session, daemon=True)
+        update_thread.start()
 
     except Exception as e:
-        logger.error(f"更新练习会话数据库记录时发生错误: {e}")
+        logger.error(f"启动异步更新练习会话数据库记录失败: {e}")
 
 
 @practice_bp.route('/completed_summary', methods=['GET'])
@@ -911,6 +1010,11 @@ def api_session_status():
 
     current_indices = get_session_value(SESSION_KEYS['QUESTION_INDICES'], [])
     current_index = get_session_value(SESSION_KEYS['CURRENT_INDEX'], 0)
+    round_number = get_session_value(SESSION_KEYS['ROUND_NUMBER'], 1)
+
+    # 获取题型和练习模式信息
+    selected_types = get_session_value('selected_question_types', [])
+    shuffle_enabled = get_session_value('shuffle_enabled', True)
 
     return create_response(True, '当前有活跃的练习会话', {
         'has_session': True,
@@ -918,7 +1022,13 @@ def api_session_status():
         'file_info': {
             'display': display_name,
             'current_question': current_index + 1,
-            'total_questions': len(current_indices)
+            'total_questions': len(current_indices),
+            'round_number': round_number
+        },
+        'session_config': {
+            'question_types': selected_types,
+            'shuffle_enabled': shuffle_enabled,
+            'practice_mode': '乱序练习' if shuffle_enabled else '顺序练习'
         }
     })
 
@@ -942,7 +1052,8 @@ def api_refresh_cache():
         result = cache_manager.refresh_all_cache()
         return create_response(True, result['message'], {
             'tiku_count': result['tiku_count'],
-            'subjects_count': result['subjects_count']
+            'subjects_count': result['subjects_count'],
+            'prewarmed_questions': result['prewarmed_questions']
         })
     except Exception as e:
         logger.error(f"刷新缓存失败: {e}")
@@ -1042,7 +1153,7 @@ def api_practice_statistics():
 @practice_bp.route('/practice/history/<int:question_index>', methods=['GET'])
 @handle_api_error
 def api_get_question_history(question_index: int):
-    """获取题目答题历史"""
+    """获取题目答题历史 - 新格式版本（使用题目ID）"""
     q_indices = get_session_value(SESSION_KEYS['QUESTION_INDICES'], [])
 
     if question_index < 0 or question_index >= len(q_indices):
@@ -1055,7 +1166,22 @@ def api_get_question_history(question_index: int):
         raise NotFound('该题目没有答题历史')
 
     history_data = answer_history[history_key]
-    question_data = history_data['question_data']
+
+    # 验证新格式数据
+    if 'question_id' not in history_data:
+        raise BadRequest('答题历史数据格式错误，请重新开始练习')
+
+    # 使用题目ID直接获取题目数据
+    actual_question_id = history_data['question_id']
+
+    try:
+        question_data = cache_manager.get_question_by_id(actual_question_id)
+        if not question_data:
+            raise NotFound(f'题目 {actual_question_id} 不存在或已禁用')
+
+    except Exception as e:
+        logger.error(f"获取历史题目 {actual_question_id} 失败: {e}")
+        raise BadRequest("加载题目数据失败")
 
     # 格式化答案显示
     options = question_data.get('options_for_practice', {})
@@ -1063,9 +1189,10 @@ def api_get_question_history(question_index: int):
     correct_answer = question_data['answer'].upper()
     user_answer = history_data['user_answer']
 
-    user_answer_display = '未作答（直接查看答案）' if history_data['peeked'] else format_answer_display(user_answer,
-                                                                                                      options,
-                                                                                                      is_multiple_choice)
+    user_answer_display = '未作答（直接查看答案）' if history_data['user_answer'] is None or not history_data[
+        'user_answer'] else format_answer_display(user_answer,
+                                                  options,
+                                                  is_multiple_choice)
     correct_answer_display = format_answer_display(correct_answer, options, is_multiple_choice)
 
     return create_response(True, data={
@@ -1085,7 +1212,7 @@ def api_get_question_history(question_index: int):
             'correct_answer_display': correct_answer_display,
             'question_id': question_data['id'],
             'current_index': question_index,
-            'peeked': history_data['peeked']
+            'explanation': ''
         }
     })
 

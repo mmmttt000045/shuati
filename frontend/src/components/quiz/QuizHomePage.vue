@@ -109,8 +109,12 @@
                 <span class="session-value">{{ confirmData.fileName }}</span>
               </div>
               <div class="session-detail">
-                <span class="session-label">Order：</span>
+                <span class="session-label">练习模式：</span>
                 <span class="session-value">{{ confirmData.order }}</span>
+              </div>
+              <div class="session-detail">
+                <span class="session-label">题型：</span>
+                <span class="session-value">{{ questionTypesText }}</span>
               </div>
               <div class="session-detail">
                 <span class="session-label">进度：</span>
@@ -356,11 +360,29 @@ const confirmData = ref<{
   progressPercent: number;
   sessionStatus?: any;
   tikuId: string;
+  questionTypes?: string[];
 }>({
   fileName: '',
   subject: '',
   progressPercent: 0,
   tikuId: ''
+})
+
+// 计算题型显示文本
+const questionTypesText = computed(() => {
+  if (!confirmData.value.questionTypes || confirmData.value.questionTypes.length === 0) {
+    return '未知题型'
+  }
+  
+  if (confirmData.value.questionTypes.length === questionTypeOptions.length) {
+    return '全部题型'
+  }
+  
+  const typeNames = confirmData.value.questionTypes
+    .map(type => questionTypeOptions.find(opt => opt.key === type)?.name)
+    .filter(Boolean)
+  
+  return typeNames.join('、')
 })
 
 const getTotalQuestions = (files: SubjectFile[]) => {
@@ -407,21 +429,65 @@ const startPractice = async (subject: string, fileName: string) => {
     return
   }
 
-  // 如果有历史进度，显示确认对话框
+  // 如果有历史进度，获取详细的会话状态信息
   if (file.progress) {
-    confirmData.value = {
-      fileName: file.display,
-      subject,
-      order: 'random', // 默认显示随机
-      progress: {
-        current: file.progress.current_question,
-        total: file.progress.total_questions,
-        round: file.progress.round_number
-      },
-      progressPercent: file.progress.progress_percent,
-      tikuId: file.tiku_id.toString()
+    try {
+      // 调用API获取会话状态
+      const sessionResponse = await apiService.checkSessionStatus()
+      
+      if (sessionResponse.success && sessionResponse.data?.has_session) {
+        const sessionData = sessionResponse.data
+        
+        confirmData.value = {
+          fileName: file.display,
+          subject,
+          order: sessionData.session_config?.practice_mode || '随机练习',
+          progress: {
+            current: sessionData.file_info?.current_question || file.progress.current_question,
+            total: sessionData.file_info?.total_questions || file.progress.total_questions,
+            round: sessionData.file_info?.round_number || file.progress.round_number
+          },
+          progressPercent: file.progress.progress_percent,
+          tikuId: file.tiku_id.toString(),
+          sessionStatus: sessionData,
+          questionTypes: sessionData.session_config?.question_types || []
+        }
+      } else {
+        // 如果没有活跃会话，使用文件进度数据
+        confirmData.value = {
+          fileName: file.display,
+          subject,
+          order: 'random', // 默认显示随机
+          progress: {
+            current: file.progress.current_question,
+            total: file.progress.total_questions,
+            round: file.progress.round_number
+          },
+          progressPercent: file.progress.progress_percent,
+          tikuId: file.tiku_id.toString(),
+          questionTypes: []
+        }
+      }
+      
+      showConfirmDialog.value = true
+    } catch (error) {
+      console.error('Error checking session status:', error)
+      // 发生错误时，仍然显示确认对话框，但使用文件进度数据
+      confirmData.value = {
+        fileName: file.display,
+        subject,
+        order: 'random',
+        progress: {
+          current: file.progress.current_question,
+          total: file.progress.total_questions,
+          round: file.progress.round_number
+        },
+        progressPercent: file.progress.progress_percent,
+        tikuId: file.tiku_id.toString(),
+        questionTypes: []
+      }
+      showConfirmDialog.value = true
     }
-    showConfirmDialog.value = true
   } else {
     // 没有历史进度，显示配置对话框
     configDialogData.value = {

@@ -8,14 +8,14 @@ import json
 import sys
 from datetime import datetime
 from typing import Dict, List, Any
-from redis_session import redis_session_manager, RedisConfig
+from RedisManager import redis_manager, RedisConfig
 
 
 class RedisSessionAdmin:
     """Redis Session管理工具类"""
     
     def __init__(self):
-        self.redis_manager = redis_session_manager
+        self.redis_manager = redis_manager
     
     def check_status(self) -> Dict[str, Any]:
         """检查Redis状态"""

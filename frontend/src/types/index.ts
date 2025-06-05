@@ -135,6 +135,11 @@ export interface QuestionResponse {
   progress: Progress;
   flash_messages: FlashMessage[];
   redirect_to_completed?: boolean;
+  session_config?: {
+    question_types?: string[];
+    shuffle_enabled?: boolean;
+    tiku_id?: number;
+  };
 }
 
 export interface ApiResponse {

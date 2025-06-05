@@ -54,7 +54,7 @@
                     v-model="formData.option_a"
                     label="选项A"
                     variant="outlined"
-                    :rules="[rules.required]"
+                    :rules="showOptions ? [rules.required] : []"
                     rows="2"
                     auto-grow
                   />
@@ -64,7 +64,7 @@
                     v-model="formData.option_b"
                     label="选项B"
                     variant="outlined"
-                    :rules="[rules.required]"
+                    :rules="showOptions ? [rules.required] : []"
                     rows="2"
                     auto-grow
                   />
@@ -160,7 +160,7 @@
             type="submit"
             color="primary"
             :loading="loading"
-            :disabled="!valid"
+            :disabled="!(valid || isFormValid)"
           >
             {{ isEdit ? '更新' : '创建' }}
           </v-btn>
@@ -240,6 +240,23 @@ const showOptions = computed(() => {
   return formData.value.question_type === 0 || formData.value.question_type === 5
 })
 
+// 添加计算属性来检查表单是否有效
+const isFormValid = computed(() => {
+  // 检查基本必填字段
+  if (!formData.value.stem?.trim()) return false
+  if (formData.value.difficulty === undefined || formData.value.difficulty < 1) return false
+  if (!formData.value.status) return false
+  if (!formData.value.answer?.trim()) return false
+  
+  // 如果是单选题或多选题，检查选项
+  if (showOptions.value) {
+    if (!formData.value.option_a?.trim()) return false
+    if (!formData.value.option_b?.trim()) return false
+  }
+  
+  return true
+})
+
 // 选项配置
 const questionTypes = [
   { title: '单选题', value: 0 },
@@ -281,7 +298,27 @@ const judgmentOptions = [
 
 // 验证规则
 const rules = {
-  required: (value: any) => !!value || '此项为必填项'
+  required: (value: any) => {
+    if (value === null || value === undefined) {
+      return '此项为必填项'
+    }
+    if (typeof value === 'string') {
+      return value.trim() !== '' || '此项为必填项'
+    }
+    if (typeof value === 'number') {
+      return !isNaN(value) || '此项为必填项'
+    }
+    return !!value || '此项为必填项'
+  }
+}
+
+// 手动触发表单验证
+const triggerValidation = () => {
+  nextTick(() => {
+    if (form.value) {
+      form.value.validate()
+    }
+  })
 }
 
 // 方法
@@ -295,6 +332,14 @@ const resetForm = () => {
       multipleAnswers.value = props.question.answer.split('').filter(a => a.match(/[A-D]/))
     } else {
       multipleAnswers.value = []
+    }
+    
+    // 确保必要字段有默认值
+    if (!formData.value.status) {
+      formData.value.status = 'active'
+    }
+    if (!formData.value.difficulty) {
+      formData.value.difficulty = 1
     }
   } else {
     // 新增模式，使用默认值
@@ -314,6 +359,16 @@ const resetForm = () => {
     }
     multipleAnswers.value = []
   }
+  
+  // 重置表单验证状态
+  if (form.value) {
+    form.value.resetValidation()
+  }
+  
+  // 延迟触发验证，确保数据已经绑定
+  setTimeout(() => {
+    triggerValidation()
+  }, 100)
 }
 
 const onTypeChange = () => {
@@ -336,7 +391,11 @@ const updateMultipleAnswers = (answers: string[]) => {
 }
 
 const handleSubmit = async () => {
-  if (!valid.value) return
+  // 使用自定义验证逻辑而不是只依赖Vuetify验证
+  if (!isFormValid.value) {
+    console.log('表单验证失败')
+    return
+  }
 
   loading.value = true
   try {
@@ -362,11 +421,23 @@ const handleCancel = () => {
   })
 }
 
+// 监听表单数据变化，及时更新验证状态
+watch(() => formData.value, () => {
+  triggerValidation()
+}, { deep: true })
+
 // 监听对话框状态
 watch(() => props.modelValue, (newValue) => {
   if (newValue) {
     resetForm()
+    // 在下一个tick中触发表单验证
+    triggerValidation()
   }
+})
+
+watch(() => formData.value.question_type, () => {
+  // 题目类型改变时重新验证表单
+  triggerValidation()
 })
 </script>
 

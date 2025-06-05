@@ -10,7 +10,7 @@ from typing import Any, Optional, List, Dict
 from flask import session, request, g
 
 from .config import SESSION_KEYS, Config
-from .redis_session import get_hybrid_session_value,set_hybrid_session_value
+from .RedisManager import get_hybrid_session_value, set_hybrid_session_value, redis_manager
 from .connectDB import (
     create_practice_session, update_practice_session, 
     complete_practice_session, get_user_active_practice_session,
@@ -40,26 +40,12 @@ class SessionManager:
     """增强的Session管理器，支持Redis混合存储"""
     
     def __init__(self):
-        self._redis_session_manager = None
-        self._init_redis_support()
-    
-    def _init_redis_support(self):
-        """初始化Redis支持"""
-        try:
-            from .redis_session import redis_session_manager
-            self._redis_session_manager = redis_session_manager
-            if self._redis_session_manager.is_available:
-                logger.info("Redis session支持已启用")
-            else:
-                logger.warning("Redis不可用，将使用数据库存储")
-        except ImportError as e:
-            logger.warning(f"Redis模块导入失败，将使用数据库存储: {e}")
+        self._redis_manager = redis_manager
     
     @property
     def redis_available(self) -> bool:
         """检查Redis是否可用"""
-        return (self._redis_session_manager is not None and 
-                self._redis_session_manager.is_available)
+        return self._redis_manager.is_available
     
     @staticmethod
     def update_activity():
@@ -77,8 +63,7 @@ class SessionManager:
         # 同时更新Redis session的TTL
         session_id = session.get('session_id')
         if session_id:
-            from .redis_session import redis_session_manager
-            redis_session_manager.extend_session_ttl(session_id)
+            redis_manager.extend_session_ttl(session_id)
     
     @staticmethod
     def get_session_info() -> Dict[str, Any]:
@@ -129,11 +114,10 @@ class SessionManager:
     @staticmethod
     def _get_storage_info() -> Dict[str, str]:
         """获取存储信息"""
-        from .redis_session import redis_session_manager
         return {
-            'redis_available': redis_session_manager.is_available,
+            'redis_available': redis_manager.is_available,
             'session_id': session.get('session_id'),
-            'storage_strategy': 'Redis+DB' if redis_session_manager.is_available else 'Database'
+            'storage_strategy': 'Redis+DB' if redis_manager.is_available else 'Database'
         }
     
     @staticmethod
@@ -173,8 +157,7 @@ class SessionManager:
             # 清理Redis数据
             session_id = session.get('session_id')
             if session_id:
-                from .redis_session import redis_session_manager
-                redis_session_manager.delete_session_data(session_id)
+                redis_manager.delete_session_data(session_id)
             
             session.clear()
             return True

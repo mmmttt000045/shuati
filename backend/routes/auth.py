@@ -2,21 +2,20 @@
 用户认证相关的路由模块
 """
 import logging
+
 from flask import Blueprint, request, session
 from werkzeug.exceptions import BadRequest, NotFound
 
-from ..decorators import handle_api_error, login_required
-from ..utils import create_response
 from ..config import SESSION_KEYS
-from ..session_manager import (
-    clear_all_session,  check_and_resume_practice_session
-)
 from ..connectDB import (
     authenticate_user, create_user, verify_invitation_code,
     get_user_info
 )
-
-from ..session_manager import session_manager
+from ..decorators import handle_api_error, login_required
+from ..session_manager import (
+    clear_all_session, check_and_resume_practice_session
+)
+from ..utils import create_response
 
 logger = logging.getLogger(__name__)
 
@@ -76,40 +75,34 @@ def api_login():
     if result['success']:
         user_id = result['user_id']
 
-        # Flask-Session会自动生成和管理session ID
-        # 设置session数据
+        # 设置session数据，Flask-Session会自动管理
         session[SESSION_KEYS['USER_ID']] = user_id
         session[SESSION_KEYS['USERNAME']] = result['username']
-        
-        # 设置session为永久性（受PERMANENT_SESSION_LIFETIME控制）
-        session.permanent = True
-        
-        # 设置session活跃度
-        session_manager.update_activity()
+        session[SESSION_KEYS['USER_MODEL']] = result['model']
+        session.permanent = True  # 使用永久session，受PERMANENT_SESSION_LIFETIME控制
 
-        # 调试：打印session内容
-        logger.info(f"Session keys: {list(session.keys())}")
-        logger.info(f"Session content: {dict(session)}")
+        # 尝试恢复练习session（如果有的话），但不让它影响登录流程
+        try:
+            check_and_resume_practice_session(user_id)
+        except Exception as e:
+            logger.warning(f"恢复练习session失败，但不影响登录: {e}")
 
-        check_and_resume_practice_session(user_id)
-
-        logger.info(f"User logged in: {result['username']}, Session ID: {session.get('_id', 'N/A')}")
+        logger.info(f"User logged in: {result['username']}")
         return create_response(True, '登录成功',
-        {
-            'user': {
-                'user_id': user_id,
-                'username': result['username'],
-                'model': result['model'],
-                'email': result['email']
-            },
-            'session': {
-                'is_authenticated': True,
-                'session_valid': True,
-                'user_id': user_id,
-                'username': result['username'],
-                'session_id': session.get('sid', session.get('_id', session.get('session_id', 'N/A')))  # Flask-Session的内部session ID
-            }
-        })
+                               {
+                                   'user': {
+                                       'user_id': user_id,
+                                       'username': result['username'],
+                                       'model': result['model'],
+                                       'email': result['email']
+                                   },
+                                   'session': {
+                                       'is_authenticated': True,
+                                       'session_valid': True,
+                                       'user_id': user_id,
+                                       'username': result['username']
+                                   }
+                               })
     else:
         logger.warning(f"Failed login attempt for username: {username}")
         raise BadRequest(result['error'])
@@ -119,8 +112,8 @@ def api_login():
 @handle_api_error
 def api_logout():
     """用户登出"""
-    if session.get('user_id'):
-        username = session.get('username', 'Unknown')
+    if session.get(SESSION_KEYS['USER_ID']):
+        username = session.get(SESSION_KEYS['USERNAME'], 'Unknown')
         clear_all_session()
         logger.info(f"User logged out: {username}")
         return create_response(True, '登出成功')
@@ -133,7 +126,7 @@ def api_logout():
 @handle_api_error
 def api_get_user_info():
     """获取当前用户信息"""
-    user_id = session.get('user_id')
+    user_id = session.get(SESSION_KEYS['USER_ID'])
     user_info = get_user_info(user_id)
 
     if user_info:
@@ -155,16 +148,16 @@ def api_get_user_info():
 @handle_api_error
 def api_check_auth():
     """检查登录状态"""
-    if session.get('user_id'):
+    user_id = session.get(SESSION_KEYS['USER_ID'])
+    if user_id:
         # 获取完整的用户信息，包括身份模型
-        user_id = session.get('user_id')
         user_info = get_user_info(user_id)
 
         return create_response(True, data={
             'authenticated': True,
             'user': {
                 'user_id': user_info['id'] if user_info else user_id,
-                'username': user_info['username'] if user_info else session.get('username'),
+                'username': user_info['username'] if user_info else session.get(SESSION_KEYS['USERNAME']),
                 'model': user_info.get('model', 0) if user_info else 0
             }
         })
@@ -175,15 +168,18 @@ def api_check_auth():
 @auth_bp.route('/session/status', methods=['GET'])
 @handle_api_error
 def api_session_status():
-    """获取session状态详细信息"""
-    from ..session_manager import session_manager
-    
-    session_info = session_manager.get_session_info()
-    
-    if session_info['is_authenticated']:
+    """获取session状态信息 - 简化版本"""
+    user_id = session.get(SESSION_KEYS['USER_ID'])
+
+    if user_id:
         return create_response(True, data={
-            'session': session_info,
-            'message': 'Session活跃' if session_info['session_valid'] else 'Session已过期'
+            'session': {
+                'is_authenticated': True,
+                'session_valid': True,
+                'user_id': user_id,
+                'username': session.get(SESSION_KEYS['USERNAME'])
+            },
+            'message': 'Session活跃'
         })
     else:
         return create_response(True, data={
@@ -196,14 +192,20 @@ def api_session_status():
 @login_required
 @handle_api_error
 def api_extend_session():
-    """延长session时间"""
-    from ..session_manager import session_manager
-    
-    session_manager.extend_session()
-    logger.info(f"Session延长: user_id={session.get('user_id')}")
-    
+    """延长session时间 - Flask-Session会自动处理"""
+    # Flask-Session在每次请求时会自动更新过期时间（如果SESSION_REFRESH_EACH_REQUEST=True）
+    # 这里只需要触碰一下session即可
+    session.permanent = True
+
+    logger.debug(f"Session延长请求: user_id={session.get(SESSION_KEYS['USER_ID'])}")
+
     return create_response(True, '会话时间已延长', data={
-        'session': session_manager.get_session_info()
+        'session': {
+            'is_authenticated': True,
+            'session_valid': True,
+            'user_id': session.get(SESSION_KEYS['USER_ID']),
+            'username': session.get(SESSION_KEYS['USERNAME'])
+        }
     })
 
 
@@ -211,9 +213,9 @@ def api_extend_session():
 @login_required
 @handle_api_error
 def api_mark_warning_shown():
-    """标记过期警告已显示"""
-    from ..session_manager import session_manager
-    
-    session_manager.mark_warning_shown()
-    
-    return create_response(True, '警告状态已更新') 
+    """标记过期警告已显示 - 简化版本"""
+    # 在简化的版本中，我们可以选择不实现复杂的警告机制
+    # 或者简单地在session中标记
+    session['warning_shown'] = True
+
+    return create_response(True, '警告状态已更新')

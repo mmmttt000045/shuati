@@ -22,7 +22,7 @@ from backend.routes.practice import practice_bp, usage_stats_lock,  tiku_usage_s
 from backend.routes.profile import profile_bp
 from backend.routes.usage import usage_bp
 
-from backend.session_manager import SessionManager,session_manager
+from backend.session_manager import SessionManager
 from backend.utils import create_response
 
 # Configure logging
@@ -104,12 +104,12 @@ def monitor_activity():
                 logger.error(f"Error cleaning practice sessions: {e}")
             cleanup_counter = 0
 
-        # 每10分钟记录一次session清理统计
+        # 每10分钟的统计信息记录
         if session_cleanup_counter >= 20:  # 每10分钟
             try:
-                logger.info("Session清理任务：客户端会在下次请求时自动清理过期session")
+                logger.info("Session由Flask-Session自动管理，无需手动清理")
             except Exception as e:
-                logger.error(f"Error in session cleanup logging: {e}")
+                logger.error(f"Error in session status logging: {e}")
             session_cleanup_counter = 0
 
         # 同步题库使用次数到数据库
@@ -187,23 +187,13 @@ def create_app():
 
     @app.before_request
     def before_request():
-        """请求前处理 - 优化版本，集成session管理"""
+        """请求前处理 - 简化版本，只统计请求"""
         global request_counter
         with request_counter_lock:
             request_counter += 1
 
         # 设置session为永久性
         session.permanent = True
-
-        # 对于需要登录的路径，检查并清理过期session
-        if request.endpoint and any(need_auth in request.endpoint for need_auth in ['practice', 'admin', 'user']):
-            try:
-                if session_manager.cleanup_expired_session():
-                    logger.info("自动清理过期session")
-            except Exception as e:
-                logger.error(f"清理session时出错: {e}")
-                # 如果session有问题，清空session
-                session.clear()
 
     # 添加错误处理器来处理session相关错误
     @app.errorhandler(UnicodeDecodeError)

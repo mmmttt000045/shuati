@@ -23,14 +23,9 @@ logger = logging.getLogger(__name__)
 # 添加练习会话ID的session key
 PRACTICE_SESSION_ID_KEY = 'practice_session_id'
 
-# Session活跃度管理相关常量
-SESSION_LAST_ACTIVITY_KEY = 'last_activity'
-SESSION_LOGIN_TIME_KEY = 'login_time'
-SESSION_WARNING_SHOWN_KEY = 'warning_shown'
-
 
 class SessionManager:
-    """增强的Session管理器，支持Redis混合存储"""
+    """简化的Session管理器，完全依赖Flask-Session"""
 
     def __init__(self):
         self._redis_manager = redis_manager
@@ -68,63 +63,15 @@ class SessionManager:
         return self._redis_manager.is_available
 
     @staticmethod
-    def update_activity():
-        """更新session活跃度 - 适配Flask-Session"""
-        current_time = datetime.now()
-        session[SESSION_LAST_ACTIVITY_KEY] = current_time.isoformat()
-
-        # 如果是新session，记录登录时间
-        if SESSION_LOGIN_TIME_KEY not in session:
-            session[SESSION_LOGIN_TIME_KEY] = current_time.isoformat()
-
-        # Flask-Session会自动处理session.modified和持久化
-        session.permanent = True
-
-    @staticmethod
     def get_session_info() -> Dict[str, Any]:
-        """获取session状态信息"""
-        now = datetime.now()
-
-        # 获取活跃度信息
-        last_activity_str = session.get(SESSION_LAST_ACTIVITY_KEY)
-        login_time_str = session.get(SESSION_LOGIN_TIME_KEY)
-
-        result = {
+        """获取session状态信息 - 简化版本，依赖Flask-Session"""
+        return {
             'is_authenticated': bool(session.get(SESSION_KEYS['USER_ID'])),
             'user_id': session.get(SESSION_KEYS['USER_ID']),
             'username': session.get(SESSION_KEYS['USERNAME']),
-            'last_activity': last_activity_str,
-            'login_time': login_time_str,
-            'session_valid': True,
-            'time_remaining': None,
-            'warning_needed': False,
+            'session_valid': True,  # Flask-Session会自动处理过期
             'storage_info': SessionManager._get_storage_info()
         }
-
-        if last_activity_str:
-            try:
-                last_activity = datetime.fromisoformat(last_activity_str)
-                session_age = now - last_activity
-
-                # 检查session是否过期
-                if session_age > Config.PERMANENT_SESSION_LIFETIME:
-                    result['session_valid'] = False
-                    result['expired'] = True
-                else:
-                    # 计算剩余时间
-                    remaining = Config.PERMANENT_SESSION_LIFETIME - session_age
-                    result['time_remaining'] = int(remaining.total_seconds())
-
-                    # 检查是否需要警告
-                    warning_threshold = timedelta(minutes=Config.SESSION_WARNING_MINUTES)
-                    if remaining <= warning_threshold and not session.get(SESSION_WARNING_SHOWN_KEY):
-                        result['warning_needed'] = True
-
-            except (ValueError, TypeError) as e:
-                logger.warning(f"解析session时间失败: {e}")
-                result['session_valid'] = False
-
-        return result
 
     @staticmethod
     def _get_storage_info() -> Dict[str, str]:
@@ -145,46 +92,6 @@ class SessionManager:
             'storage_strategy': f'Flask-Session ({session_type})',
             'redis_available': redis_manager.is_available if session_type == 'redis' else 'N/A'
         }
-
-    @staticmethod
-    def mark_warning_shown():
-        """标记已显示过期警告"""
-        session[SESSION_WARNING_SHOWN_KEY] = True
-        session.modified = True
-
-    @staticmethod
-    def is_session_expired() -> bool:
-        """检查session是否过期"""
-        last_activity_str = session.get(SESSION_LAST_ACTIVITY_KEY)
-        if not last_activity_str:
-            return True
-
-        try:
-            last_activity = datetime.fromisoformat(last_activity_str)
-            session_age = datetime.now() - last_activity
-            return session_age > Config.PERMANENT_SESSION_LIFETIME
-        except (ValueError, TypeError):
-            return True
-
-    @staticmethod
-    def extend_session():
-        """延长session时间（重新活跃） - 适配Flask-Session"""
-        SessionManager.update_activity()
-        # 清除警告标记
-        session.pop(SESSION_WARNING_SHOWN_KEY, None)
-        # Flask-Session会自动处理session过期时间的延长
-
-    @staticmethod
-    def cleanup_expired_session():
-        """清理过期的session - 适配Flask-Session"""
-        if SessionManager.is_session_expired():
-            logger.info(f"清理过期session: user_id={session.get(SESSION_KEYS['USER_ID'])}")
-
-            # Flask-Session会自动处理过期session的清理
-            # 我们只需要清空当前session内容
-            session.clear()
-            return True
-        return False
 
 
 # 创建全局session管理器实例
@@ -269,33 +176,21 @@ def set_database_session_value(key: str, value: Any) -> None:
 
 
 def get_user_session_info() -> dict:
-    """获取用户会话信息 - 兼容新的SessionAuth系统"""
-    # 优先从Flask的g对象获取当前用户信息（由@login_required设置）
-    current_user = getattr(g, 'current_user', None)
-
-    if current_user:
-        return {
-            'user_id': current_user['user_id'],
-            'username': current_user['username'],
-            'user_model': current_user.get('user_model', 0),
-            'email': current_user.get('email', ''),
-            'session_id': current_user.get('session_id', '')
-        }
-
-    # 回退到Flask session（兼容性处理）
+    """获取用户会话信息 - 简化版本，完全依赖Flask-Session"""
     user_id = session.get(SESSION_KEYS['USER_ID'])
     username = session.get(SESSION_KEYS['USERNAME'])
+    user_model = session.get(SESSION_KEYS['USER_MODEL'], 0)
 
     if user_id and username:
         return {
             'user_id': user_id,
             'username': username,
-            'user_model': 0,  # 默认值
-            'email': '',
-            'session_id': session.get('session_id', '')
+            'user_model': user_model,
+            'email': '',  # 如果需要email，可以从数据库查询
+            'session_id': session.get('sid', session.get('_id', ''))
         }
 
-    # 如果都没有，返回空信息
+    # 如果没有登录，返回空信息
     return {
         'user_id': None,
         'username': None,
@@ -436,7 +331,6 @@ def check_and_resume_practice_session(user_id: int, tiku_id: int = None) -> Opti
                 return None
 
             # 大数据（question_indices, wrong_indices, question_statuses, answer_history）
-            from backend.routes.practice import set_session_value
             set_session_value(SESSION_KEYS['QUESTION_INDICES'], active_session['question_indices'])
             set_session_value(SESSION_KEYS['WRONG_INDICES'], active_session['wrong_indices'])
             set_session_value(SESSION_KEYS['QUESTION_STATUSES'], active_session['question_statuses'])
@@ -499,10 +393,13 @@ def load_session_from_db() -> None:
     从数据库加载session数据 - 现在通过练习会话系统处理
     使用 check_and_resume_practice_session 来恢复活跃的练习会话
     """
-    user_id = session.get('user_id')
+    user_id = session.get(SESSION_KEYS['USER_ID'])
     if user_id:
         logger.debug("尝试从练习会话数据库恢复会话")
-        check_and_resume_practice_session(user_id)
+        try:
+            check_and_resume_practice_session(user_id)
+        except Exception as e:
+            logger.warning(f"从数据库恢复session失败: {e}")
 
 
 def get_tiku_position_by_id(tiku_id: int) -> Optional[str]:

@@ -9,6 +9,7 @@ from werkzeug.exceptions import BadRequest, NotFound
 from ..connectDB import (
     hash_password, with_db_connection
 )
+from ..config import SESSION_KEYS
 from ..decorators import handle_api_error, login_required
 from ..utils import create_response
 
@@ -103,7 +104,7 @@ def change_user_password(cursor, user_id: int, current_password: str, new_passwo
 @handle_api_error
 def api_get_profile_info():
     """获取用户详细个人信息"""
-    user_id = session.get('user_id')
+    user_id = session.get(SESSION_KEYS['USER_ID'])
     user_info = get_user_detailed_info(user_id)
 
     if not user_info:
@@ -135,7 +136,7 @@ def api_update_profile_info():
     if not data:
         raise BadRequest('缺少请求数据')
 
-    user_id = session.get('user_id')
+    user_id = session.get(SESSION_KEYS['USER_ID'])
 
     # 验证输入数据
     username = data.get('username', '').strip()
@@ -182,7 +183,7 @@ def api_update_profile_info():
     if result['success']:
         # 如果更新了用户名，需要更新session
         if 'username' in update_data:
-            session['username'] = update_data['username']
+            session[SESSION_KEYS['USERNAME']] = update_data['username']
             session.modified = True
 
         logger.info(f"User {user_id} updated profile: {list(update_data.keys())}")
@@ -220,7 +221,7 @@ def api_change_password():
     if not (has_letter and has_digit):
         raise BadRequest('密码必须包含字母和数字')
 
-    user_id = session.get('user_id')
+    user_id = session.get(SESSION_KEYS['USER_ID'])
     result = change_user_password(user_id, current_password, new_password)
 
     if result['success']:

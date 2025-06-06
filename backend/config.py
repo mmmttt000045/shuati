@@ -96,6 +96,7 @@ SESSION_KEYS = {
     # 用户身份相关
     'USER_ID': 'user_id',  # 当前登录用户ID
     'USERNAME': 'username',  # 当前登录用户名
+    'USER_MODEL': 'user_model',  # 用户权限模型
 
     # 练习状态相关
     'CURRENT_TIKU_ID': 'current_tiku_id',  # 当前练习的题库ID

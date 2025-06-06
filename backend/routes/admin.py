@@ -10,7 +10,7 @@ from flask import Blueprint, request, session
 from werkzeug.exceptions import BadRequest, NotFound
 
 from backend.routes.practice import cache_manager as practice_cache_manager
-from ..config import SHEET_NAME
+from ..config import SHEET_NAME, SESSION_KEYS
 from ..connectDB import (
     get_all_subjects, create_subject, update_subject, delete_subject,
     get_tiku_by_subject, create_or_update_tiku, delete_tiku, toggle_tiku_status,
@@ -23,7 +23,7 @@ from ..connectDB import (
     toggle_question_status_and_update_tiku_count, get_questions_paginated,
     reset_user_password
 )
-from ..decorators import handle_api_error, login_required, admin_required, permission_cache
+from ..decorators import handle_api_error, login_required, admin_required
 from ..utils import (
     create_response,
     ensure_subject_directory,
@@ -531,7 +531,7 @@ def api_admin_toggle_user(user_id):
     """启用/禁用用户"""
     try:
         # 不能操作自己
-        current_user_id = session.get('user_id')
+        current_user_id = session.get(SESSION_KEYS['USER_ID'])
         if user_id == current_user_id:
             raise BadRequest("不能操作自己的账户")
 
@@ -566,7 +566,7 @@ def api_admin_update_user_model(user_id):
             raise BadRequest("无效的用户模型")
 
         # 不能操作自己
-        current_user_id = session.get('user_id')
+        current_user_id = session.get(SESSION_KEYS['USER_ID'])
         if user_id == current_user_id:
             raise BadRequest("不能修改自己的权限")
 
@@ -575,7 +575,7 @@ def api_admin_update_user_model(user_id):
 
         if result['success']:
             # 更新缓存
-            permission_cache.update_user_model(user_id, model)
+            session[SESSION_KEYS['USER_MODEL']] = model
 
             logger.info(f"管理员更新用户权限: user_id={user_id}, username={result['username']}, model={model}")
             return create_response(True, result['message'], data={
@@ -613,7 +613,7 @@ def api_admin_reset_user_password(user_id):
             raise BadRequest("密码长度不能超过64位")
 
         # 不能操作自己
-        current_user_id = session.get('user_id')
+        current_user_id = session.get(SESSION_KEYS['USER_ID'])
         if user_id == current_user_id:
             raise BadRequest("不能重置自己的密码")
 

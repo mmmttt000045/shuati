@@ -40,8 +40,9 @@ class RedisConfig:
     REDIS_HOST = '127.0.0.1'
     REDIS_PORT = 6379
     REDIS_DB = 0
+    SESSION_DB =1
     REDIS_PASSWORD = None  # 如果Redis设置了密码
-    REDIS_DECODE_RESPONSES = False  # 改为False以正确处理二进制数据
+    REDIS_DECODE_RESPONSES = False  # 设置为False避免UTF-8解码问题，Flask-Session会自行处理编码
 
     # Redis 连接池配置
     REDIS_POOL_CONFIG = {
@@ -55,6 +56,11 @@ class RedisConfig:
     # Session 存储配置
     REDIS_SESSION_PREFIX = 'session:'
     REDIS_SESSION_TTL = 7200  # 2小时，与Flask session保持一致
+
+    # Flask-Session 配置
+    FLASK_SESSION_PREFIX = 'flask_session:'
+    FLASK_SESSION_TTL = 7200  # 2小时
+    FLASK_SESSION_KEY_PREFIX = 'session_'
 
     # 压缩配置
     ENABLE_COMPRESSION = True  # 启用数据压缩以节省内存
@@ -87,9 +93,6 @@ COLUMNS_FOR_EXCEL_OUTPUT = [QUESTION_COLUMN, OPTION_A_COLUMN, OPTION_B_COLUMN, O
 # --- Session keys ---
 # 核心会话密钥，按功能分组
 SESSION_KEYS = {
-
-    'SESSION_ID': 'session_id',
-
     # 用户身份相关
     'USER_ID': 'user_id',  # 当前登录用户ID
     'USERNAME': 'username',  # 当前登录用户名
@@ -131,9 +134,16 @@ QUESTION_STATUS_NAMES = {
 class Config:
     SECRET_KEY = 'your-fixed-secret-key-here'
 
-    # Session 配置 - 优化的2小时过期机制
-    # 优化: 大型session数据(如题目索引、答题状态等)现在存储在数据库中,
-    # 只有关键信息存储在cookie中, 以避免超过4KB浏览器限制
+    # Flask-Session 配置 - 使用Redis存储session数据
+    SESSION_TYPE = 'redis'  # 使用Redis存储session
+    SESSION_REDIS = None  # 这将在应用初始化时设置
+    SESSION_PERMANENT = True
+    SESSION_USE_SIGNER = True  # 启用session签名
+    SESSION_KEY_PREFIX = 'session_'  # session key前缀
+    SESSION_ID_LENGTH = 32  # session ID长度
+    
+    # Session Cookie 配置 - 优化的2小时过期机制
+    # 优化: 现在只有session ID存储在cookie中, session数据存储在Redis中
     SESSION_COOKIE_SECURE = False  # Development setting
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = 'Lax'
@@ -142,8 +152,7 @@ class Config:
     PERMANENT_SESSION_LIFETIME = timedelta(hours=2)  # 2小时过期
     SESSION_COOKIE_MAX_AGE = 7200  # 2小时的秒数
     SESSION_REFRESH_EACH_REQUEST = True  # 每次请求都刷新session
-    SESSION_USE_SIGNER = True  # 启用session签名
-
+    
     # Session活跃度管理配置
     SESSION_ACTIVITY_THRESHOLD = timedelta(minutes=30)  # 30分钟无活动警告阈值
     SESSION_WARNING_MINUTES = 10  # 过期前10分钟警告

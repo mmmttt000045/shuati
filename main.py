@@ -9,18 +9,21 @@ import time
 
 from flask import Flask, send_from_directory, session, request
 from flask_cors import CORS
+from flask_session import Session
 
 # 导入backend模块
 from backend.config import Config, ServerConfig
 from backend.connectDB import (
     init_connection_pool, cleanup_expired_practice_sessions, batch_update_tiku_usage
 )
-from backend.utils import create_response
-from backend.routes.auth import auth_bp
-from backend.routes.practice import practice_bp, tiku_usage_stats, usage_stats_lock, cache_manager
 from backend.routes.admin import admin_bp
-from backend.routes.usage import usage_bp
+from backend.routes.auth import auth_bp
+from backend.routes.practice import practice_bp, usage_stats_lock,  tiku_usage_stats,cache_manager
 from backend.routes.profile import profile_bp
+from backend.routes.usage import usage_bp
+
+from backend.session_manager import SessionManager,session_manager
+from backend.utils import create_response
 
 # Configure logging
 logging.basicConfig(
@@ -90,7 +93,7 @@ def monitor_activity():
 
         cleanup_counter += 1
         session_cleanup_counter += 1
-        
+
         # 每5分钟清理一次过期的练习会话
         if cleanup_counter >= 10:  # 每5分钟清理一次
             try:
@@ -100,7 +103,7 @@ def monitor_activity():
             except Exception as e:
                 logger.error(f"Error cleaning practice sessions: {e}")
             cleanup_counter = 0
-        
+
         # 每10分钟记录一次session清理统计
         if session_cleanup_counter >= 20:  # 每10分钟
             try:
@@ -120,10 +123,19 @@ def monitor_activity():
 def create_app():
     """创建Flask应用"""
     app = Flask(__name__, static_folder='frontend/dist', static_url_path='')
-    
+
     # 应用配置
     app.config.from_object(Config)
-    
+    app.config['SESSION_REDIS'] = SessionManager.create_session_redis()
+
+    # 初始化 Flask-Session
+    try:
+        Session(app)
+    except Exception as e:
+        logger.error(f"Flask-Session初始化失败: {e}")
+        # 如果初始化失败，使用默认的客户端session
+        exit(-1)
+
     # 配置 CORS
     cors = CORS(app,
                 resources={
@@ -134,7 +146,7 @@ def create_app():
                         "supports_credentials": Config.CORS_SUPPORTS_CREDENTIALS
                     }
                 })
-    
+
     # 注册蓝图
     app.register_blueprint(auth_bp)
     app.register_blueprint(practice_bp)
@@ -142,43 +154,65 @@ def create_app():
     app.register_blueprint(usage_bp)
     app.register_blueprint(profile_bp)
 
-    
     @app.before_request
     def before_request():
         """请求前处理 - 优化版本，集成session管理"""
         global request_counter
         with request_counter_lock:
             request_counter += 1
-        
+
         # 设置session为永久性
         session.permanent = True
-        
-        # 导入session管理器
-        from backend.session_manager import session_manager
-        
+
         # 对于需要登录的路径，检查并清理过期session
         if request.endpoint and any(need_auth in request.endpoint for need_auth in ['practice', 'admin', 'user']):
-            if session_manager.cleanup_expired_session():
-                logger.info("自动清理过期session")
+            try:
+                if session_manager.cleanup_expired_session():
+                    logger.info("自动清理过期session")
+            except Exception as e:
+                logger.error(f"清理session时出错: {e}")
+                # 如果session有问题，清空session
+                session.clear()
 
     @app.after_request
     def after_request(response):
-        """请求后处理"""
-        session.modified = True
+        """请求后处理 - 适配Flask-Session"""
+        # Flask-Session会自动处理session的持久化
         return response
-    
+
+    # 添加错误处理器来处理session相关错误
+    @app.errorhandler(UnicodeDecodeError)
+    def handle_unicode_error(e):
+        """处理Unicode解码错误"""
+        logger.error(f"Unicode解码错误: {e}")
+        # 清空当前session
+        session.clear()
+        return create_response(False, 'Session数据损坏，已重置', status_code=400)[0]
+
+    @app.errorhandler(Exception)
+    def handle_session_error(e):
+        """处理session相关异常"""
+        if 'session' in str(e).lower() or 'redis' in str(e).lower():
+            logger.error(f"Session错误: {e}")
+            try:
+                session.clear()
+            except:
+                pass
+            return create_response(False, 'Session错误，请刷新页面重试', status_code=500)[0]
+        raise e
+
     @app.route('/')
     @app.route('/<path:path>')
     def serve_app(path: str = ''):
         """服务前端应用"""
         try:
-            dist_path = os.path.join(app.static_folder, '../frontend/dist')
+            dist_path = os.path.join(app.static_folder, 'frontend/dist')
             if path and os.path.exists(os.path.join(dist_path, path)):
-                return send_from_directory('../frontend/dist', path)
-            return send_from_directory('../frontend/dist', 'index.html')
+                return send_from_directory('frontend/dist', path)
+            return send_from_directory('frontend/dist', 'index.html')
         except Exception:
             return create_response(False, 'Failed to serve application', status_code=500)[0]
-    
+
     return app
 
 
@@ -214,6 +248,7 @@ if __name__ == '__main__':
         try:
             import gunicorn.app.base
 
+
             class StandaloneApplication(gunicorn.app.base.BaseApplication):
                 def __init__(self, app, options=None):
                     self.options = options or {}
@@ -228,6 +263,7 @@ if __name__ == '__main__':
 
                 def load(self):
                     return self.application
+
 
             options = ServerConfig.GUNICORN_OPTIONS.copy()
             options['bind'] = f'{HOST}:{PORT}'
@@ -259,4 +295,4 @@ if __name__ == '__main__':
         stop_event.set()
         if activity_thread.is_alive():
             activity_thread.join(timeout=5)
-        logger.info("Server shutdown complete") 
+        logger.info("Server shutdown complete")

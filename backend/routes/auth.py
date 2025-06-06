@@ -4,7 +4,6 @@
 import logging
 from flask import Blueprint, request, session
 from werkzeug.exceptions import BadRequest, NotFound
-import uuid
 
 from ..decorators import handle_api_error, login_required
 from ..utils import create_response
@@ -75,21 +74,26 @@ def api_login():
 
     result = authenticate_user(username, password)
     if result['success']:
-        user_id=result['user_id']
+        user_id = result['user_id']
 
-        session[SESSION_KEYS['SESSION_ID']] = uuid.uuid4()
-
-        # 设置session
+        # Flask-Session会自动生成和管理session ID
+        # 设置session数据
         session[SESSION_KEYS['USER_ID']] = user_id
         session[SESSION_KEYS['USERNAME']] = result['username']
-        session.modified = True
+        
+        # 设置session为永久性（受PERMANENT_SESSION_LIFETIME控制）
+        session.permanent = True
         
         # 设置session活跃度
         session_manager.update_activity()
 
+        # 调试：打印session内容
+        logger.info(f"Session keys: {list(session.keys())}")
+        logger.info(f"Session content: {dict(session)}")
+
         check_and_resume_practice_session(user_id)
 
-        logger.info(f"User logged in: {result['username']}")
+        logger.info(f"User logged in: {result['username']}, Session ID: {session.get('_id', 'N/A')}")
         return create_response(True, '登录成功',
         {
             'user': {
@@ -102,7 +106,8 @@ def api_login():
                 'is_authenticated': True,
                 'session_valid': True,
                 'user_id': user_id,
-                'username': result['username']
+                'username': result['username'],
+                'session_id': session.get('sid', session.get('_id', session.get('session_id', 'N/A')))  # Flask-Session的内部session ID
             }
         })
     else:

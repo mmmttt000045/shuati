@@ -24,6 +24,15 @@ export interface User {
   is_enabled?: boolean;
   created_at?: string;
   model: UserModel;
+  id?: number;
+  password_hash?: string;
+  last_time_login?: string | null;
+  used_invitation_code_id?: number;
+  updated_at?: string;
+  student_id?: string | null;
+  email?: string | null;
+  major?: string | null;
+  grade?: number | null;
 }
 
 // 新增 SessionInfo 接口

@@ -174,10 +174,18 @@ def get_session_value(key: str, default: Any = None) -> Any:
     """
     # 如果是大数据key，使用混合存储策略
     if key in LARGE_DATA_KEYS:
-        return get_hybrid_session_value(key, default)
+        try:
+            result = get_hybrid_session_value(key, default)
+            logger.debug(f"获取大数据key {key}: {'有值' if result is not None else '无值/默认值'} (长度: {len(result) if hasattr(result, '__len__') else 'N/A'})")
+            return result
+        except Exception as e:
+            logger.error(f"获取大数据key {key} 失败: {e}")
+            return default
     
     # 小数据从cookie获取
-    return session.get(key, default)
+    result = session.get(key, default)
+    logger.debug(f"获取小数据key {key}: {'有值' if result is not None else '无值/默认值'}")
+    return result
 
 
 def set_session_value(key: str, value: Any) -> None:
@@ -186,10 +194,22 @@ def set_session_value(key: str, value: Any) -> None:
     """
     # 如果是大数据key，使用混合存储策略
     if key in LARGE_DATA_KEYS:
-        set_hybrid_session_value(key, value)
-        return
+        try:
+            logger.debug(f"设置大数据key {key}: 长度 {len(value) if hasattr(value, '__len__') else 'N/A'}")
+            set_hybrid_session_value(key, value)
+            # 验证存储
+            verification = get_hybrid_session_value(key, None)
+            if verification is not None:
+                logger.info(f"✓ 大数据key {key} 存储验证成功")
+            else:
+                logger.warning(f"✗ 大数据key {key} 存储验证失败")
+            return
+        except Exception as e:
+            logger.error(f"设置大数据key {key} 失败: {e}")
+            return
     
     # 小数据存储在cookie
+    logger.debug(f"设置小数据key {key} 到cookie")
     session[key] = value
     session.modified = True
 
@@ -252,11 +272,39 @@ def set_database_session_value(key: str, value: Any) -> None:
 
 
 def get_user_session_info() -> dict:
-    """获取当前用户的session信息"""
+    """获取用户会话信息 - 兼容新的SessionAuth系统"""
+    # 优先从Flask的g对象获取当前用户信息（由@login_required设置）
+    current_user = getattr(g, 'current_user', None)
+    
+    if current_user:
+        return {
+            'user_id': current_user['user_id'],
+            'username': current_user['username'],
+            'user_model': current_user.get('user_model', 0),
+            'email': current_user.get('email', ''),
+            'session_id': current_user.get('session_id', '')
+        }
+    
+    # 回退到Flask session（兼容性处理）
+    user_id = session.get(SESSION_KEYS['USER_ID'])
+    username = session.get(SESSION_KEYS['USERNAME'])
+    
+    if user_id and username:
+        return {
+            'user_id': user_id,
+            'username': username,
+            'user_model': 0,  # 默认值
+            'email': '',
+            'session_id': session.get('session_id', '')
+        }
+    
+    # 如果都没有，返回空信息
     return {
-        'user_id': get_session_value(SESSION_KEYS['USER_ID']),
-        'username': get_session_value(SESSION_KEYS['USERNAME']),
-        'is_authenticated': bool(get_session_value(SESSION_KEYS['USER_ID']))
+        'user_id': None,
+        'username': None,
+        'user_model': 0,
+        'email': '',
+        'session_id': ''
     }
 
 
@@ -355,28 +403,54 @@ def get_current_practice_session_id() -> Optional[int]:
 
 def check_and_resume_practice_session(user_id: int, tiku_id: int = None) -> Optional[dict]:
     """检查并恢复用户的活跃练习会话 - 优化版本：只存储关键信息到cookie"""
+    logger.debug(f"开始检查用户 {user_id} 的活跃练习会话")
+    
     try:
         active_session = get_user_active_practice_session(user_id, tiku_id)
+        logger.debug(f"查询活跃会话结果: {active_session is not None}")
+        
         if active_session:
+            logger.debug(f"找到活跃会话: session_id={active_session['id']}, tiku_id={active_session.get('tiku_id')}")
+            
             # 只将会话ID和基本信息存储到Flask session中，大数据保留在数据库
-            session[PRACTICE_SESSION_ID_KEY] = active_session['id']
-            session[SESSION_KEYS['CURRENT_TIKU_ID']] = active_session['tiku_id']
-            session[SESSION_KEYS['CURRENT_INDEX']] = active_session.get('current_question_index', 0)
-            session[SESSION_KEYS['ROUND_NUMBER']] = active_session.get('round_number', 1)
-            session[SESSION_KEYS['INITIAL_TOTAL']] = active_session.get('total_questions', 0)
-            session[SESSION_KEYS['CORRECT_FIRST_TRY']] = active_session.get('correct_first_try', 0)
+            session_data_to_set = {
+                PRACTICE_SESSION_ID_KEY: active_session['id'],
+                SESSION_KEYS['CURRENT_TIKU_ID']: active_session['tiku_id'],
+                SESSION_KEYS['CURRENT_INDEX']: active_session.get('current_question_index', 0),
+                SESSION_KEYS['ROUND_NUMBER']: active_session.get('round_number', 1),
+                SESSION_KEYS['INITIAL_TOTAL']: active_session.get('total_questions', 0),
+                SESSION_KEYS['CORRECT_FIRST_TRY']: active_session.get('correct_first_try', 0)
+            }
+            
+            logger.debug(f"准备设置的 session 数据: {session_data_to_set}")
+            
+            for key, value in session_data_to_set.items():
+                session[key] = value
+                
             session.modified = True
+            
+            # 验证设置是否成功
+            verification_tiku_id = session.get(SESSION_KEYS['CURRENT_TIKU_ID'])
+            logger.debug(f"验证设置结果: 期望 tiku_id={active_session['tiku_id']}, 实际={verification_tiku_id}")
+            
+            if verification_tiku_id != active_session['tiku_id']:
+                logger.error(f"Session 设置验证失败！期望: {active_session['tiku_id']}, 实际: {verification_tiku_id}")
+                return None
             
             # 大数据（question_indices, wrong_indices, question_statuses, answer_history）
             # 已经在数据库中，通过get_session_value会自动从数据库获取
             
-            logger.info(f"恢复活跃练习会话: session_id={active_session['id']}")
+            logger.info(f"恢复活跃练习会话成功: session_id={active_session['id']}, tiku_id={active_session['tiku_id']}")
             return active_session
+        else:
+            logger.debug(f"用户 {user_id} 没有活跃的练习会话")
         
         return None
         
     except Exception as e:
         logger.error(f"检查活跃练习会话异常: {e}")
+        import traceback
+        logger.error(f"检查活跃练习会话异常详情: {traceback.format_exc()}")
         return None
 
 

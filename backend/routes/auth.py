@@ -9,8 +9,7 @@ from ..decorators import handle_api_error, login_required
 from ..utils import create_response
 from ..config import SESSION_KEYS
 from ..session_manager import (
-    load_session_from_db,
-    clear_all_session, get_user_session_info, check_and_resume_practice_session
+    clear_all_session,  check_and_resume_practice_session
 )
 from ..connectDB import (
     authenticate_user, create_user, verify_invitation_code,

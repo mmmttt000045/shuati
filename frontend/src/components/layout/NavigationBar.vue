@@ -44,8 +44,8 @@
           <v-btn
             variant="text"
             class="nav-item"
-            :class="{ active: currentView === 'home' }"
-            @click="handleNavigate('home')"
+            :class="{ active: route.path === '/' }"
+            @click="navigateToHome"
           >
             <template #prepend><span class="nav-icon">🎯</span></template>
             <span class="nav-text">题目练习</span>
@@ -55,8 +55,8 @@
           <v-btn
             variant="text"
             class="nav-item"
-            :class="{ active: currentView === 'stats' }"
-            @click="handleNavigate('stats')"
+            :class="{ active: route.path === '/stats' }"
+            @click="navigateToStats"
           >
             <template #prepend><IconStats :size="18" color="currentColor" class="nav-icon-svg" /></template>
             <span class="nav-text">使用统计</span>
@@ -92,8 +92,8 @@
                   v-for="item in vipMenuItems"
                   :key="item.view"
                   class="dropdown-item"
-                  :class="{ active: currentView === item.view }"
-                  @click="handleNavigate(item.view)"
+                  :class="{ active: route.path === item.path }"
+                  @click="navigateToVipPage(item.path)"
                   :prepend-icon="item.icon"
                 >
                   <v-list-item-title>{{ item.title }}</v-list-item-title>
@@ -106,8 +106,8 @@
             v-if="isAdmin"
             variant="text"
             class="nav-item admin-item"
-            :class="{ active: currentView === 'admin' }"
-            @click="handleNavigate('admin')"
+            :class="{ active: route.path === '/admin' }"
+            @click="navigateToAdmin"
           >
             <template #prepend><span class="nav-icon">⚙️</span></template>
             <span class="nav-text">系统管理</span>
@@ -206,8 +206,8 @@
 
       <v-list-item
         class="mobile-nav-item"
-        :class="{ active: currentView === 'home' }"
-        @click="handleNavigate('home')"
+        :class="{ active: route.path === '/' }"
+        @click="navigateToHome"
         prepend-icon="mdi-target"
       >
         <v-list-item-title>题目练习</v-list-item-title>
@@ -216,8 +216,8 @@
       <!-- 移动端使用统计 -->
       <v-list-item
         class="mobile-nav-item"
-        :class="{ active: currentView === 'stats' }"
-        @click="handleNavigate('stats')"
+        :class="{ active: route.path === '/stats' }"
+        @click="navigateToStats"
       >
         <template #prepend>
           <IconStats :size="20" color="currentColor" class="mobile-nav-icon-svg" />
@@ -239,8 +239,8 @@
           v-for="item in vipMenuItems"
           :key="`mobile-${item.view}`"
           class="mobile-nav-item mobile-nav-sub-item"
-          :class="{ active: currentView === item.view }"
-          @click="handleNavigate(item.view)"
+          :class="{ active: route.path === item.path }"
+          @click="navigateToVipPage(item.path)"
           :prepend-icon="item.icon"
         >
           <v-list-item-title>{{ item.title }}</v-list-item-title>
@@ -250,8 +250,8 @@
       <v-list-item
         v-if="isAdmin"
         class="mobile-nav-item admin-item"
-        :class="{ active: currentView === 'admin' }"
-        @click="handleNavigate('admin')"
+        :class="{ active: route.path === '/admin' }"
+        @click="navigateToAdmin"
         prepend-icon="mdi-cog-outline"
       >
         <v-list-item-title>系统管理</v-list-item-title>
@@ -269,25 +269,13 @@ import { USER_MODEL } from '@/types'
 import UserBadge from '@/components/common/UserBadge.vue'
 import IconStats from '@/components/icons/IconStats.vue'
 
-// Props
-interface Props {
-  currentView?: string
-}
-const props = withDefaults(defineProps<Props>(), {
-  currentView: 'home'
-})
-
-// Emits
-const emit = defineEmits<{
-  navigate: [view: string]
-}>()
-
 const router = useRouter()
+const route = useRoute()
 const authStore = useAuthStore()
 const vuetifyTheme = useTheme()
 
 // DOM引用
-const navRef = ref<HTMLElement | undefined>() // Or ComponentPublicInstance if it's a Vuetify component ref
+const navRef = ref<HTMLElement | undefined>()
 
 // Responsive state
 const showVipMenu = ref(false)
@@ -306,21 +294,21 @@ const isAdmin = computed(() => {
 
 // VIP Menu Items (Data-driven)
 const vipMenuItems = ref([
-  { title: '学习统计', icon: 'mdi-chart-bar', view: 'vip-stats' },
-  { title: '错题导出', icon: 'mdi-file-document-outline', view: 'vip-export' },
-  { title: '错题集管理', icon: 'mdi-star-box-multiple-outline', view: 'vip-collections' },
+  { title: '学习统计', icon: 'mdi-chart-bar', view: 'vip-stats', path: '/vip/stats' },
+  { title: '错题导出', icon: 'mdi-file-document-outline', view: 'vip-export', path: '/vip/export' },
+  { title: '错题集管理', icon: 'mdi-star-box-multiple-outline', view: 'vip-collections', path: '/vip/collections' },
 ]);
 
 // User Menu Items (Data-driven)
 const userMenuItems = computed(() => [
   { title: '个人资料', icon: 'mdi-account-circle-outline', action: navigateToProfile, desc: '管理您的个人信息' },
-  { title: '系统设置', icon: 'mdi-cog-outline', action: navigateToSettings, desc: '偏好设置和配置' },
-  { 
-    title: '主题切换', 
-    icon: vuetifyTheme.global.current.value.dark ? 'mdi-weather-night' : 'mdi-weather-sunny', 
-    action: toggleTheme, 
-    desc: `切换到${vuetifyTheme.global.current.value.dark ? '浅色' : '深色'}模式` 
-  },
+  // { title: '系统设置', icon: 'mdi-cog-outline', action: navigateToSettings, desc: '偏好设置和配置' },
+  // { 
+  //   title: '主题切换', 
+  //   icon: vuetifyTheme.global.current.value.dark ? 'mdi-weather-night' : 'mdi-weather-sunny', 
+  //   action: toggleTheme, 
+  //   desc: `切换到${vuetifyTheme.global.current.value.dark ? '浅色' : '深色'}模式` 
+  // },
   { type: 'divider' },
   { title: '退出登录', icon: 'mdi-logout', action: handleLogout, desc: '安全退出系统', class: 'logout-item' }
 ]);
@@ -332,8 +320,7 @@ const getUserInitial = () => {
 }
 
 const getUserEmail = () => {
-  // Fallback for email, adjust if you have real email data
-  return `${authStore.user?.username || 'user'}@example.com`
+  return authStore.user?.email || `${authStore.user?.username || 'user'}@example.com`
 }
 
 const toggleTheme = () => {
@@ -342,11 +329,6 @@ const toggleTheme = () => {
   localStorage.setItem('theme', newThemeName); // Persist theme choice
   // User menu might automatically close due to re-render, or close it explicitly if needed
   // showUserMenu.value = false; // Only if it doesn't close automatically
-}
-
-const handleNavigate = (view: string) => {
-  emit('navigate', view)
-  closeAllMenus()
 }
 
 const navigateToProfile = () => {
@@ -386,6 +368,26 @@ const handleLogout = async () => {
     console.error('登出失败:', error)
     // Optionally show a notification to the user
   }
+}
+
+const navigateToHome = () => {
+  router.push('/')
+  closeAllMenus()
+}
+
+const navigateToAdmin = () => {
+  router.push('/admin')
+  closeAllMenus()
+}
+
+const navigateToVipPage = (path: string) => {
+  router.push(path)
+  closeAllMenus()
+}
+
+const navigateToStats = () => {
+  router.push('/stats')
+  closeAllMenus()
 }
 
 // Lifecycle & Watchers

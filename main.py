@@ -20,6 +20,7 @@ from backend.routes.auth import auth_bp
 from backend.routes.practice import practice_bp, tiku_usage_stats, usage_stats_lock, cache_manager
 from backend.routes.admin import admin_bp
 from backend.routes.usage import usage_bp
+from backend.routes.profile import profile_bp
 
 # Configure logging
 logging.basicConfig(
@@ -139,6 +140,7 @@ def create_app():
     app.register_blueprint(practice_bp)
     app.register_blueprint(admin_bp)
     app.register_blueprint(usage_bp)
+    app.register_blueprint(profile_bp)
 
     
     @app.before_request

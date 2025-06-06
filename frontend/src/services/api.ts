@@ -86,6 +86,36 @@ export interface ApiService {
   getQuestionStatuses(): Promise<ServiceResponse<{ statuses: Array<QuestionStatus> }>>;
   saveSession(): Promise<ServiceResponse<null>>;
 
+  // Profile API
+  profile: {
+    getUserProfile(): Promise<ServiceResponse<{
+      user: {
+        id: number;
+        username: string;
+        email?: string;
+        student_id?: string;
+        major?: string;
+        grade?: number;
+        is_enabled: boolean;
+        created_at?: string;
+        last_time_login?: string;
+        model: number;
+      };
+    }>>;
+    updateUserProfile(data: {
+      username?: string;
+      email?: string;
+      student_id?: string;
+      major?: string;
+      grade?: number;
+    }): Promise<ServiceResponse<null>>;
+    changePassword(data: {
+      currentPassword: string;
+      newPassword: string;
+      confirmPassword: string;
+    }): Promise<ServiceResponse<null>>;
+  };
+
   // 管理员API
   admin: {
     getStats(): Promise<ServiceResponse<{ stats: AdminStats }>>;
@@ -364,6 +394,64 @@ class ApiServiceImpl implements ApiService {
     const response = await this.fetchWithCredentials(`${API_BASE}/session/save`, { method: 'GET' });
     return this.handleResponse<null>(response);
   }
+
+  // Profile API
+  profile = {
+    getUserProfile: async (): Promise<ServiceResponse<{
+      user: {
+        id: number;
+        username: string;
+        email?: string;
+        student_id?: string;
+        major?: string;
+        grade?: number;
+        is_enabled: boolean;
+        created_at?: string;
+        last_time_login?: string;
+        model: number;
+      };
+    }>> => {
+      const response = await this.fetchWithCredentials(`${API_BASE}/profile/info`);
+      return this.handleResponse<{
+        user: {
+          id: number;
+          username: string;
+          email?: string;
+          student_id?: string;
+          major?: string;
+          grade?: number;
+          is_enabled: boolean;
+          created_at?: string;
+          last_time_login?: string;
+          model: number;
+        };
+      }>(response);
+    },
+    updateUserProfile: async (data: {
+      username?: string;
+      email?: string;
+      student_id?: string;
+      major?: string;
+      grade?: number;
+    }): Promise<ServiceResponse<null>> => {
+      const response = await this.fetchWithCredentials(`${API_BASE}/profile/info`, {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      });
+      return this.handleResponse<null>(response);
+    },
+    changePassword: async (data: {
+      currentPassword: string;
+      newPassword: string;
+      confirmPassword: string;
+    }): Promise<ServiceResponse<null>> => {
+      const response = await this.fetchWithCredentials(`${API_BASE}/profile/password`, {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      });
+      return this.handleResponse<null>(response);
+    },
+  };
 
   // 管理员API
   admin = {

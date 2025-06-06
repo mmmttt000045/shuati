@@ -704,21 +704,28 @@ def get_hybrid_session_value(key: str, default: Any = None) -> Any:
     # 如果是大数据key，优先从Redis获取
     if key in REDIS_STORED_KEYS:
         session_id = session.get('session_id')
+        logger.debug(f"混合获取key {key}: session_id={'有' if session_id else '无'}, redis_available={redis_manager.is_available}")
+        
         if session_id and redis_manager.is_available:
             redis_value = redis_manager.get_session_data(session_id, key)
+            logger.debug(f"Redis获取key {key}: {'有值' if redis_value is not None else '无值'}")
             if redis_value is not None:
                 return redis_value
         
         # Redis不可用时回退到数据库
         try:
             from .session_manager import get_database_session_value
-            return get_database_session_value(key, default)
+            db_value = get_database_session_value(key, default)
+            logger.debug(f"数据库回退获取key {key}: {'有值' if db_value != default else '无值/默认值'}")
+            return db_value
         except ImportError:
             logger.warning("无法导入数据库session函数，返回默认值")
             return default
     
     # 小数据从cookie获取
-    return session.get(key, default)
+    cookie_value = session.get(key, default)
+    logger.debug(f"Cookie获取key {key}: {'有值' if cookie_value != default else '无值/默认值'}")
+    return cookie_value
 
 
 def set_hybrid_session_value(key: str, value: Any) -> None:
@@ -734,20 +741,26 @@ def set_hybrid_session_value(key: str, value: Any) -> None:
             session_id = str(uuid.uuid4())
             session['session_id'] = session_id
             session.modified = True
+            logger.debug(f"生成新的session_id: {session_id}")
+        
+        logger.debug(f"混合设置key {key}: session_id={session_id}, redis_available={redis_manager.is_available}")
         
         if redis_manager.is_available:
             success = redis_manager.store_session_data(session_id, key, value)
+            logger.debug(f"Redis存储key {key}: {'成功' if success else '失败'}")
             if success:
                 return
         
         # Redis存储失败时回退到数据库
         try:
             from .session_manager import set_database_session_value
+            logger.debug(f"回退到数据库存储key {key}")
             set_database_session_value(key, value)
             return
         except ImportError:
             logger.warning("无法导入数据库session函数，数据可能丢失")
     
     # 小数据存储在cookie
+    logger.debug(f"设置小数据key {key} 到cookie")
     session[key] = value
     session.modified = True

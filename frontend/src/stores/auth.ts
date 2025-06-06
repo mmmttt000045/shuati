@@ -10,8 +10,16 @@ export const useAuthStore = defineStore('auth', () => {
   const sessionInfo = ref<SessionInfo | null>(null);
   const isLoading = ref(false);
   const error = ref<string | null>(null);
+  const isInitialized = ref(false); // 添加初始化状态标志
 
-  const isAuthenticated = computed(() => !!user.value && !!sessionInfo.value && sessionInfo.value.is_authenticated && sessionInfo.value.session_valid);
+  const isAuthenticated = computed(() => {
+    // 只要有用户信息就认为是已认证状态
+    // sessionInfo 是可选的，用于提供额外的session状态信息
+    return !!user.value && (
+      !sessionInfo.value || // 如果没有sessionInfo，只要有user就认为已认证
+      (sessionInfo.value.is_authenticated && sessionInfo.value.session_valid)
+    );
+  });
   const isSessionExpiringSoon = computed(() => sessionInfo.value?.warning_threshold_reached === true && sessionInfo.value?.warning_shown === false);
   const sessionTimeRemainingText = computed(() => {
     if (!sessionInfo.value?.time_remaining) return 'N/A';
@@ -25,7 +33,9 @@ export const useAuthStore = defineStore('auth', () => {
   function setAuthState(userData: User | null, sessionData: SessionInfo | null) {
     user.value = userData;
     sessionInfo.value = sessionData;
-    if (!userData || !sessionData || !sessionData.is_authenticated) {
+    
+    // 只有在明确需要清空状态时才清空（userData为null，或者sessionData明确表示未认证）
+    if (!userData || (sessionData && (!sessionData.is_authenticated || !sessionData.session_valid))) {
       // If unauthenticated, ensure both are null
       user.value = null;
       sessionInfo.value = null;
@@ -48,6 +58,7 @@ export const useAuthStore = defineStore('auth', () => {
       
       if (result.success && result.data) {
         setAuthState(result.data.user, result.data.session);
+        isInitialized.value = true; // 登录成功后标记为已初始化
         return true;
       } else {
         setAuthState(null, null);
@@ -103,6 +114,7 @@ export const useAuthStore = defineStore('auth', () => {
        setErrorState(undefined, err.message, '登出过程中发生未知错误，客户端已清理状态');
     } finally {
       setAuthState(null, null);
+      isInitialized.value = false; // 登出时重置初始化状态
       // error.value can be set by setErrorState if server logout fails, so don't nullify it here unless intended.
       isLoading.value = false;
     }
@@ -116,8 +128,14 @@ export const useAuthStore = defineStore('auth', () => {
       const result = await authService.checkAuth();
       
       if (result.success && result.data?.authenticated && result.data.user) {
-        // If authenticated, fetch full session status for details like expiry
-        await fetchSessionStatus(result.data.user); // Pass user to avoid race conditions if session has partial user info
+        // 直接设置用户状态，不等待session信息
+        setAuthState(result.data.user, null);
+        
+        // 在后台获取完整的session状态信息（不阻塞路由）
+        fetchSessionStatus(result.data.user).catch(err => {
+          console.warn('Failed to fetch session status:', err);
+          // 即使获取session状态失败，也不影响已认证状态
+        });
       } else {
         setAuthState(null, null);
         if (!result.success) { // Only set error if the checkAuth call itself failed
@@ -129,6 +147,7 @@ export const useAuthStore = defineStore('auth', () => {
       setErrorState(undefined, err.message, '检查登录状态时发生未知错误');
     } finally {
       isLoading.value = false;
+      isInitialized.value = true; // 标记初始化完成
     }
   }
 
@@ -153,12 +172,21 @@ export const useAuthStore = defineStore('auth', () => {
         }
 
       } else {
-        // If fetching session fails, consider it as unauthenticated.
-        setAuthState(null, null);
+        // 如果获取session状态失败，保持用户状态不变，只更新session信息
+        if (currentUser) {
+          setAuthState(currentUser, null);
+        } else {
+          setAuthState(null, null);
+        }
         setErrorState(result.message, result.error, '获取会话状态失败');
       }
     } catch (err: any) {
-      setAuthState(null, null);
+      // 发生异常时，如果有传入的用户信息，保持用户状态
+      if (currentUser) {
+        setAuthState(currentUser, null);
+      } else {
+        setAuthState(null, null);
+      }
       setErrorState(undefined, err.message, '获取会话状态时发生未知错误');
     } finally {
       isLoading.value = false;
@@ -214,6 +242,7 @@ export const useAuthStore = defineStore('auth', () => {
     sessionInfo,
     isLoading,
     error,
+    isInitialized,
     isAuthenticated,
     isSessionExpiringSoon,
     sessionTimeRemainingText,

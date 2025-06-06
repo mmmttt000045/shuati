@@ -10,7 +10,7 @@ from collections import defaultdict
 from functools import lru_cache, wraps
 from typing import Dict, List, Optional, Any
 
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, session
 from werkzeug.exceptions import BadRequest, NotFound
 
 from ..RedisManager import redis_manager
@@ -23,8 +23,7 @@ from ..decorators import handle_api_error, login_required
 from ..session_manager import (
     get_session_value, set_session_value, clear_practice_session,
     get_current_tiku_info,
-    create_and_store_practice_session, update_current_practice_session,
-    complete_current_practice_session, check_and_resume_practice_session,
+    create_and_store_practice_session, complete_current_practice_session, check_and_resume_practice_session,
     get_user_session_info
 )
 from ..utils import create_response, format_answer_display, validate_answer
@@ -270,7 +269,6 @@ class RedisCacheManager:
         cached_data = self._get_from_redis(cache_key)
 
         if cached_data is not None:
-            logger.debug(f"使用Redis缓存的题目数据，题目ID: {question_id}")
             return cached_data
 
         logger.debug(f"从数据库获取题目 {question_id} 的数据")
@@ -302,6 +300,38 @@ class RedisCacheManager:
         # 如果缓存中没有，从数据库获取并建立缓存
         question_bank = self.get_question_bank(tiku_id)
         return [q['id'] for q in question_bank]
+
+    def refresh_one_question(self, question_id: int) -> bool:
+        """刷新单道题目的缓存"""
+
+        if not isinstance(question_id, int) or question_id <= 0:
+            logger.error(f"无效的题目ID: {question_id}")
+            return False
+
+        cache_key = f'question_{question_id}'
+        try:
+            # 从数据库获取题目数据
+            question_data = get_question_by_db_id(question_id)
+
+            if not question_data:
+                logger.warning(f"题目 {question_id} 不存在或已禁用，删除其缓存")
+                # 如果题目不存在，删除可能存在的缓存
+                self._delete_from_redis(cache_key)
+                return False
+
+            # 设置缓存，使用与其他单题目缓存相同的TTL
+            success = self._set_to_redis(cache_key, question_data, ttl=10800)  # 3小时
+
+            if success:
+                logger.debug(f"成功刷新题目 {question_id} 的缓存")
+                return True
+            else:
+                logger.error(f"设置题目 {question_id} 缓存到Redis失败")
+                return False
+
+        except Exception as e:
+            logger.error(f"刷新题目 {question_id} 缓存时发生异常: {e}")
+            return False
 
     def refresh_all_cache(self):
         """刷新所有缓存"""
@@ -353,15 +383,15 @@ class RedisCacheManager:
             if tiku_data and 'tiku_list' in tiku_data:
                 logger.info("开始预热题目缓存...")
                 active_tiku_list = [tiku for tiku in tiku_data['tiku_list'] if tiku.get('is_active', False)]
-                
+
                 # 根据题库使用统计排序，优先预热常用题库
                 with usage_stats_lock:
                     active_tiku_list.sort(key=lambda x: tiku_usage_stats.get(x['tiku_id'], 0), reverse=True)
-                
+
                 # 限制预热的题库数量，避免一次加载过多数据
                 max_prewarm_tiku = 10  # 最多预热10个题库
                 tiku_to_prewarm = active_tiku_list[:max_prewarm_tiku]
-                
+
                 for tiku in tiku_to_prewarm:
                     try:
                         tiku_id = tiku['tiku_id']
@@ -376,7 +406,7 @@ class RedisCacheManager:
                     except Exception as e:
                         logger.error(f"预热题库 {tiku.get('tiku_id', 'unknown')} 失败: {e}")
                         continue
-                
+
                 if len(active_tiku_list) > max_prewarm_tiku:
                     logger.info(f"活跃题库共 {len(active_tiku_list)} 个，已预热最常用的 {max_prewarm_tiku} 个题库")
                 else:
@@ -706,8 +736,9 @@ def api_practice_question():
         clear_practice_session()  # Defensive clear
         raise BadRequest("没有选择题库或会话已过期，请重新开始练习")
 
-    q_indices = get_session_value(SESSION_KEYS['QUESTION_INDICES'])
+    q_indices = get_session_value(SESSION_KEYS['QUESTION_INDICES'], [])
     if not q_indices:
+        logger.warning(f"QUESTION_INDICES为空，当前session keys: {list(session.keys())}")
         raise NotFound("没有可用题目或会话已过期")
 
     current_idx = get_session_value(SESSION_KEYS['CURRENT_INDEX'], 0)
@@ -887,8 +918,19 @@ def update_practice_record(question_id: int, is_correct: bool, peeked: bool, cur
     for key, value in session_updates.items():
         set_session_value(key, value)
 
-    # 异步更新数据库记录
+    # 异步更新数据库记录 - 修复版本
     try:
+        # 在主线程中获取所有需要的数据，避免在异步线程中访问Flask session
+        practice_session_id = get_session_value('practice_session_id')
+        if not practice_session_id:
+            # 尝试从session_manager获取
+            from ..session_manager import get_current_practice_session_id
+            practice_session_id = get_current_practice_session_id()
+
+        if not practice_session_id:
+            logger.warning("没有找到练习会话ID，跳过数据库更新")
+            return
+
         update_data = {
             'current_question_index': next_index,
             'correct_first_try': get_session_value(SESSION_KEYS['CORRECT_FIRST_TRY'], 0),
@@ -899,17 +941,24 @@ def update_practice_record(question_id: int, is_correct: bool, peeked: bool, cur
         }
 
         # 异步执行数据库更新，避免阻塞主线程
-        def async_update_session():
+        def async_update_session(session_id: int, data: dict):
             try:
-                if update_current_practice_session(**update_data):
+                # 直接调用connectDB中的函数，不依赖Flask上下文
+                from ..connectDB import update_practice_session
+                result = update_practice_session(session_id, **data)
+                if result['success']:
                     logger.debug("练习会话数据库记录更新成功")
                 else:
-                    logger.warning("练习会话数据库记录更新失败")
+                    logger.warning(f"练习会话数据库记录更新失败: {result.get('error', 'Unknown error')}")
             except Exception as e:
                 logger.error(f"异步更新练习会话数据库记录时发生错误: {e}")
 
-        # 在后台线程中执行数据库更新
-        update_thread = threading.Thread(target=async_update_session, daemon=True)
+        # 在后台线程中执行数据库更新，传递所有必要的数据
+        update_thread = threading.Thread(
+            target=async_update_session,
+            args=(practice_session_id, update_data),
+            daemon=True
+        )
         update_thread.start()
 
     except Exception as e:
@@ -917,6 +966,7 @@ def update_practice_record(question_id: int, is_correct: bool, peeked: bool, cur
 
 
 @practice_bp.route('/completed_summary', methods=['GET'])
+@login_required
 @handle_api_error
 @performance_monitor
 def api_completed_summary():
@@ -1151,6 +1201,7 @@ def api_practice_statistics():
 
 
 @practice_bp.route('/practice/history/<int:question_index>', methods=['GET'])
+@login_required
 @handle_api_error
 def api_get_question_history(question_index: int):
     """获取题目答题历史 - 新格式版本（使用题目ID）"""
@@ -1218,6 +1269,7 @@ def api_get_question_history(question_index: int):
 
 
 @practice_bp.route('/practice/question/<question_id>/details', methods=['GET'])
+@login_required
 @handle_api_error
 def api_get_question_details(question_id: str):
     """获取题目详细信息（包含解析）"""
@@ -1389,13 +1441,8 @@ def api_practice_url_params():
 
         # 批量设置session
         session_data = {
-            SESSION_KEYS['CURRENT_TIKU_ID']: tiku_id,
             SESSION_KEYS['QUESTION_INDICES']: question_indices,
-            SESSION_KEYS['CURRENT_INDEX']: 0,
             SESSION_KEYS['WRONG_INDICES']: [],
-            SESSION_KEYS['ROUND_NUMBER']: 1,
-            SESSION_KEYS['INITIAL_TOTAL']: len(question_indices),
-            SESSION_KEYS['CORRECT_FIRST_TRY']: 0,
             SESSION_KEYS['QUESTION_STATUSES']: [QUESTION_STATUS['UNANSWERED']] * len(question_indices),
             SESSION_KEYS['ANSWER_HISTORY']: {},
             'selected_question_types': selected_types or ['single_choice', 'multiple_choice', 'judgment', 'other'],
@@ -1404,6 +1451,12 @@ def api_practice_url_params():
 
         for key, value in session_data.items():
             set_session_value(key, value)
+
+        # 验证关键的 session 值是否正确设置
+        current_tiku_id_check = get_session_value(SESSION_KEYS['CURRENT_TIKU_ID'])
+        if current_tiku_id_check != tiku_id:
+            logger.error(f"Session 设置验证失败: 期望 tiku_id={tiku_id}, 实际={current_tiku_id_check}")
+            raise BadRequest("会话设置失败，请重新开始练习")
 
         practice_mode = "乱序练习" if shuffle_questions else "顺序练习"
         types_text = "所有题型" if not selected_types else f"已选题型({len(selected_types)}种)"

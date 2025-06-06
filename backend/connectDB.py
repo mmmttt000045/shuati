@@ -191,7 +191,7 @@ def authenticate_user(cursor, username: str, password: str) -> Dict[str, Any]:
     """验证用户登录"""
     # connection, cursor, try/except/finally are managed by the decorator
     query = """
-            SELECT id, username, password_hash, is_enabled, model
+            SELECT id, username, password_hash, is_enabled, model, email
             FROM user_accounts
             WHERE username = %s
             """ # Removed trailing backslash from query
@@ -207,6 +207,7 @@ def authenticate_user(cursor, username: str, password: str) -> Dict[str, Any]:
     stored_password_hash = user_record['password_hash']
     is_enabled = user_record['is_enabled']
     model = user_record['model']
+    email = user_record['email']
 
     if not is_enabled:
         return {"success": False, "error": "账户已被禁用"}
@@ -227,7 +228,8 @@ def authenticate_user(cursor, username: str, password: str) -> Dict[str, Any]:
         "user_id": user_id,
         "username": db_username,
         "model": model,
-        "message": "登录成功"
+        "message": "登录成功",
+        "email": email,
     }
 
 
@@ -1555,6 +1557,8 @@ def get_practice_session(session_id: int) -> Optional[Dict[str, Any]]:
 @with_db_connection
 def get_user_active_practice_session(cursor, user_id: int, tiku_id: int = None) -> Optional[Dict[str, Any]]:
     """获取用户当前活跃的练习会话 - 优化版本"""
+    logger.debug(f"查询用户 {user_id} 的活跃练习会话，tiku_id={tiku_id}")
+    
     try:
         if tiku_id:
             # 查找特定题库的活跃会话，直接获取完整信息
@@ -1582,33 +1586,42 @@ def get_user_active_practice_session(cursor, user_id: int, tiku_id: int = None) 
             cursor.execute(query, (user_id,))
         
         result = cursor.fetchone()
+        logger.debug(f"数据库查询结果: {result is not None}")
+        
         if result:
-            # 直接解析结果，避免额外的数据库查询
-            return {
-                'id': result[0],
-                'user_id': result[1],
-                'tiku_id': result[2],
-                'session_type': result[3],
-                'shuffle_enabled': result[4],
-                'selected_types': json.loads(result[5]) if result[5] else None,
-                'total_questions': result[6],
-                'current_question_index': result[7],
-                'correct_first_try': result[8],
-                'round_number': result[9],
-                'status': result[10],
-                'question_indices': json.loads(result[11]) if result[11] else None,
-                'wrong_indices': json.loads(result[12]) if result[12] else None,
-                'question_statuses': json.loads(result[13]) if result[13] else None,
-                'answer_history': json.loads(result[14]) if result[14] else None,
-                'created_at': result[15],
-                'updated_at': result[16],
-                'completed_at': result[17]
+            # 使用字典访问方式，因为 with_db_connection 装饰器设置了 dictionary=True
+            session_data = {
+                'id': result['id'],
+                'user_id': result['user_id'],
+                'tiku_id': result['tiku_id'],
+                'session_type': result['session_type'],
+                'shuffle_enabled': result['shuffle_enabled'],
+                'selected_types': json.loads(result['selected_types']) if result['selected_types'] else None,
+                'total_questions': result['total_questions'],
+                'current_question_index': result['current_question_index'],
+                'correct_first_try': result['correct_first_try'],
+                'round_number': result['round_number'],
+                'status': result['status'],
+                'question_indices': json.loads(result['question_indices']) if result['question_indices'] else None,
+                'wrong_indices': json.loads(result['wrong_indices']) if result['wrong_indices'] else None,
+                'question_statuses': json.loads(result['question_statuses']) if result['question_statuses'] else None,
+                'answer_history': json.loads(result['answer_history']) if result['answer_history'] else None,
+                'created_at': result['created_at'],
+                'updated_at': result['updated_at'],
+                'completed_at': result['completed_at']
             }
+            
+            logger.debug(f"找到活跃会话: session_id={session_data['id']}, tiku_id={session_data['tiku_id']}")
+            return session_data
+        else:
+            logger.debug(f"用户 {user_id} 没有活跃的练习会话")
         
         return None
         
     except Error as e:
-        print(f"获取用户活跃练习会话失败: {e}")
+        logger.error(f"获取用户活跃练习会话失败: {e}")
+        import traceback
+        logger.error(f"数据库查询异常详情: {traceback.format_exc()}")
         return None
 
 
@@ -2000,6 +2013,33 @@ def create_question_and_update_tiku_count(question_data: Dict[str, Any]) -> Dict
         conn.autocommit = False # Start transaction
         cursor = conn.cursor(dictionary=True)
 
+        # 处理前端数据格式转换
+        processed_data = question_data.copy()
+
+        # 处理题目类型转换（从字符串转为数字）
+        if 'question_type' in processed_data:
+            type_str = processed_data['question_type']
+            if type_str == '单选题':
+                processed_data['question_type'] = 0
+            elif type_str == '多选题':
+                processed_data['question_type'] = 5
+            elif type_str == '判断题':
+                processed_data['question_type'] = 10
+            else:
+                conn.rollback()
+                return {"success": False, "error": f"无效的题目类型: {type_str}"}
+
+        # 处理选项数据转换（从options字典转为单独字段）
+        if 'options' in processed_data and isinstance(processed_data['options'], dict):
+            options = processed_data.pop('options')
+            processed_data['option_a'] = options.get('A', '')
+            processed_data['option_b'] = options.get('B', '')
+            processed_data['option_c'] = options.get('C', '')
+            processed_data['option_d'] = options.get('D', '')
+
+        # 删除不需要的字段
+        processed_data.pop('is_multiple_choice', None)  # 这个字段不存在于数据库中
+
         insert_query = """
                        INSERT INTO questions (subject_id, tiku_id, question_type, stem, option_a, option_b, option_c,
                                               option_d, answer, explanation, difficulty, status)
@@ -2008,30 +2048,32 @@ def create_question_and_update_tiku_count(question_data: Dict[str, Any]) -> Dict
                                %(answer)s, %(explanation)s, %(difficulty)s, %(status)s)
                        """
         
+        # 确保必要字段存在并设置默认值
         params = {
-            'subject_id': question_data['subject_id'],
-            'tiku_id': question_data['tiku_id'],
-            'question_type': question_data['question_type'],
-            'stem': question_data['stem'],
-            'option_a': question_data.get('option_a'),
-            'option_b': question_data.get('option_b'),
-            'option_c': question_data.get('option_c'),
-            'option_d': question_data.get('option_d'),
-            'answer': question_data['answer'],
-            'explanation': question_data.get('explanation'),
-            'difficulty': question_data.get('difficulty', 1),
-            'status': question_data.get('status', 'active')
+            'subject_id': processed_data.get('subject_id'),
+            'tiku_id': processed_data['tiku_id'],
+            'question_type': processed_data['question_type'],
+            'stem': processed_data['stem'],
+            'option_a': processed_data.get('option_a', ''),
+            'option_b': processed_data.get('option_b', ''),
+            'option_c': processed_data.get('option_c', ''),
+            'option_d': processed_data.get('option_d', ''),
+            'answer': processed_data['answer'],
+            'explanation': processed_data.get('explanation', ''),
+            'difficulty': processed_data.get('difficulty', 1),
+            'status': processed_data.get('status', 'active')
         }
+
         cursor.execute(insert_query, params)
         question_id = cursor.lastrowid
 
         # 更新题库的题目数量
         cursor.execute("SELECT COUNT(*) as count FROM questions WHERE tiku_id = %s AND status = 'active'", 
-                       (question_data['tiku_id'],))
+                       (processed_data['tiku_id'],))
         question_count = cursor.fetchone()['count']
 
         cursor.execute("UPDATE tiku SET tiku_nums = %s WHERE tiku_id = %s", 
-                       (question_count, question_data['tiku_id']))
+                       (question_count, processed_data['tiku_id']))
         
         conn.commit()
         return {"success": True, "question_id": question_id, "message": "题目创建成功"}
@@ -2050,45 +2092,77 @@ def create_question_and_update_tiku_count(question_data: Dict[str, Any]) -> Dict
 
 
 @with_db_connection
-def update_question_details(cursor, question_id: int, update_data: Dict[str, Any]) -> bool:
+def update_question_details(cursor, question_id: int, update_data: Dict[str, Any]) -> Dict[str, Any]:
     """更新题目详情"""
-    # Check if question exists first (optional, but good practice)
-    cursor.execute("SELECT id FROM questions WHERE id = %s", (question_id,))
-    if not cursor.fetchone():
-        return False # Or raise NotFound
+    try:
+        # Check if question exists first
+        cursor.execute("SELECT id, tiku_id FROM questions WHERE id = %s", (question_id,))
+        question_info = cursor.fetchone()
+        if not question_info:
+            return {"success": False, "error": "题目不存在"}
 
-    fields_mapping = {
-        'subject_id': 'subject_id',
-        'tiku_id': 'tiku_id',
-        'question_type': 'question_type',
-        'stem': 'stem',
-        'option_a': 'option_a',
-        'option_b': 'option_b',
-        'option_c': 'option_c',
-        'option_d': 'option_d',
-        'answer': 'answer',
-        'explanation': 'explanation',
-        'difficulty': 'difficulty',
-        'status': 'status'
-    }
+        # 处理题目类型转换（从字符串转为数字）
+        if 'question_type' in update_data:
+            type_str = update_data['question_type']
+            if type_str == '单选题':
+                update_data['question_type'] = 0
+            elif type_str == '多选题':
+                update_data['question_type'] = 5
+            elif type_str == '判断题':
+                update_data['question_type'] = 10
+            else:
+                return {"success": False, "error": f"无效的题目类型: {type_str}"}
 
-    set_clauses = []
-    values = []
+        # 处理选项数据转换（从options字典转为单独字段）
+        if 'options' in update_data and isinstance(update_data['options'], dict):
+            options = update_data.pop('options')
+            update_data['option_a'] = options.get('A', '')
+            update_data['option_b'] = options.get('B', '')
+            update_data['option_c'] = options.get('C', '')
+            update_data['option_d'] = options.get('D', '')
 
-    for field_key, db_column_name in fields_mapping.items():
-        if field_key in update_data:
-            set_clauses.append(f"{db_column_name} = %s")
-            values.append(update_data[field_key])
-    
-    if not set_clauses:
-        # No valid fields to update, though the route should probably check this first
-        return True # Or False, or raise an error depending on desired behavior
+        # 删除不需要的字段
+        update_data.pop('is_multiple_choice', None)  # 这个字段不存在于数据库中
 
-    values.append(question_id)
-    update_query = f"UPDATE questions SET {', '.join(set_clauses)}, updated_at = NOW() WHERE id = %s"
-    
-    cursor.execute(update_query, values)
-    return cursor.rowcount > 0 # Returns True if update was successful
+        fields_mapping = {
+            'subject_id': 'subject_id',
+            'tiku_id': 'tiku_id',
+            'question_type': 'question_type',
+            'stem': 'stem',
+            'option_a': 'option_a',
+            'option_b': 'option_b',
+            'option_c': 'option_c',
+            'option_d': 'option_d',
+            'answer': 'answer',
+            'explanation': 'explanation',
+            'difficulty': 'difficulty',
+            'status': 'status'
+        }
+
+        set_clauses = []
+        values = []
+
+        for field_key, db_column_name in fields_mapping.items():
+            if field_key in update_data:
+                set_clauses.append(f"{db_column_name} = %s")
+                values.append(update_data[field_key])
+        
+        if not set_clauses:
+            return {"success": False, "error": "没有有效的更新字段"}
+
+        values.append(question_id)
+        update_query = f"UPDATE questions SET {', '.join(set_clauses)}, updated_at = NOW() WHERE id = %s"
+        
+        cursor.execute(update_query, values)
+        
+        if cursor.rowcount > 0:
+            return {"success": True, "message": "题目更新成功"}
+        else:
+            return {"success": False, "error": "更新失败，没有影响任何记录"}
+
+    except Exception as e:
+        logger.error(f"更新题目详情失败: {e}")
+        return {"success": False, "error": f"更新题目失败: {str(e)}"}
 
 
 def delete_question_and_update_tiku_count(question_id: int) -> Dict[str, Any]:

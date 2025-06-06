@@ -2,18 +2,19 @@
 管理员相关的路由模块
 """
 import logging
+import os
 import random
 import string
-import os
 
 from flask import Blueprint, request, session
 from werkzeug.exceptions import BadRequest, NotFound
 
 from backend.routes.practice import cache_manager as practice_cache_manager
+from ..config import SHEET_NAME
 from ..connectDB import (
     get_all_subjects, create_subject, update_subject, delete_subject,
     get_tiku_by_subject, create_or_update_tiku, delete_tiku, toggle_tiku_status,
-    create_invitation_code, get_questions_by_tiku, delete_questions_by_tiku,
+    create_invitation_code, delete_questions_by_tiku,
     parse_excel_to_questions, insert_questions_batch, toggle_user_status, update_user_model,
     delete_invitation_code, get_system_stats, get_users_paginated,
     get_all_invitations_detailed, get_detailed_question_stats,
@@ -31,7 +32,6 @@ from ..utils import (
     get_file_hash,
     load_questions_from_excel
 )
-from ..config import SHEET_NAME
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +64,7 @@ def api_admin_get_users():
 
     # Database logic is now in connectDB.get_users_paginated
     result = get_users_paginated(search, order_by, order_dir, page, per_page)
-    
+
     return create_response(True, data={
         'users': result['users'],
         'pagination': result['pagination']
@@ -449,7 +449,7 @@ def api_admin_get_questions():
     # However, the original `get_questions_by_tiku` in connectDB.py (which this route used to call indirectly)
     # had specific formatting for question objects (e.g., 'type' name, 'options_for_practice', 'id' with 'db_' prefix).
     # The new `get_questions_paginated` returns raw DB rows. We need to re-apply that formatting here.
-    
+
     formatted_questions = []
     for q_row in result['questions']:
         # This formatting logic is adapted from connectDB.get_questions_by_tiku
@@ -462,17 +462,17 @@ def api_admin_get_questions():
         question_type_code = q_row['question_type']
         type_name = '未知题型'
         is_multiple_choice = False
-        if question_type_code == 0: # Assuming 0: Single
+        if question_type_code == 0:  # Assuming 0: Single
             type_name = '单选题'
-        elif question_type_code == 5: # Assuming 5: Multiple
+        elif question_type_code == 5:  # Assuming 5: Multiple
             type_name = '多选题'
             is_multiple_choice = True
-        elif question_type_code == 10: # Assuming 10: True/False
+        elif question_type_code == 10:  # Assuming 10: True/False
             type_name = '判断题'
-            options_for_practice = None # Judgment questions don't need options A, B, C, D
+            options_for_practice = None  # Judgment questions don't need options A, B, C, D
 
         formatted_questions.append({
-            'id': f"db_{q_row['id']}", # Add 'db_' prefix as in original function
+            'id': f"db_{q_row['id']}",  # Add 'db_' prefix as in original function
             'db_id': q_row['id'],
             'subject_id': q_row['subject_id'],
             'tiku_id': q_row['tiku_id'],
@@ -483,7 +483,8 @@ def api_admin_get_questions():
             'is_multiple_choice': is_multiple_choice,
             'explanation': q_row['explanation'],
             'difficulty': q_row['difficulty'],
-            'status': q_row['status'], # This field was not in the original get_questions_by_tiku output structure directly in questions list
+            'status': q_row['status'],
+            # This field was not in the original get_questions_by_tiku output structure directly in questions list
             'subject_name': q_row['subject_name'],
             'tiku_name': q_row['tiku_name']
         })
@@ -604,10 +605,10 @@ def api_admin_reset_user_password(user_id):
         new_password = data['new_password'].strip()
         if not new_password:
             raise BadRequest("新密码不能为空")
-        
+
         if len(new_password) < 6:
             raise BadRequest("密码长度至少6位")
-        
+
         if len(new_password) > 64:
             raise BadRequest("密码长度不能超过64位")
 
@@ -657,26 +658,72 @@ def api_admin_create_question():
         raise BadRequest("缺少请求数据")
 
     # 验证必填字段
-    required_fields = ['subject_id', 'tiku_id', 'question_type', 'stem', 'answer']
+    required_fields = ['tiku_id', 'question_type', 'stem', 'answer']
     for field in required_fields:
-        if field not in data or (isinstance(data[field], str) and not data[field].strip()) or (not isinstance(data[field], str) and data[field] is None):
+        if field not in data or (isinstance(data[field], str) and not data[field].strip()) or (
+                not isinstance(data[field], str) and data[field] is None):
             raise BadRequest(f"缺少或无效的必填字段: {field}")
 
-    # 验证题目类型
-    if data['question_type'] not in [0, 5, 10]: # Assuming 0: Single, 5: Multiple, 10: True/False
-        raise BadRequest("无效的题目类型")
+    # 验证题目类型（支持字符串格式）
+    question_type = data['question_type']
+    if isinstance(question_type, str):
+        if question_type not in ['单选题', '多选题', '判断题']:
+            raise BadRequest("无效的题目类型，必须是：单选题、多选题、判断题")
+    elif isinstance(question_type, int):
+        if question_type not in [0, 5, 10]:
+            raise BadRequest("无效的题目类型")
+    else:
+        raise BadRequest("题目类型格式错误")
 
-    # 对于单选题和多选题，验证选项 (adjust as per actual logic for options)
-    if data['question_type'] in [0, 5]: # Single and Multiple choice
-        if not data.get('option_a') or not data.get('option_b'):
+    # 验证选项（根据题目类型）
+    if question_type in ['单选题', '多选题', 0, 5]:
+        # 检查options字典格式
+        if 'options' in data and isinstance(data['options'], dict):
+            options = data['options']
+            if not options.get('A') or not options.get('B'):
+                raise BadRequest("单选题和多选题至少需要选项A和B")
+        # 检查单独字段格式
+        elif not data.get('option_a') or not data.get('option_b'):
             raise BadRequest("单选题和多选题至少需要选项A和B")
 
-    # Call the new function in connectDB.py
+    # 验证答案格式
+    answer = data.get('answer', '').strip().upper()
+    if not answer:
+        raise BadRequest("答案不能为空")
+
+    # 根据题目类型验证答案
+    if question_type in ['单选题', 0]:
+        if answer not in ['A', 'B', 'C', 'D']:
+            raise BadRequest("单选题答案必须是A、B、C、D中的一个")
+    elif question_type in ['多选题', 5]:
+        if not all(c in 'ABCD' for c in answer):
+            raise BadRequest("多选题答案必须是A、B、C、D的组合")
+    elif question_type in ['判断题', 10]:
+        if answer not in ['A', 'B']:
+            raise BadRequest("判断题答案必须是A(正确)或B(错误)")
+
+    # 验证难度等级
+    difficulty = data.get('difficulty', 1)
+    if difficulty not in [1, 2, 3, 4, 5]:
+        raise BadRequest("难度等级必须是1-5之间的整数")
+
+    # 验证状态
+    status = data.get('status', 'active')
+    if status not in ['active', 'inactive']:
+        raise BadRequest("状态必须是active或inactive")
+
+    # 调用数据库创建函数
     result = create_question_and_update_tiku_count(data)
 
     if result['success']:
         logger.info(f"管理员新增题目: question_id={result['question_id']}, tiku_id={data['tiku_id']}")
-        practice_cache_manager.refresh_all_cache() # Refresh cache after successful creation
+        # 刷新缓存
+        try:
+            practice_cache_manager.refresh_all_cache()
+            logger.info(f"管理员新增题目: question_id={result['question_id']}, 缓存已刷新")
+        except Exception as e:
+            logger.warning(f"刷新缓存失败: {e}")
+
         return create_response(True, result['message'], data={'question_id': result['question_id']})
     else:
         raise BadRequest(result.get('error', "创建题目失败"))
@@ -692,35 +739,103 @@ def api_admin_update_question(question_id):
     if not data:
         raise BadRequest("缺少请求数据")
 
-    valid_fields_to_update = [
-        'subject_id', 'tiku_id', 'question_type', 'stem', 
-        'option_a', 'option_b', 'option_c', 'option_d', 
-        'answer', 'explanation', 'difficulty', 'status'
-    ]
-    
-    update_payload = {key: value for key, value in data.items() if key in valid_fields_to_update}
+    # 验证必填字段
+    required_fields = ['question_type', 'stem', 'answer']
+    for field in required_fields:
+        if field not in data or (isinstance(data[field], str) and not data[field].strip()) or (
+                not isinstance(data[field], str) and data[field] is None):
+            raise BadRequest(f"缺少或无效的必填字段: {field}")
 
-    if not update_payload:
-        return create_response(True, "没有有效的字段可更新，未执行操作")
-
-    # Call the function from connectDB.py
-    # update_question_details returns True if update was successful (rowcount > 0),
-    # and False if the question_id was not found by its internal check.
-    if update_question_details(question_id, update_payload):
-        logger.info(f"管理员更新题目: question_id={question_id}")
-        practice_cache_manager.refresh_all_cache() 
-        return create_response(True, "题目更新成功")
+    # 验证题目类型（支持字符串格式）
+    question_type = data['question_type']
+    if isinstance(question_type, str):
+        if question_type not in ['单选题', '多选题', '判断题']:
+            raise BadRequest("无效的题目类型，必须是：单选题、多选题、判断题")
+    elif isinstance(question_type, int):
+        if question_type not in [0, 5, 10]:
+            raise BadRequest("无效的题目类型")
     else:
-        # If update_question_details returns False, it implies the question was not found 
-        # by its internal check, or no rows were affected (e.g. data was the same).
-        # To be more precise, check existence if the update claims no rows were affected.
-        existing_question = get_question_details_by_id(question_id) # Uses the already refactored function
-        if not existing_question:
-            raise NotFound("题目不存在")
+        raise BadRequest("题目类型格式错误")
+
+    # 验证选项（根据题目类型）
+    if question_type in ['单选题', '多选题', 0, 5]:
+        # 检查options字典格式
+        if 'options' in data and isinstance(data['options'], dict):
+            options = data['options']
+            if not options.get('A') or not options.get('B'):
+                raise BadRequest("单选题和多选题至少需要选项A和B")
+        # 检查单独字段格式
+        elif not data.get('option_a') or not data.get('option_b'):
+            raise BadRequest("单选题和多选题至少需要选项A和B")
+
+    # 验证答案格式
+    answer = data.get('answer', '').strip().upper()
+    if not answer:
+        raise BadRequest("答案不能为空")
+
+    # 根据题目类型验证答案
+    if question_type in ['单选题', 0]:
+        if answer not in ['A', 'B', 'C', 'D']:
+            raise BadRequest("单选题答案必须是A、B、C、D中的一个")
+    elif question_type in ['多选题', 5]:
+        if not all(c in 'ABCD' for c in answer):
+            raise BadRequest("多选题答案必须是A、B、C、D的组合")
+    elif question_type in ['判断题', 10]:
+        if answer not in ['A', 'B']:
+            raise BadRequest("判断题答案必须是A(正确)或B(错误)")
+
+    # 验证难度等级
+    difficulty = data.get('difficulty', 1)
+    if difficulty not in [1, 2, 3, 4, 5]:
+        raise BadRequest("难度等级必须是1-5之间的整数")
+
+    # 验证状态
+    status = data.get('status', 'active')
+    if status not in ['active', 'inactive']:
+        raise BadRequest("状态必须是active或inactive")
+
+    # 准备更新数据 - 统一处理
+    update_data = {
+        'question_type': question_type,
+        'stem': data['stem'].strip(),
+        'answer': answer,
+        'explanation': data.get('explanation', '').strip(),
+        'difficulty': difficulty,
+        'status': status
+    }
+
+    # 处理选项数据
+    if 'options' in data and isinstance(data['options'], dict):
+        # 前端发送的是options字典格式
+        update_data['options'] = data['options']
+    else:
+        # 前端发送的是单独字段格式，转换为options字典
+        if question_type in ['单选题', '多选题', 0, 5]:
+            update_data['option_a'] = data.get('option_a', '').strip()
+            update_data['option_b'] = data.get('option_b', '').strip()
+            update_data['option_c'] = data.get('option_c', '').strip()
+            update_data['option_d'] = data.get('option_d', '').strip()
+
+    # 调用数据库更新函数
+    result = update_question_details(question_id, update_data)
+
+    if result['success']:
+        # 刷新相关缓存
+        try:
+            # 刷新题目缓存
+            practice_cache_manager.refresh_one_question(question_id)
+            logger.info(f"管理员更新题目: question_id={question_id}, 缓存已刷新")
+        except Exception as e:
+            logger.warning(f"刷新缓存失败: {e}")
+
+        logger.info(f"管理员更新题目: question_id={question_id}")
+        return create_response(True, result['message'], data={'question_id': question_id})
+    else:
+        error_message = result.get('error', "更新题目失败")
+        if error_message == "题目不存在":
+            raise NotFound(error_message)
         else:
-            # Question exists, but update_question_details returned False (meaning rowcount was 0)
-            # This indicates the data was likely identical to what's already in the DB.
-            return create_response(True, "题目数据无变化，未执行更新")
+            raise BadRequest(error_message)
 
 
 @admin_bp.route('/questions/<int:question_id>', methods=['DELETE'])

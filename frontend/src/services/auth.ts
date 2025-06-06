@@ -43,7 +43,31 @@ class AuthService {
       }
     };
 
+    // 添加session_id到请求头
+    const sessionId = this.getSessionId();
+    if (sessionId) {
+      (finalOptions.headers as Record<string, string>)['X-Session-ID'] = sessionId;
+    }
+
     return fetch(url, finalOptions);
+  }
+
+  private getSessionId(): string | null {
+    // 优先从cookie获取
+    const cookies = document.cookie.split(';');
+    for (const cookie of cookies) {
+      const [name, value] = cookie.trim().split('=');
+      if (name === 'session_id') {
+        return value;
+      }
+    }
+    
+    // 从localStorage获取（如果有的话）
+    try {
+      return localStorage.getItem('session_id');
+    } catch {
+      return null;
+    }
   }
 
   async register(data: RegisterData): Promise<ServiceResponse<null>> {
@@ -93,7 +117,13 @@ class AuthService {
         };
       }
       
-      return { success: true, message: result.message, data: { user: result.user, session: result.session } };
+      // 后端的create_response将data直接合并到顶层
+      const loginData = {
+        user: result.user,
+        session: result.session
+      };
+      
+      return { success: true, message: result.message, data: loginData };
     } catch (error: any) {
       console.error('Login API error:', error);
       return {
@@ -131,6 +161,7 @@ class AuthService {
       const response = await this.makeRequest(`${this.baseURL}/check`, {
         method: 'GET',
       });
+      
       const result = await response.json();
 
       if (!response.ok || !result.success) {
@@ -143,9 +174,15 @@ class AuthService {
         };
       }
       
-      return { success: true, data: result.data };
+      // 后端的create_response将data直接合并到顶层，所以authenticated和user直接在result中
+      const authData = {
+        authenticated: result.authenticated || false,
+        user: result.user || null
+      };
+      
+      return { success: true, data: authData };
     } catch (error: any) {
-      console.error('CheckAuth API error:', error);
+      console.error('[AuthService] CheckAuth API error:', error);
       return {
         success: false,
         message: '网络请求失败',
@@ -165,7 +202,9 @@ class AuthService {
         const rawError = result.message || (result.error ? String(result.error) : '获取用户信息失败');
         return { success: false, message: this.cleanErrorMessage(rawError), error: this.cleanErrorMessage(rawError) };
       }
-      return result;
+      
+      // 后端的create_response将data直接合并到顶层
+      return { success: true, data: { user: result.user } };
     } catch (error: any) {
       console.error('GetUserInfo API error:', error);
       return {
@@ -186,7 +225,15 @@ class AuthService {
         const rawError = result.message || (result.error ? String(result.error) : '获取会话状态失败');
         return { success: false, message: this.cleanErrorMessage(rawError), error: this.cleanErrorMessage(rawError) };
       }
-      return result;
+      
+      // 后端的create_response将data直接合并到顶层
+      return { 
+        success: true, 
+        data: { 
+          session: result.session, 
+          message: result.message 
+        } 
+      };
     } catch (error: any) {
       console.error('GetSessionStatus API error:', error);
       return {
@@ -207,7 +254,9 @@ class AuthService {
         const rawError = result.message || (result.error ? String(result.error) : '延长会话失败');
         return { success: false, message: this.cleanErrorMessage(rawError), error: this.cleanErrorMessage(rawError) };
       }
-      return result;
+      
+      // 后端的create_response将data直接合并到顶层
+      return { success: true, data: { session: result.session } };
     } catch (error: any) {
       console.error('ExtendSession API error:', error);
       return {

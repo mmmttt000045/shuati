@@ -399,18 +399,96 @@ const handleSubmit = async () => {
 
   loading.value = true
   try {
-    // 这里调用API保存题目
-    console.log('保存题目:', formData.value)
+    if (isEdit.value && props.question?.id) {
+      // 更新模式
+      const updateData: QuestionUpdateData = {
+        question_type: getQuestionTypeString(formData.value.question_type),
+        stem: formData.value.stem,
+        answer: formData.value.answer,
+        difficulty: formData.value.difficulty,
+        status: formData.value.status,
+        explanation: formData.value.explanation || '',
+        is_multiple_choice: formData.value.question_type === 5
+      }
+
+      // 根据题目类型添加选项数据
+      if (formData.value.question_type === 0 || formData.value.question_type === 5) {
+        updateData.options = {
+          A: formData.value.option_a || '',
+          B: formData.value.option_b || '',
+          C: formData.value.option_c || '',
+          D: formData.value.option_d || ''
+        }
+      }
+
+      console.log('更新题目:', updateData)
+      const response = await apiService.admin.updateQuestion(props.question.id, updateData)
+      
+      if (response.success) {
+        console.log('题目更新成功')
+        // 成功后触发父组件刷新
+        emit('saved')
+        handleCancel()
+      } else {
+        console.error('题目更新失败:', response.message || response.error)
+        alert('更新失败: ' + (response.message || response.error || '未知错误'))
+      }
+    } else {
+      // 新建模式
+      const createData: QuestionCreateData = {
+        tiku_id: formData.value.tiku_id,
+        question_type: getQuestionTypeString(formData.value.question_type),
+        stem: formData.value.stem,
+        answer: formData.value.answer,
+        difficulty: formData.value.difficulty,
+        status: formData.value.status,
+        explanation: formData.value.explanation || '',
+        is_multiple_choice: formData.value.question_type === 5
+      }
+
+      // 根据题目类型添加选项数据
+      if (formData.value.question_type === 0 || formData.value.question_type === 5) {
+        createData.options = {
+          A: formData.value.option_a || '',
+          B: formData.value.option_b || '',
+          C: formData.value.option_c || '',
+          D: formData.value.option_d || ''
+        }
+      }
+      
+      console.log('创建题目:', createData)
+      const response = await apiService.admin.createQuestion(createData)
+      
+      if (response.success) {
+        console.log('题目创建成功')
+        // 成功后触发父组件刷新
+        emit('saved')
+        handleCancel()
+      } else {
+        console.error('题目创建失败:', response.message || response.error)
+        alert('创建失败: ' + (response.message || response.error || '未知错误'))
+      }
+    }
     
-    // 模拟API调用
-    await new Promise(resolve => setTimeout(resolve, 1000))
-    
-    emit('saved')
-    handleCancel()
-  } catch (error) {
+  } catch (error: any) {
     console.error('保存题目失败:', error)
+    alert('操作失败: ' + (error.message || '网络连接错误'))
   } finally {
     loading.value = false
+  }
+}
+
+// 添加辅助函数将数字类型转换为字符串类型
+const getQuestionTypeString = (type: number): string => {
+  switch (type) {
+    case 0:
+      return '单选题'
+    case 5:
+      return '多选题'
+    case 10:
+      return '判断题'
+    default:
+      return '未知类型'
   }
 }
 

@@ -121,6 +121,10 @@ export interface PracticeProgress {
   correct_first_try: number;
   round_number: number;
   progress_percent: number;
+  practice_mode?: string;
+  selected_question_types?: string[];
+  selected_types_display?: string[];
+  shuffle_enabled?: boolean;
 }
 
 export interface FlashMessage {
@@ -144,11 +148,6 @@ export interface QuestionResponse {
   progress: Progress;
   flash_messages: FlashMessage[];
   redirect_to_completed?: boolean;
-  session_config?: {
-    question_types?: string[];
-    shuffle_enabled?: boolean;
-    tiku_id?: number;
-  };
 }
 
 export interface ApiResponse {

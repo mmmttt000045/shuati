@@ -737,8 +737,6 @@ def set_hybrid_session_value(key: str, value: Any) -> None:
         session_id = session.get('session_id')
         if not session_id:
             # 生成新的session ID
-            import uuid
-            session_id = str(uuid.uuid4())
             session['session_id'] = session_id
             session.modified = True
             logger.debug(f"生成新的session_id: {session_id}")

@@ -192,11 +192,50 @@ const formatUsedTime = (dateString?: string) => {
 
 const copyInvitationCode = async (code: string) => {
   try {
-    await navigator.clipboard.writeText(code)
-    toast.success('邀请码已复制到剪贴板')
+    // 首先尝试使用现代的 Clipboard API
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(code)
+      toast.success('邀请码已复制到剪贴板')
+      return
+    }
+    
+    // 如果 Clipboard API 不可用，使用 Selection API 作为后备方案
+    const textArea = document.createElement('textarea')
+    textArea.value = code
+    textArea.style.position = 'fixed'
+    textArea.style.left = '-999999px'
+    textArea.style.top = '-999999px'
+    textArea.setAttribute('readonly', '')
+    document.body.appendChild(textArea)
+    
+    // 选中文本
+    textArea.select()
+    textArea.setSelectionRange(0, code.length)
+    
+    // 尝试使用 Selection API
+    const selection = document.getSelection()
+    if (selection) {
+      selection.removeAllRanges()
+      const range = document.createRange()
+      range.selectNodeContents(textArea)
+      selection.addRange(range)
+      
+      document.body.removeChild(textArea)
+      toast.success('邀请码已选中，请按 Ctrl+C (或 Cmd+C) 复制')
+    } else {
+      document.body.removeChild(textArea)
+      throw new Error('无法选中文本')
+    }
   } catch (error) {
     console.error('复制失败:', error)
-    toast.error('复制失败')
+    // 提供手动复制的选项
+    const message = `复制失败，请手动复制邀请码：${code}`
+    toast.error(message, { timeout: 8000 })
+    
+    // 也可以尝试打开一个提示框显示邀请码
+    if (window.prompt) {
+      window.prompt('请复制以下邀请码:', code)
+    }
   }
 }
 </script>

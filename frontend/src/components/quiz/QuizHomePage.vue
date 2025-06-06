@@ -429,65 +429,23 @@ const startPractice = async (subject: string, fileName: string) => {
     return
   }
 
-  // 如果有历史进度，获取详细的会话状态信息
+  // 如果有历史进度，直接使用progress信息
   if (file.progress) {
-    try {
-      // 调用API获取会话状态
-      const sessionResponse = await apiService.checkSessionStatus()
-      
-      if (sessionResponse.success && sessionResponse.data?.has_session) {
-        const sessionData = sessionResponse.data
-        
-        confirmData.value = {
-          fileName: file.display,
-          subject,
-          order: sessionData.session_config?.practice_mode || '随机练习',
-          progress: {
-            current: sessionData.file_info?.current_question || file.progress.current_question,
-            total: sessionData.file_info?.total_questions || file.progress.total_questions,
-            round: sessionData.file_info?.round_number || file.progress.round_number
-          },
-          progressPercent: file.progress.progress_percent,
-          tikuId: file.tiku_id.toString(),
-          sessionStatus: sessionData,
-          questionTypes: sessionData.session_config?.question_types || []
-        }
-      } else {
-        // 如果没有活跃会话，使用文件进度数据
-        confirmData.value = {
-          fileName: file.display,
-          subject,
-          order: 'random', // 默认显示随机
-          progress: {
-            current: file.progress.current_question,
-            total: file.progress.total_questions,
-            round: file.progress.round_number
-          },
-          progressPercent: file.progress.progress_percent,
-          tikuId: file.tiku_id.toString(),
-          questionTypes: []
-        }
-      }
-      
-      showConfirmDialog.value = true
-    } catch (error) {
-      console.error('Error checking session status:', error)
-      // 发生错误时，仍然显示确认对话框，但使用文件进度数据
-      confirmData.value = {
-        fileName: file.display,
-        subject,
-        order: 'random',
-        progress: {
-          current: file.progress.current_question,
-          total: file.progress.total_questions,
-          round: file.progress.round_number
-        },
-        progressPercent: file.progress.progress_percent,
-        tikuId: file.tiku_id.toString(),
-        questionTypes: []
-      }
-      showConfirmDialog.value = true
+    confirmData.value = {
+      fileName: file.display,
+      subject,
+      order: file.progress.practice_mode || '乱序练习',
+      progress: {
+        current: file.progress.current_question,
+        total: file.progress.total_questions,
+        round: file.progress.round_number
+      },
+      progressPercent: file.progress.progress_percent,
+      tikuId: file.tiku_id.toString(),
+      questionTypes: file.progress.selected_question_types || []
     }
+    
+    showConfirmDialog.value = true
   } else {
     // 没有历史进度，显示配置对话框
     configDialogData.value = {
@@ -536,7 +494,9 @@ const handleConfirmContinue = async () => {
       name: 'practice',
       query: {
         tikuid: confirmData.value.tikuId,
-        order: 'random',  // 默认使用随机顺序
+        tiku_displayname: confirmData.value.fileName,
+        order: confirmData.value.order === '乱序练习' ? 'random' : 'sequential',
+        types: confirmData.value.questionTypes?.join(',') || '',
       },
     })
   } catch (error) {
@@ -783,6 +743,7 @@ const startPracticeWithConfig = async () => {
       name: 'practice',
       query: {
         tikuid: configDialogData.value.tikuId,
+        tiku_displayname: configDialogData.value.fileDisplayName,
         order: dialogQuestionOrder.value,
         types: dialogSelectedQuestionTypes.value.join(','),
       },

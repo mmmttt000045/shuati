@@ -4,6 +4,7 @@
 import logging
 from flask import Blueprint, request, session
 from werkzeug.exceptions import BadRequest, NotFound
+import uuid
 
 from ..decorators import handle_api_error, login_required
 from ..utils import create_response
@@ -75,6 +76,9 @@ def api_login():
     result = authenticate_user(username, password)
     if result['success']:
         user_id=result['user_id']
+
+        session[SESSION_KEYS['SESSION_ID']] = uuid.uuid4()
+
         # 设置session
         session[SESSION_KEYS['USER_ID']] = user_id
         session[SESSION_KEYS['USERNAME']] = result['username']
@@ -91,7 +95,8 @@ def api_login():
             'user': {
                 'user_id': user_id,
                 'username': result['username'],
-                'model': result['model']
+                'model': result['model'],
+                'email': result['email']
             },
             'session': {
                 'is_authenticated': True,

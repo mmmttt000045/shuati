@@ -481,9 +481,37 @@ def increment_tiku_usage(tiku_id: int):
 
 
 def inject_user_progress(subjects_data: dict, current_tiku_id: int, current_progress: dict) -> dict:
-    """优化的进度注入函数 - 避免深拷贝"""
+    """优化的进度注入函数 - 避免深拷贝，并注入选择的题型信息"""
     if not current_tiku_id or not current_progress:
         return subjects_data
+
+    # 从session获取选择的题型信息
+    selected_question_types = get_session_value('select_types', [])
+    shuffle_enabled = get_session_value('shuffle_enabled', True)
+
+    # 题型显示名称映射
+    type_display_names = {
+        'single_choice': '单选题',
+        'multiple_choice': '多选题',
+        'judgment': '判断题',
+        'other': '其他题型'
+    }
+
+    # 构建题型显示信息
+    selected_types_display = []
+    if selected_question_types:
+        for q_type in selected_question_types:
+            display_name = type_display_names.get(q_type, q_type)
+            selected_types_display.append(display_name)
+
+    # 增强的进度信息
+    enhanced_progress = current_progress.copy()
+    enhanced_progress.update({
+        'selected_question_types': selected_question_types,
+        'selected_types_display': selected_types_display,
+        'practice_mode': '乱序练习' if shuffle_enabled else '顺序练习',
+        'shuffle_enabled': shuffle_enabled
+    })
 
     # 浅拷贝优化
     result = {}
@@ -496,7 +524,7 @@ def inject_user_progress(subjects_data: dict, current_tiku_id: int, current_prog
         for file_info in subject_data['files']:
             new_file_info = file_info.copy()
             if file_info['tiku_id'] == current_tiku_id:
-                new_file_info['progress'] = current_progress
+                new_file_info['progress'] = enhanced_progress
             result[subject_name]['files'].append(new_file_info)
 
     return result
@@ -707,7 +735,7 @@ def api_start_practice():
         SESSION_KEYS['CORRECT_FIRST_TRY']: 0,
         SESSION_KEYS['QUESTION_STATUSES']: [QUESTION_STATUS['UNANSWERED']] * len(question_indices),
         SESSION_KEYS['ANSWER_HISTORY']: {},
-        'selected_question_types': selected_types or ['single_choice', 'multiple_choice', 'judgment', 'other'],
+        SESSION_KEYS['SELECT_TYPES']: selected_types or ['single_choice', 'multiple_choice', 'judgment', 'other'],
         'shuffle_enabled': shuffle_questions
     }
 
@@ -730,12 +758,6 @@ def api_start_practice():
 @performance_monitor
 def api_practice_question():
     """获取当前练习题目 - 优化版本"""
-    current_tiku_id = get_session_value(SESSION_KEYS['CURRENT_TIKU_ID'])
-    if not current_tiku_id:
-        # If there's no tiku_id in session, it's a clear sign of no active practice or expired session
-        clear_practice_session()  # Defensive clear
-        raise BadRequest("没有选择题库或会话已过期，请重新开始练习")
-
     q_indices = get_session_value(SESSION_KEYS['QUESTION_INDICES'], [])
     if not q_indices:
         logger.warning(f"QUESTION_INDICES为空，当前session keys: {list(session.keys())}")
@@ -808,17 +830,10 @@ def api_practice_question():
         'round_number': get_session_value(SESSION_KEYS['ROUND_NUMBER'], 1)
     }
 
-    session_config = {
-        'question_types': get_session_value('selected_question_types'),
-        'shuffle_enabled': get_session_value('shuffle_enabled', True),
-        'tiku_id': current_tiku_id
-    }
-
     return create_response(True, data={
         'question': question_data,
         'progress': progress_data,
-        'flash_messages': flash_messages,
-        'session_config': session_config
+        'flash_messages': flash_messages
     })
 
 
@@ -1019,10 +1034,6 @@ def api_jump_to_question():
     if target_index < 0:
         raise BadRequest("无效的题目索引")
 
-    q_indices = get_session_value(SESSION_KEYS['QUESTION_INDICES'], [])
-    if not q_indices or target_index >= len(q_indices):
-        raise BadRequest("题目索引超出范围")
-
     set_session_value(SESSION_KEYS['CURRENT_INDEX'], target_index)
     return create_response(True, "成功跳转到题目")
 
@@ -1049,24 +1060,46 @@ def api_next_question():
 @handle_api_error
 def api_session_status():
     """获取会话状态"""
+    start_time = time.time()  # 记录开始时间
+
     current_tiku_id = get_session_value(SESSION_KEYS['CURRENT_TIKU_ID'])
+    step1_end_time = time.time()
+    print(f"获取 current_tiku_id 耗时: {step1_end_time - start_time:.4f} 秒")
 
     if not current_tiku_id:
         return create_response(True, '没有活跃的练习会话', {'has_session': False})
 
     # 获取题库显示名称
     tiku_info = get_current_tiku_info()
+    step2_end_time = time.time()
+    print(f"获取 tiku_info 耗时: {step2_end_time - step1_end_time:.4f} 秒")
+
     display_name = tiku_info['tiku_name'] if tiku_info else str(current_tiku_id)
+    step3_end_time = time.time()
+    print(f"处理 display_name 耗时: {step3_end_time - step2_end_time:.4f} 秒")
 
     current_indices = get_session_value(SESSION_KEYS['QUESTION_INDICES'], [])
+    step4_end_time = time.time()
+    print(f"获取 current_indices 耗时: {step4_end_time - step3_end_time:.4f} 秒")
+
     current_index = get_session_value(SESSION_KEYS['CURRENT_INDEX'], 0)
+    step5_end_time = time.time()
+    print(f"获取 current_index 耗时: {step5_end_time - step4_end_time:.4f} 秒")
+
     round_number = get_session_value(SESSION_KEYS['ROUND_NUMBER'], 1)
+    step6_end_time = time.time()
+    print(f"获取 round_number 耗时: {step6_end_time - step5_end_time:.4f} 秒")
 
     # 获取题型和练习模式信息
-    selected_types = get_session_value('selected_question_types', [])
-    shuffle_enabled = get_session_value('shuffle_enabled', True)
+    selected_types = get_session_value('select_types', [])
+    step7_end_time = time.time()
+    print(f"获取 selected_types 耗时: {step7_end_time - step6_end_time:.4f} 秒")
 
-    return create_response(True, '当前有活跃的练习会话', {
+    shuffle_enabled = get_session_value('shuffle_enabled', True)
+    step8_end_time = time.time()
+    print(f"获取 shuffle_enabled 耗时: {step8_end_time - step7_end_time:.4f} 秒")
+
+    response_data = {
         'has_session': True,
         'tiku_id': current_tiku_id,
         'file_info': {
@@ -1080,7 +1113,14 @@ def api_session_status():
             'shuffle_enabled': shuffle_enabled,
             'practice_mode': '乱序练习' if shuffle_enabled else '顺序练习'
         }
-    })
+    }
+    step9_end_time = time.time()
+    print(f"构建响应数据耗时: {step9_end_time - step8_end_time:.4f} 秒")
+
+    total_end_time = time.time()
+    print(f"api_session_status 函数总耗时: {total_end_time - start_time:.4f} 秒")
+
+    return create_response(True, '当前有活跃的练习会话', response_data)
 
 
 @practice_bp.route('/session/save', methods=['GET'])
@@ -1497,50 +1537,3 @@ def api_practice_url_params():
     except Exception as e:
         logger.error(f"获取题目失败: {e}")
         raise BadRequest(f"获取题目失败: {str(e)}")
-
-
-@practice_bp.route('/cache/test', methods=['GET'])
-@login_required
-@handle_api_error
-def api_test_cache():
-    """测试缓存系统是否正常工作"""
-    try:
-        # 测试题库列表缓存
-        tiku_data = cache_manager.get_tiku_list()
-        tiku_count = len(tiku_data['tiku_list']) if tiku_data and 'tiku_list' in tiku_data else 0
-
-        # 测试文件选项缓存
-        file_options = cache_manager.get_file_options()
-        subjects_count = len(file_options) if file_options else 0
-
-        # 测试题目缓存（如果有活跃的题库）
-        question_bank_test = None
-        if tiku_count > 0:
-            first_tiku = tiku_data['tiku_list'][0]
-            if first_tiku['is_active']:
-                test_tiku_id = first_tiku['tiku_id']
-                question_bank_test = cache_manager.get_question_bank(test_tiku_id)
-
-        cache_test_result = {
-            'tiku_list_cache': {
-                'status': 'ok' if tiku_count > 0 else 'empty',
-                'count': tiku_count
-            },
-            'file_options_cache': {
-                'status': 'ok' if subjects_count > 0 else 'empty',
-                'subjects_count': subjects_count
-            },
-            'question_bank_cache': {
-                'status': 'ok' if question_bank_test else 'not_tested',
-                'test_questions': len(question_bank_test) if question_bank_test else 0
-            }
-        }
-
-        return create_response(True, '缓存系统测试完成', {
-            'cache_test': cache_test_result,
-            'timestamp': time.time()
-        })
-
-    except Exception as e:
-        logger.error(f"缓存测试失败: {e}")
-        return create_response(False, f'缓存测试失败: {str(e)}', status_code=500)

@@ -404,14 +404,14 @@ def get_current_practice_session_id() -> Optional[int]:
 def check_and_resume_practice_session(user_id: int, tiku_id: int = None) -> Optional[dict]:
     """检查并恢复用户的活跃练习会话 - 优化版本：只存储关键信息到cookie"""
     logger.debug(f"开始检查用户 {user_id} 的活跃练习会话")
-    
+
     try:
         active_session = get_user_active_practice_session(user_id, tiku_id)
         logger.debug(f"查询活跃会话结果: {active_session is not None}")
-        
+
         if active_session:
             logger.debug(f"找到活跃会话: session_id={active_session['id']}, tiku_id={active_session.get('tiku_id')}")
-            
+
             # 只将会话ID和基本信息存储到Flask session中，大数据保留在数据库
             session_data_to_set = {
                 PRACTICE_SESSION_ID_KEY: active_session['id'],
@@ -419,34 +419,39 @@ def check_and_resume_practice_session(user_id: int, tiku_id: int = None) -> Opti
                 SESSION_KEYS['CURRENT_INDEX']: active_session.get('current_question_index', 0),
                 SESSION_KEYS['ROUND_NUMBER']: active_session.get('round_number', 1),
                 SESSION_KEYS['INITIAL_TOTAL']: active_session.get('total_questions', 0),
-                SESSION_KEYS['CORRECT_FIRST_TRY']: active_session.get('correct_first_try', 0)
+                SESSION_KEYS['CORRECT_FIRST_TRY']: active_session.get('correct_first_try', 0),
+                SESSION_KEYS['SELECT_TYPES']: active_session.get('selected_types', []),
             }
-            
+
             logger.debug(f"准备设置的 session 数据: {session_data_to_set}")
-            
+
             for key, value in session_data_to_set.items():
                 session[key] = value
-                
+
             session.modified = True
-            
+
             # 验证设置是否成功
             verification_tiku_id = session.get(SESSION_KEYS['CURRENT_TIKU_ID'])
             logger.debug(f"验证设置结果: 期望 tiku_id={active_session['tiku_id']}, 实际={verification_tiku_id}")
-            
+
             if verification_tiku_id != active_session['tiku_id']:
                 logger.error(f"Session 设置验证失败！期望: {active_session['tiku_id']}, 实际: {verification_tiku_id}")
                 return None
-            
+
             # 大数据（question_indices, wrong_indices, question_statuses, answer_history）
-            # 已经在数据库中，通过get_session_value会自动从数据库获取
-            
+            from backend.routes.practice import set_session_value
+            set_session_value(SESSION_KEYS['QUESTION_INDICES'], active_session['question_indices'])
+            set_session_value(SESSION_KEYS['WRONG_INDICES'], active_session['wrong_indices'])
+            set_session_value(SESSION_KEYS['QUESTION_STATUSES'], active_session['question_statuses'])
+            set_session_value(SESSION_KEYS['ANSWER_HISTORY'], active_session['answer_history'])
+
             logger.info(f"恢复活跃练习会话成功: session_id={active_session['id']}, tiku_id={active_session['tiku_id']}")
             return active_session
         else:
             logger.debug(f"用户 {user_id} 没有活跃的练习会话")
-        
+
         return None
-        
+
     except Exception as e:
         logger.error(f"检查活跃练习会话异常: {e}")
         import traceback

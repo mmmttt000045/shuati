@@ -262,6 +262,7 @@ const props = defineProps<{
   tikuid: string
   order?: string
   types?: string  // 添加题型参数
+  tiku_displayname?: string  // 添加题库显示名称参数
 }>()
 
 const router = useRouter()
@@ -698,48 +699,11 @@ const syncQuestionStatuses = async () => {
   }
 }
 
-// Helper function to initialize display-related info from props and API
-const initializeSessionDisplayInfo = async () => {
-  try {
-    const fileOptions = await apiService.getFileOptions()
-    let tikuInfo = null
-    if (fileOptions.success && fileOptions.data?.subjects && typeof fileOptions.data.subjects === 'object') {
-      for (const key in fileOptions.data.subjects) {
-        if (Object.prototype.hasOwnProperty.call(fileOptions.data.subjects, key)) {
-          const subjectData = (fileOptions.data.subjects as Record<string, any>)[key];
-          if (subjectData && Array.isArray(subjectData.files)) {
-            for (const file of subjectData.files as Array<{tiku_id: string | number, display: string}>) {
-              if (file.tiku_id && file.tiku_id.toString() === props.tikuid) {
-                tikuInfo = file;
-                break;
-              }
-            }
-          }
-        }
-        if (tikuInfo) break;
-      }
-    }
-
-    fileDisplayName.value = tikuInfo ? tikuInfo.display : `题库ID: ${props.tikuid}`
-    orderMode.value = props.order === 'random' ? '乱序练习' : '顺序练习'
-
-    if (props.types) {
-      try {
-        selectedQuestionTypes.value = [
-          ...new Set(props.types.split(',').map((t) => t.trim()).filter(Boolean)),
-        ]
-      } catch (error) {
-        console.warn('解析题型参数失败:', error)
-        selectedQuestionTypes.value = []
-      }
-    } else {
-      selectedQuestionTypes.value = []
-    }
-  } catch (error) {
-    console.warn('获取题库信息失败，将使用默认显示名:', error)
-    fileDisplayName.value = `题库ID: ${props.tikuid}`
-    orderMode.value = props.order === 'random' ? '乱序练习' : '顺序练习'
-    selectedQuestionTypes.value = []
+// 智能状态同步：只在确实需要时才请求
+const syncQuestionStatusesIfNeeded = async (forceSync = false) => {
+  // 如果是强制同步，或者状态数组全为未答状态（可能需要恢复历史状态）
+  if (forceSync || questionStatuses.value.every(status => status === QUESTION_STATUS.UNANSWERED)) {
+    await syncQuestionStatuses()
   }
 }
 
@@ -749,7 +713,6 @@ const processQuestionDataAndUpdateState = (responseData: any, isNewSessionContex
     question: newQuestion,
     progress: newProgress,
     flash_messages,
-    session_config,
   } = responseData
 
   if (!newQuestion && !newProgress) { // If no question and no progress, likely nothing to practice
@@ -768,21 +731,9 @@ const processQuestionDataAndUpdateState = (responseData: any, isNewSessionContex
   progress.value = newProgress || null
   messages.value = flash_messages || []
 
-  // 优先从session_config恢复题型信息，这样能保证恢复历史进度时显示正确的题型
-  if (session_config?.question_types && Array.isArray(session_config.question_types)) {
-    const typesFromSession = session_config.question_types
-    const validTypes = typesFromSession.filter((type: any): type is string => 
-      typeof type === 'string' && Object.keys(questionTypeNames).includes(type)
-    )
-    
-    if (validTypes.length > 0) {
-      selectedQuestionTypes.value = validTypes as string[]
-    } else {
-      // 如果session中的题型都无效，使用全部题型作为后备
-      selectedQuestionTypes.value = Object.keys(questionTypeNames)
-    }
-  } else if (selectedQuestionTypes.value.length === 0 && !props.types) {
-    // 只有在没有session_config题型信息且没有props传入时，才使用默认值
+  // 题型信息现在完全通过props获取，不再依赖session_config
+  if (selectedQuestionTypes.value.length === 0 && !props.types) {
+    // 只有在props没有题型信息时，才使用默认值
     selectedQuestionTypes.value = Object.keys(questionTypeNames)
   }
 
@@ -809,38 +760,25 @@ const processQuestionDataAndUpdateState = (responseData: any, isNewSessionContex
 
 onMounted(async () => {
   try {
+    // 设置屏幕尺寸监听器
     if (typeof window !== 'undefined') {
       window.addEventListener('resize', handleResize)
     }
-    showNavigationBar.value = false // Focus mode
-    
     
     // 隐藏导航栏，提供专注的练习体验
     showNavigationBar.value = false
     
-    // 首先确保用户已认证
-
-    // 隐藏导航栏，提供专注的练习体验
-    showNavigationBar.value = false
-    
-    // 首先确保用户已认证
-    if (!authStore.isAuthenticated) {
-      await authStore.checkAuth()
-      if (!authStore.isAuthenticated) {
-        toast.error('用户认证已过期，请重新登录', { timeout: 3000 })
-        router.push('/login')
-        return
-      }
-    }
-
+    // 验证必需参数
     if (!props.tikuid) {
       toast.error('缺少题库ID参数', { timeout: 3000 })
       router.push('/')
       return
     }
 
-    await initializeSessionDisplayInfo()
+    // 简化的显示信息初始化（避免不必要的API请求）
+    initializeDisplayInfo()
 
+    // 尝试获取当前题目或启动新练习
     let questionResponse = await apiService.getCurrentQuestion()
 
     if (questionResponse.success && questionResponse.data?.redirect_to_completed) {
@@ -850,16 +788,20 @@ onMounted(async () => {
 
     let isNewSession = false
     if (questionResponse.success && questionResponse.data?.question) {
+      // 有现有会话，处理数据
       processQuestionDataAndUpdateState(questionResponse.data, false)
+      // 智能同步：只有在需要恢复历史状态时才请求
+      await syncQuestionStatusesIfNeeded()
     } else {
-      console.warn('没有找到活跃的练习会话或题目，尝试启动新的练习会话')
+      // 没有现有会话，启动新练习
+      console.warn('没有找到活跃的练习会话，启动新的练习会话')
+      
       const shuffleQuestions = (props.order || 'random') === 'random'
-      // Ensure selectedQuestionTypes is passed to startPractice if available from props
       const typesToStart = selectedQuestionTypes.value.length > 0 ? selectedQuestionTypes.value : undefined
 
       const startResponse = await apiService.startPractice(
         props.tikuid,
-        true, // assume new round if no current question
+        true, // 强制重启新会话
         shuffleQuestions,
         typesToStart
       )
@@ -869,7 +811,8 @@ onMounted(async () => {
       }
       
       isNewSession = true
-      // After starting, fetch the first question
+      
+      // 获取第一个题目
       questionResponse = await apiService.getCurrentQuestion()
 
       if (questionResponse.success && questionResponse.data?.redirect_to_completed) {
@@ -880,16 +823,14 @@ onMounted(async () => {
       if (!questionResponse.success || !questionResponse.data?.question) {
         throw new Error(questionResponse.message || '获取题目失败')
       }
+      
       processQuestionDataAndUpdateState(questionResponse.data, true)
+      // 新会话不需要同步状态，因为状态数组已经在processQuestionDataAndUpdateState中初始化
     }
     
-    // Always sync statuses after processing initial data
-    await syncQuestionStatuses()
-    
-    // If after all attempts, selectedQuestionTypes is still empty (e.g. props were empty, session was empty)
-    // default to all types. This is a fallback.
+    // 确保题型有默认值（最后的后备方案）
     if (selectedQuestionTypes.value.length === 0) {
-        selectedQuestionTypes.value = Object.keys(questionTypeNames);
+      selectedQuestionTypes.value = Object.keys(questionTypeNames)
     }
 
     toast.success(`练习${isNewSession ? '启动' : '加载'}成功`, { timeout: 2000 })
@@ -904,6 +845,27 @@ onMounted(async () => {
     initializing.value = false
   }
 })
+
+// 简化的显示信息初始化函数，避免不必要的API请求
+const initializeDisplayInfo = () => {
+  // 直接使用props设置显示信息，避免额外的API请求
+  fileDisplayName.value = props.tiku_displayname || `题库ID: ${props.tikuid}`
+  orderMode.value = props.order === 'random' ? '乱序练习' : '顺序练习'
+
+  // 从props解析题型
+  if (props.types) {
+    try {
+      selectedQuestionTypes.value = [
+        ...new Set(props.types.split(',').map((t) => t.trim()).filter(Boolean)),
+      ]
+    } catch (error) {
+      console.warn('解析题型参数失败:', error)
+      selectedQuestionTypes.value = []
+    }
+  } else {
+    selectedQuestionTypes.value = []
+  }
+}
 
 const loadQuestion = async () => {
   try {
@@ -964,11 +926,6 @@ const submitAnswer = async () => {
 
       // 更新答题卡状态
       updateQuestionStatus(currentQuestionIndex.value, feedbackResponse.data.is_correct)
-
-      // 同步后端状态
-      setTimeout(async () => {
-        await syncQuestionStatuses()
-      }, 100)
     } else {
       throw new Error(feedbackResponse.message || '答案提交处理失败')
     }
@@ -1037,7 +994,6 @@ const handleContinueAfterReveal = async () => {
     clearAutoNextTimer()
     resetState()
     await loadQuestion()
-    await syncQuestionStatuses()
   } catch (error) {
     console.error('Error continuing to next question:', error)
     toast.error(error instanceof Error ? error.message : '加载下一题失败', {

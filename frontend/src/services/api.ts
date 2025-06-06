@@ -77,11 +77,6 @@ export interface ApiService {
       total_questions: number;
       round_number?: number;
     };
-    session_config?: {
-      question_types?: string[];
-      shuffle_enabled?: boolean;
-      practice_mode?: string;
-    };
   }>>;
   getQuestionStatuses(): Promise<ServiceResponse<{ statuses: Array<QuestionStatus> }>>;
   saveSession(): Promise<ServiceResponse<null>>;
@@ -360,11 +355,6 @@ class ApiServiceImpl implements ApiService {
       total_questions: number;
       round_number?: number;
     };
-    session_config?: {
-      question_types?: string[];
-      shuffle_enabled?: boolean;
-      practice_mode?: string;
-    };
   }>> {
     const response = await this.fetchWithCredentials(`${API_BASE}/session/status`);
     return this.handleResponse<{
@@ -376,11 +366,6 @@ class ApiServiceImpl implements ApiService {
         current_question: number;
         total_questions: number;
         round_number?: number;
-      };
-      session_config?: {
-        question_types?: string[];
-        shuffle_enabled?: boolean;
-        practice_mode?: string;
       };
     }>(response);
   }

@@ -122,7 +122,7 @@ def monitor_activity():
 # --- Flask App Initialization ---
 def create_app():
     """创建Flask应用"""
-    app = Flask(__name__, static_folder='frontend/dist', static_url_path='')
+    app = Flask(__name__, static_folder='frontend/dist')
 
     # 应用配置
     app.config.from_object(Config)
@@ -146,6 +146,37 @@ def create_app():
                         "supports_credentials": Config.CORS_SUPPORTS_CREDENTIALS
                     }
                 })
+
+    # 先注册通用路由（SPA路由处理） - 必须在蓝图注册之前
+    @app.route('/')
+    @app.route('/<path:path>')
+    def serve_app(path: str = ''):
+        """服务前端应用 - SPA路由处理"""
+        # 跳过API路由
+        if path.startswith('api/'):
+            # 让API路由由蓝图处理
+            from flask import abort
+            abort(404)
+        
+        try:
+            # 检查是否是静态资源请求
+            if path and '.' in path:  # 有扩展名的文件（如.js, .css, .ico等）
+                static_file_path = os.path.join(app.static_folder, path)
+                if os.path.exists(static_file_path):
+                    return send_from_directory(app.static_folder, path)
+                # 如果静态资源不存在，对于SPA应用也返回index.html让前端处理
+                # 这样可以避免404错误，让前端路由器处理所有路径
+                pass
+            
+            # 对于所有其他路径（前端路由），返回index.html
+            return send_from_directory(app.static_folder, 'index.html')
+        except Exception as e:
+            logger.error(f"服务静态文件时出错: {e}")
+            # 即使出错，也尝试返回index.html让前端处理
+            try:
+                return send_from_directory(app.static_folder, 'index.html')
+            except:
+                return create_response(False, 'Failed to serve application', status_code=500)[0]
 
     # 注册蓝图
     app.register_blueprint(auth_bp)
@@ -174,12 +205,6 @@ def create_app():
                 # 如果session有问题，清空session
                 session.clear()
 
-    @app.after_request
-    def after_request(response):
-        """请求后处理 - 适配Flask-Session"""
-        # Flask-Session会自动处理session的持久化
-        return response
-
     # 添加错误处理器来处理session相关错误
     @app.errorhandler(UnicodeDecodeError)
     def handle_unicode_error(e):
@@ -188,30 +213,6 @@ def create_app():
         # 清空当前session
         session.clear()
         return create_response(False, 'Session数据损坏，已重置', status_code=400)[0]
-
-    @app.errorhandler(Exception)
-    def handle_session_error(e):
-        """处理session相关异常"""
-        if 'session' in str(e).lower() or 'redis' in str(e).lower():
-            logger.error(f"Session错误: {e}")
-            try:
-                session.clear()
-            except:
-                pass
-            return create_response(False, 'Session错误，请刷新页面重试', status_code=500)[0]
-        raise e
-
-    @app.route('/')
-    @app.route('/<path:path>')
-    def serve_app(path: str = ''):
-        """服务前端应用"""
-        try:
-            dist_path = os.path.join(app.static_folder, 'frontend/dist')
-            if path and os.path.exists(os.path.join(dist_path, path)):
-                return send_from_directory('frontend/dist', path)
-            return send_from_directory('frontend/dist', 'index.html')
-        except Exception:
-            return create_response(False, 'Failed to serve application', status_code=500)[0]
 
     return app
 

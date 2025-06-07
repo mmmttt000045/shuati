@@ -1017,25 +1017,14 @@ const backToCurrentQuestion = async () => {
 
 const goBackToIndexPage = async () => {
   try {
-    const savingToast = toast.info('正在保存练习进度...', {
-      timeout: false,
-      closeOnClick: false,
-      pauseOnHover: false,
-    })
-
-    await apiService.saveSession()
-    toast.dismiss(savingToast)
-    toast.success('练习进度已保存 💾', { timeout: 2000 })
-    
     // 恢复导航栏显示
     showNavigationBar.value = true
     
     router.push('/')
   } catch (error) {
-    console.error('Failed to save session progress:', error)
-    toast.warning('保存进度失败，但可以继续使用 ⚠️', { timeout: 3000 })
+    console.error('Failed to navigate back to index page:', error)
     
-    // 即使保存失败也恢复导航栏显示
+    // 即使出现错误也恢复导航栏显示
     showNavigationBar.value = true
     
     router.push('/')

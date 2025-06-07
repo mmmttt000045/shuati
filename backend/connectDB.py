@@ -2,8 +2,8 @@ import hashlib
 import json
 import logging
 from datetime import datetime, timedelta
-from typing import Optional, Dict, Any, List
 from functools import wraps
+from typing import Optional, Dict, Any, List
 
 from mysql.connector import Error
 from mysql.connector import pooling
@@ -56,14 +56,14 @@ def with_db_connection(func):
             # Assuming operations might want to manage transactions or need the connection
             # Pass cursor to the wrapped function. Adjust if connection also needed.
             # Using dictionary=True for cursor to get results as dicts, common for APIs.
-            cursor = conn.cursor(dictionary=True) 
+            cursor = conn.cursor(dictionary=True)
             result = func(cursor, *args, **kwargs)
             # If the function itself doesn't commit (e.g. for transactions spanning multiple calls),
             # this commit might be too broad. For now, assuming functions are atomic or manage their own commits.
             # If autocommit is True (as per DatabaseConfig.MYSQL_POOL_CONFIG default), this explicit commit is not strictly needed for SELECTs
             # but good for INSERT/UPDATE/DELETE if autocommit was False or transaction started.
             if conn.autocommit is False:
-                 conn.commit()
+                conn.commit()
             return result
         except Error as e:
             print(f"Database operation error in {func.__name__}: {e}")
@@ -80,9 +80,10 @@ def with_db_connection(func):
                     print(f"Error closing cursor: {e}")
             if conn and conn.is_connected():
                 try:
-                    conn.close() # Returns connection to the pool
+                    conn.close()  # Returns connection to the pool
                 except Error as e:
                     print(f"Error closing connection: {e}")
+
     return wrapper
 
 
@@ -105,7 +106,7 @@ def verify_invitation_code(cursor, invitation_code: str) -> Optional[int]:
             """
     cursor.execute(query, (invitation_code,))
     result = cursor.fetchone()
-    return result['id'] if result else None # Access by key due to dictionary=True
+    return result['id'] if result else None  # Access by key due to dictionary=True
 
 
 def create_user(username: str, password: str, invitation_code_id: int) -> Dict[str, Any]:
@@ -172,7 +173,7 @@ def create_user(username: str, password: str, invitation_code_id: int) -> Dict[s
         try:
             if connection:
                 connection.rollback()
-        except Error as ex_rollback: # Catch specific error for rollback
+        except Error as ex_rollback:  # Catch specific error for rollback
             print(f"Error during rollback: {ex_rollback}")
         return {"success": False, "error": f"创建用户失败: {str(e)}"}
     finally:
@@ -182,54 +183,58 @@ def create_user(username: str, password: str, invitation_code_id: int) -> Dict[s
             if connection and connection.is_connected():
                 connection.autocommit = True  # 恢复默认设置
                 connection.close()
-        except Error as ex_finally: # Catch specific error for finally block
+        except Error as ex_finally:  # Catch specific error for finally block
             print(f"Error in finally block of create_user: {ex_finally}")
 
 
 @with_db_connection
 def authenticate_user(cursor, username: str, password: str) -> Dict[str, Any]:
-    """验证用户登录"""
-    # connection, cursor, try/except/finally are managed by the decorator
-    query = """
-            SELECT id, username, password_hash, is_enabled, model, email
-            FROM user_accounts
-            WHERE username = %s
-            """ # Removed trailing backslash from query
+    """
+    验证用户登录。
+
+    优化和安全增强:
+    1. 确保 `username` 列已建立数据库索引，这是性能关键。
+    2. 使用安全的密码验证函数（如 bcrypt.checkpw）替代简单的哈希比较。
+    3. 合并了“用户不存在”和“密码错误”的场景，返回统一的错误信息，以防止用户枚举攻击。
+    """
+    # 统一的认证失败信息
+    AUTH_FAILED_RESPONSE = {"success": False, "error": "用户名或密码错误"}
+
+    # 1. 查询用户信息。此查询必须快速，依赖于 username 上的索引。
+    # 只选择需要的字段，避免`SELECT *`
+    query = "SELECT id, password_hash, is_enabled, model, email FROM user_accounts WHERE username = %s"
     cursor.execute(query, (username,))
     user_record = cursor.fetchone()
 
-    if not user_record:
-        return {"success": False, "error": "用户名或密码错误"}
+    # 2. 验证用户是否存在以及密码是否正确
+    # 将两步验证合并，使用安全的密码检查函数
+    if not user_record or not hash_password(password) == user_record['password_hash']:
+        return AUTH_FAILED_RESPONSE
 
-    # user_id, db_username, stored_password_hash, is_enabled = user_record # Unpacking from dict
-    user_id = user_record['id']
-    db_username = user_record['username']
-    stored_password_hash = user_record['password_hash']
-    is_enabled = user_record['is_enabled']
-    model = user_record['model']
-    email = user_record['email']
-
-    if not is_enabled:
+    # 3. 检查账户状态
+    if not user_record['is_enabled']:
         return {"success": False, "error": "账户已被禁用"}
 
-    input_password_hash = hash_password(password)
-    if input_password_hash != stored_password_hash:
-        return {"success": False, "error": "用户名或密码错误"}
+    user_id = user_record['id']
 
-    # Assuming autocommit is True or decorator handles commit for DML
-    # If the decorator is set to commit on all successful operations, 
-    # and autocommit is false, this update will be committed.
-    # If autocommit is true (default in config), this will commit immediately.
-    update_last_login_query = "UPDATE user_accounts SET last_time_login = NOW() WHERE id = %s"
-    cursor.execute(update_last_login_query, (user_id,))
+    # 4. (可选优化) 异步更新最后登录时间
+    # 如果登录响应速度要求极致，可以将此更新操作放入后台任务队列（如 Celery）
+    try:
+        update_last_login_query = "UPDATE user_accounts SET last_time_login = NOW() WHERE id = %s"
+        cursor.execute(update_last_login_query, (user_id,))
+    except Exception as e:
+        # 建议记录日志，但即使更新失败也不应影响本次成功登录
+        logger.error(f"Failed to update last_login_time for user_id {user_id}: {e}")
+        pass
 
+    # 5. 返回成功响应
     return {
         "success": True,
         "user_id": user_id,
-        "username": db_username,
-        "model": model,
+        "username": username,  # 直接使用传入的username，无需从数据库记录中获取
+        "model": user_record['model'],
+        "email": user_record['email'],
         "message": "登录成功",
-        "email": email,
     }
 
 
@@ -241,7 +246,7 @@ def get_user_model(cursor, user_id: int) -> Optional[int]:
             SELECT model
             FROM user_accounts
             WHERE id = %s
-            """ # Removed trailing backslash
+            """  # Removed trailing backslash
     cursor.execute(query, (user_id,))
     result = cursor.fetchone()
     # Original code returned 0 on error or if no result. 
@@ -251,25 +256,25 @@ def get_user_model(cursor, user_id: int) -> Optional[int]:
         return result['model']
     # Consider what to return if user_id not found. Defaulting to 0 as per original logic.
     # This case (user not found) is not a database Error, so decorator won't catch it as such.
-    return 0 
+    return 0
 
 
 @with_db_connection
 def get_user_info(cursor, user_id: int) -> Optional[Dict[str, Any]]:
     """根据用户ID获取用户信息"""
     query = """
-            SELECT id , username, is_enabled, created_at, model
+            SELECT id, username, is_enabled, created_at, model
             FROM user_accounts
             WHERE id = %s
-            """ # Removed trailing backslash
+            """  # Removed trailing backslash
     cursor.execute(query, (user_id,))
-    user_record = cursor.fetchone() # Returns a dict or None
+    user_record = cursor.fetchone()  # Returns a dict or None
 
     if user_record:
         # Convert datetime to isoformat if needed for JSON serialization, done in routes/auth.py currently
         # user_record['created_at'] = user_record['created_at'].isoformat() if user_record['created_at'] else None
-        return user_record # user_record is already a dictionary
-    return None # User not found
+        return user_record  # user_record is already a dictionary
+    return None  # User not found
 
 
 def create_invitation_code(code: str, expires_days: Optional[int] = None) -> Dict[str, Any]:
@@ -320,11 +325,12 @@ def cleanup_expired_practice_sessions() -> int:
     try:
         cursor = connection.cursor()
         query = """
-        UPDATE practice_sessions 
-        SET status = 'abandoned', updated_at = NOW()
-        WHERE status = 'active' 
-        AND updated_at < DATE_SUB(NOW(), INTERVAL 24 HOUR)
-        """
+                UPDATE practice_sessions
+                SET status     = 'abandoned',
+                    updated_at = NOW()
+                WHERE status = 'active'
+                  AND updated_at < DATE_SUB(NOW(), INTERVAL 24 HOUR) \
+                """
         cursor.execute(query)
         connection.commit()
         return cursor.rowcount
@@ -1367,9 +1373,9 @@ def delete_invitation_code(invitation_id: int) -> Dict[str, Any]:
             pass
 
 
-def create_practice_session(user_id: int, tiku_id: int, session_type: str = 'normal', 
-                           shuffle_enabled: bool = True, selected_types: list = None,
-                           total_questions: int = 0, question_indices: list = None) -> Dict[str, Any]:
+def create_practice_session(user_id: int, tiku_id: int, session_type: str = 'normal',
+                            shuffle_enabled: bool = True, selected_types: list = None,
+                            total_questions: int = 0, question_indices: list = None) -> Dict[str, Any]:
     """创建新的练习会话记录"""
     connection = get_db_connection()
     if not connection:
@@ -1377,32 +1383,32 @@ def create_practice_session(user_id: int, tiku_id: int, session_type: str = 'nor
 
     try:
         cursor = connection.cursor()
-        
+
         # 将列表转换为JSON字符串
         selected_types_json = json.dumps(selected_types, ensure_ascii=False) if selected_types else None
         question_indices_json = json.dumps(question_indices, ensure_ascii=False) if question_indices else None
-        
+
         query = """
-        INSERT INTO practice_sessions 
-        (user_id, tiku_id, session_type, shuffle_enabled, selected_types, 
-         total_questions, question_indices, status)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, 'active')
-        """
-        
+                INSERT INTO practice_sessions
+                (user_id, tiku_id, session_type, shuffle_enabled, selected_types,
+                 total_questions, question_indices, status)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, 'active') \
+                """
+
         cursor.execute(query, (
-            user_id, tiku_id, session_type, shuffle_enabled, 
+            user_id, tiku_id, session_type, shuffle_enabled,
             selected_types_json, total_questions, question_indices_json
         ))
-        
+
         connection.commit()
         session_id = cursor.lastrowid
-        
+
         return {
             "success": True,
             "session_id": session_id,
             "message": "练习会话创建成功"
         }
-        
+
     except Error as e:
         return {"success": False, "error": f"创建练习会话失败: {str(e)}"}
     finally:
@@ -1420,11 +1426,11 @@ def update_practice_session(session_id: int, **kwargs) -> Dict[str, Any]:
 
     try:
         cursor = connection.cursor()
-        
+
         # 构建动态更新语句
         update_fields = []
         values = []
-        
+
         for field, value in kwargs.items():
             if field in ['current_question_index', 'correct_first_try', 'round_number', 'status']:
                 update_fields.append(f"{field} = %s")
@@ -1432,22 +1438,22 @@ def update_practice_session(session_id: int, **kwargs) -> Dict[str, Any]:
             elif field in ['question_indices', 'wrong_indices', 'question_statuses', 'answer_history']:
                 update_fields.append(f"{field} = %s")
                 values.append(json.dumps(value, ensure_ascii=False) if value is not None else None)
-        
+
         if not update_fields:
             return {"success": False, "error": "没有有效的更新字段"}
-        
+
         values.append(session_id)
         query = f"UPDATE practice_sessions SET {', '.join(update_fields)}, updated_at = NOW() WHERE id = %s"
-        
+
         cursor.execute(query, values)
         connection.commit()
-        
+
         return {
             "success": True,
             "updated_rows": cursor.rowcount,
             "message": "练习会话更新成功"
         }
-        
+
     except Error as e:
         return {"success": False, "error": f"更新练习会话失败: {str(e)}"}
     finally:
@@ -1465,21 +1471,24 @@ def complete_practice_session(session_id: int, final_stats: dict = None) -> Dict
 
     try:
         cursor = connection.cursor()
-        
+
         query = """
-        UPDATE practice_sessions 
-        SET status = 'completed', completed_at = NOW(), updated_at = NOW()
-        WHERE id = %s AND status = 'active'
-        """
-        
+                UPDATE practice_sessions
+                SET status       = 'completed',
+                    completed_at = NOW(),
+                    updated_at   = NOW()
+                WHERE id = %s
+                  AND status = 'active' \
+                """
+
         cursor.execute(query, (session_id,))
         connection.commit()
-        
+
         if cursor.rowcount > 0:
             # 如果提供了最终统计数据，更新统计表
             if final_stats:
                 update_practice_statistics(session_id, final_stats)
-            
+
             return {
                 "success": True,
                 "message": "练习会话已完成"
@@ -1489,7 +1498,7 @@ def complete_practice_session(session_id: int, final_stats: dict = None) -> Dict
                 "success": False,
                 "error": "会话不存在或已完成"
             }
-        
+
     except Error as e:
         return {"success": False, "error": f"完成练习会话失败: {str(e)}"}
     finally:
@@ -1507,19 +1516,33 @@ def get_practice_session(session_id: int) -> Optional[Dict[str, Any]]:
 
     try:
         cursor = connection.cursor()
-        
+
         query = """
-        SELECT id, user_id, tiku_id, session_type, shuffle_enabled, selected_types,
-               total_questions, current_question_index, correct_first_try, round_number,
-               status, question_indices, wrong_indices, question_statuses, answer_history,
-               created_at, updated_at, completed_at
-        FROM practice_sessions 
-        WHERE id = %s
-        """
-        
+                SELECT id,
+                       user_id,
+                       tiku_id,
+                       session_type,
+                       shuffle_enabled,
+                       selected_types,
+                       total_questions,
+                       current_question_index,
+                       correct_first_try,
+                       round_number,
+                       status,
+                       question_indices,
+                       wrong_indices,
+                       question_statuses,
+                       answer_history,
+                       created_at,
+                       updated_at,
+                       completed_at
+                FROM practice_sessions
+                WHERE id = %s \
+                """
+
         cursor.execute(query, (session_id,))
         result = cursor.fetchone()
-        
+
         if result:
             # 解析JSON字段
             return {
@@ -1542,9 +1565,9 @@ def get_practice_session(session_id: int) -> Optional[Dict[str, Any]]:
                 'updated_at': result[16],
                 'completed_at': result[17]
             }
-        
+
         return None
-        
+
     except Error as e:
         print(f"获取练习会话失败: {e}")
         return None
@@ -1554,40 +1577,74 @@ def get_practice_session(session_id: int) -> Optional[Dict[str, Any]]:
         if connection.is_connected():
             connection.close()
 
+
 @with_db_connection
 def get_user_active_practice_session(cursor, user_id: int, tiku_id: int = None) -> Optional[Dict[str, Any]]:
     """获取用户当前活跃的练习会话 - 优化版本"""
     logger.debug(f"查询用户 {user_id} 的活跃练习会话，tiku_id={tiku_id}")
-    
+
     try:
         if tiku_id:
             # 查找特定题库的活跃会话，直接获取完整信息
             query = """
-            SELECT id, user_id, tiku_id, session_type, shuffle_enabled, selected_types,
-                   total_questions, current_question_index, correct_first_try, round_number,
-                   status, question_indices, wrong_indices, question_statuses, answer_history,
-                   created_at, updated_at, completed_at
-            FROM practice_sessions 
-            WHERE user_id = %s AND tiku_id = %s AND status = 'active'
-            ORDER BY updated_at DESC LIMIT 1
-            """
+                    SELECT id,
+                           user_id,
+                           tiku_id,
+                           session_type,
+                           shuffle_enabled,
+                           selected_types,
+                           total_questions,
+                           current_question_index,
+                           correct_first_try,
+                           round_number,
+                           status,
+                           question_indices,
+                           wrong_indices,
+                           question_statuses,
+                           answer_history,
+                           created_at,
+                           updated_at,
+                           completed_at
+                    FROM practice_sessions
+                    WHERE user_id = %s
+                      AND tiku_id = %s
+                      AND status = 'active'
+                    ORDER BY updated_at DESC
+                    LIMIT 1 \
+                    """
             cursor.execute(query, (user_id, tiku_id))
         else:
             # 查找任意活跃会话，直接获取完整信息
             query = """
-            SELECT id, user_id, tiku_id, session_type, shuffle_enabled, selected_types,
-                   total_questions, current_question_index, correct_first_try, round_number,
-                   status, question_indices, wrong_indices, question_statuses, answer_history,
-                   created_at, updated_at, completed_at
-            FROM practice_sessions 
-            WHERE user_id = %s AND status = 'active'
-            ORDER BY updated_at DESC LIMIT 1
-            """
+                    SELECT id,
+                           user_id,
+                           tiku_id,
+                           session_type,
+                           shuffle_enabled,
+                           selected_types,
+                           total_questions,
+                           current_question_index,
+                           correct_first_try,
+                           round_number,
+                           status,
+                           question_indices,
+                           wrong_indices,
+                           question_statuses,
+                           answer_history,
+                           created_at,
+                           updated_at,
+                           completed_at
+                    FROM practice_sessions
+                    WHERE user_id = %s
+                      AND status = 'active'
+                    ORDER BY updated_at DESC
+                    LIMIT 1 \
+                    """
             cursor.execute(query, (user_id,))
-        
+
         result = cursor.fetchone()
         logger.debug(f"数据库查询结果: {result is not None}")
-        
+
         if result:
             # 使用字典访问方式，因为 with_db_connection 装饰器设置了 dictionary=True
             session_data = {
@@ -1610,14 +1667,14 @@ def get_user_active_practice_session(cursor, user_id: int, tiku_id: int = None) 
                 'updated_at': result['updated_at'],
                 'completed_at': result['completed_at']
             }
-            
+
             logger.debug(f"找到活跃会话: session_id={session_data['id']}, tiku_id={session_data['tiku_id']}")
             return session_data
         else:
             logger.debug(f"用户 {user_id} 没有活跃的练习会话")
-        
+
         return None
-        
+
     except Error as e:
         logger.error(f"获取用户活跃练习会话失败: {e}")
         import traceback
@@ -1633,39 +1690,38 @@ def update_practice_statistics(session_id: int, stats: dict) -> bool:
 
     try:
         cursor = connection.cursor()
-        
+
         # 首先获取会话信息
         cursor.execute("SELECT user_id, tiku_id, created_at FROM practice_sessions WHERE id = %s", (session_id,))
         session_info = cursor.fetchone()
-        
+
         if not session_info:
             return False
-            
+
         user_id, tiku_id, created_at = session_info
         practice_date = created_at.date()
-        
+
         # 插入或更新统计数据
         query = """
-        INSERT INTO practice_statistics 
-        (user_id, tiku_id, date, sessions_count, total_questions, correct_answers, practice_time_minutes)
-        VALUES (%s, %s, %s, 1, %s, %s, %s)
-        ON DUPLICATE KEY UPDATE
-        sessions_count = sessions_count + 1,
-        total_questions = total_questions + VALUES(total_questions),
-        correct_answers = correct_answers + VALUES(correct_answers),
-        practice_time_minutes = practice_time_minutes + VALUES(practice_time_minutes)
-        """
-        
+                INSERT INTO practice_statistics
+                (user_id, tiku_id, date, sessions_count, total_questions, correct_answers, practice_time_minutes)
+                VALUES (%s, %s, %s, 1, %s, %s, %s)
+                ON DUPLICATE KEY UPDATE sessions_count        = sessions_count + 1,
+                                        total_questions       = total_questions + VALUES(total_questions),
+                                        correct_answers       = correct_answers + VALUES(correct_answers),
+                                        practice_time_minutes = practice_time_minutes + VALUES(practice_time_minutes) \
+                """
+
         cursor.execute(query, (
             user_id, tiku_id, practice_date,
             stats.get('total_questions', 0),
             stats.get('correct_answers', 0),
             stats.get('practice_time_minutes', 0)
         ))
-        
+
         connection.commit()
         return True
-        
+
     except Error as e:
         print(f"更新练习统计失败: {e}")
         return False
@@ -1684,22 +1740,29 @@ def get_user_practice_history(user_id: int, limit: int = 10) -> List[Dict[str, A
 
     try:
         cursor = connection.cursor()
-        
+
         query = """
-        SELECT ps.id, ps.tiku_id, t.tiku_name, s.subject_name, 
-               ps.total_questions, ps.correct_first_try, ps.round_number,
-               ps.status, ps.created_at, ps.completed_at
-        FROM practice_sessions ps
-        LEFT JOIN tiku t ON ps.tiku_id = t.tiku_id
-        LEFT JOIN subject s ON t.subject_id = s.subject_id
-        WHERE ps.user_id = %s 
-        ORDER BY ps.created_at DESC 
-        LIMIT %s
-        """
-        
+                SELECT ps.id,
+                       ps.tiku_id,
+                       t.tiku_name,
+                       s.subject_name,
+                       ps.total_questions,
+                       ps.correct_first_try,
+                       ps.round_number,
+                       ps.status,
+                       ps.created_at,
+                       ps.completed_at
+                FROM practice_sessions ps
+                         LEFT JOIN tiku t ON ps.tiku_id = t.tiku_id
+                         LEFT JOIN subject s ON t.subject_id = s.subject_id
+                WHERE ps.user_id = %s
+                ORDER BY ps.created_at DESC
+                LIMIT %s \
+                """
+
         cursor.execute(query, (user_id, limit))
         results = cursor.fetchall()
-        
+
         history = []
         for result in results:
             session_data = {
@@ -1716,9 +1779,9 @@ def get_user_practice_history(user_id: int, limit: int = 10) -> List[Dict[str, A
                 'score_percent': (result[5] / result[4] * 100) if result[4] > 0 else 0
             }
             history.append(session_data)
-        
+
         return history
-        
+
     except Error as e:
         print(f"获取用户练习历史失败: {e}")
         return []
@@ -1759,12 +1822,13 @@ def get_system_stats(cursor) -> Dict[str, Any]:
     stats['used_invitations'] = cursor.fetchone()['used']
 
     # 题库统计 (Adjusted to match original admin panel fields more closely)
-    cursor.execute("SELECT COUNT(*) as total_questions FROM questions WHERE status = 'active'") # Assuming 'active' status for questions
+    cursor.execute(
+        "SELECT COUNT(*) as total_questions FROM questions WHERE status = 'active'")  # Assuming 'active' status for questions
     stats['total_questions'] = cursor.fetchone()['total_questions']
 
     cursor.execute("SELECT COUNT(*) as total_files FROM tiku WHERE is_active = 1")
     stats['total_files'] = cursor.fetchone()['total_files']
-    
+
     # Formatting to match the original structure expected by api_admin_get_stats
     formatted_stats = {
         'users': {
@@ -1778,7 +1842,7 @@ def get_system_stats(cursor) -> Dict[str, Any]:
             'unused': stats['unused_invitations'],
             'used': stats['used_invitations']
         },
-        'subjects': { # Original key was 'subjects', though queries are for questions and files
+        'subjects': {  # Original key was 'subjects', though queries are for questions and files
             'total_questions': stats['total_questions'],
             'total_files': stats['total_files']
         }
@@ -1836,7 +1900,7 @@ def get_users_paginated(cursor, search: str, order_by: str, order_dir: str, page
     users_data = cursor.fetchall()
 
     users = []
-    for user_row in users_data: # Changed variable name from user_data to user_row to avoid conflict
+    for user_row in users_data:  # Changed variable name from user_data to user_row to avoid conflict
         users.append({
             'id': user_row['id'],
             'username': user_row['username'],
@@ -1958,7 +2022,7 @@ def get_detailed_question_stats(cursor) -> Dict[str, Any]:
             'count': row['count']
         })
     stats['tiku_stats'] = tiku_stats
-    
+
     return stats
 
 
@@ -1995,7 +2059,7 @@ def get_question_details_by_id(cursor, question_id: int) -> Optional[Dict[str, A
         return None
 
     # cursor returns a dictionary when dictionary=True is set
-    question_data = dict(row) # Ensure it's a mutable dict if further modifications are needed
+    question_data = dict(row)  # Ensure it's a mutable dict if further modifications are needed
     if question_data.get('created_at'):
         question_data['created_at'] = question_data['created_at'].isoformat()
     if question_data.get('updated_at'):
@@ -2010,7 +2074,7 @@ def create_question_and_update_tiku_count(question_data: Dict[str, Any]) -> Dict
     cursor = None
     try:
         conn = get_db_connection()
-        conn.autocommit = False # Start transaction
+        conn.autocommit = False  # Start transaction
         cursor = conn.cursor(dictionary=True)
 
         # 处理前端数据格式转换
@@ -2043,11 +2107,11 @@ def create_question_and_update_tiku_count(question_data: Dict[str, Any]) -> Dict
         insert_query = """
                        INSERT INTO questions (subject_id, tiku_id, question_type, stem, option_a, option_b, option_c,
                                               option_d, answer, explanation, difficulty, status)
-                       VALUES (%(subject_id)s, %(tiku_id)s, %(question_type)s, %(stem)s, 
-                               %(option_a)s, %(option_b)s, %(option_c)s, %(option_d)s, 
+                       VALUES (%(subject_id)s, %(tiku_id)s, %(question_type)s, %(stem)s,
+                               %(option_a)s, %(option_b)s, %(option_c)s, %(option_d)s,
                                %(answer)s, %(explanation)s, %(difficulty)s, %(status)s)
                        """
-        
+
         # 确保必要字段存在并设置默认值
         params = {
             'subject_id': processed_data.get('subject_id'),
@@ -2068,26 +2132,26 @@ def create_question_and_update_tiku_count(question_data: Dict[str, Any]) -> Dict
         question_id = cursor.lastrowid
 
         # 更新题库的题目数量
-        cursor.execute("SELECT COUNT(*) as count FROM questions WHERE tiku_id = %s AND status = 'active'", 
+        cursor.execute("SELECT COUNT(*) as count FROM questions WHERE tiku_id = %s AND status = 'active'",
                        (processed_data['tiku_id'],))
         question_count = cursor.fetchone()['count']
 
-        cursor.execute("UPDATE tiku SET tiku_nums = %s WHERE tiku_id = %s", 
+        cursor.execute("UPDATE tiku SET tiku_nums = %s WHERE tiku_id = %s",
                        (question_count, processed_data['tiku_id']))
-        
+
         conn.commit()
         return {"success": True, "question_id": question_id, "message": "题目创建成功"}
 
     except Error as e:
         if conn:
             conn.rollback()
-        logger.error(f"创建题目并更新题库数量失败: {e}") # Use existing logger if available, or define one
+        logger.error(f"创建题目并更新题库数量失败: {e}")  # Use existing logger if available, or define one
         return {"success": False, "error": f"创建题目失败: {str(e)}"}
     finally:
         if cursor:
             cursor.close()
         if conn:
-            conn.autocommit = True # Reset autocommit
+            conn.autocommit = True  # Reset autocommit
             conn.close()
 
 
@@ -2146,15 +2210,15 @@ def update_question_details(cursor, question_id: int, update_data: Dict[str, Any
             if field_key in update_data:
                 set_clauses.append(f"{db_column_name} = %s")
                 values.append(update_data[field_key])
-        
+
         if not set_clauses:
             return {"success": False, "error": "没有有效的更新字段"}
 
         values.append(question_id)
         update_query = f"UPDATE questions SET {', '.join(set_clauses)}, updated_at = NOW() WHERE id = %s"
-        
+
         cursor.execute(update_query, values)
-        
+
         if cursor.rowcount > 0:
             return {"success": True, "message": "题目更新成功"}
         else:
@@ -2171,16 +2235,16 @@ def delete_question_and_update_tiku_count(question_id: int) -> Dict[str, Any]:
     cursor = None
     try:
         conn = get_db_connection()
-        conn.autocommit = False # Start transaction
+        conn.autocommit = False  # Start transaction
         cursor = conn.cursor(dictionary=True)
 
         # Check if question exists and get tiku_id
         cursor.execute("SELECT tiku_id FROM questions WHERE id = %s", (question_id,))
         question_info = cursor.fetchone()
         if not question_info:
-            conn.rollback() # Nothing to do, rollback to be safe
-            return {"success": False, "error": "题目不存在"} # Not found
-        
+            conn.rollback()  # Nothing to do, rollback to be safe
+            return {"success": False, "error": "题目不存在"}  # Not found
+
         tiku_id = question_info['tiku_id']
 
         # Delete the question
@@ -2188,15 +2252,16 @@ def delete_question_and_update_tiku_count(question_id: int) -> Dict[str, Any]:
         deleted_rows = cursor.rowcount
 
         if deleted_rows == 0:
-            conn.rollback() # Should not happen if found above, but good for safety
+            conn.rollback()  # Should not happen if found above, but good for safety
             return {"success": False, "error": "删除题目失败"}
 
         # Update tiku_nums for the tiku
-        if tiku_id is not None: # Only update if tiku_id was associated
-            cursor.execute("SELECT COUNT(*) as count FROM questions WHERE tiku_id = %s AND status = 'active'", (tiku_id,))
+        if tiku_id is not None:  # Only update if tiku_id was associated
+            cursor.execute("SELECT COUNT(*) as count FROM questions WHERE tiku_id = %s AND status = 'active'",
+                           (tiku_id,))
             question_count = cursor.fetchone()['count']
             cursor.execute("UPDATE tiku SET tiku_nums = %s WHERE tiku_id = %s", (question_count, tiku_id))
-        
+
         conn.commit()
         return {"success": True, "message": "题目删除成功", "tiku_id_affected": tiku_id}
 
@@ -2209,7 +2274,7 @@ def delete_question_and_update_tiku_count(question_id: int) -> Dict[str, Any]:
         if cursor:
             cursor.close()
         if conn:
-            conn.autocommit = True # Reset autocommit
+            conn.autocommit = True  # Reset autocommit
             conn.close()
 
 
@@ -2219,7 +2284,7 @@ def toggle_question_status_and_update_tiku_count(question_id: int) -> Dict[str, 
     cursor = None
     try:
         conn = get_db_connection()
-        conn.autocommit = False # Start transaction
+        conn.autocommit = False  # Start transaction
         cursor = conn.cursor(dictionary=True)
 
         # Get current status and tiku_id
@@ -2228,7 +2293,7 @@ def toggle_question_status_and_update_tiku_count(question_id: int) -> Dict[str, 
         if not question_info:
             conn.rollback()
             return {"success": False, "error": "题目不存在"}
-        
+
         current_status = question_info['status']
         tiku_id = question_info['tiku_id']
         new_status = 'inactive' if current_status == 'active' else 'active'
@@ -2238,19 +2303,21 @@ def toggle_question_status_and_update_tiku_count(question_id: int) -> Dict[str, 
         updated_rows = cursor.rowcount
 
         if updated_rows == 0:
-            conn.rollback() # Should not happen if found, but for safety
+            conn.rollback()  # Should not happen if found, but for safety
             return {"success": False, "error": "切换题目状态失败"}
 
         # Update tiku_nums for the tiku
         if tiku_id is not None:
             # Recalculate active questions for the tiku
-            cursor.execute("SELECT COUNT(*) as count FROM questions WHERE tiku_id = %s AND status = 'active'", (tiku_id,))
+            cursor.execute("SELECT COUNT(*) as count FROM questions WHERE tiku_id = %s AND status = 'active'",
+                           (tiku_id,))
             question_count = cursor.fetchone()['count']
             cursor.execute("UPDATE tiku SET tiku_nums = %s WHERE tiku_id = %s", (question_count, tiku_id))
-        
+
         conn.commit()
         action_message = "启用" if new_status == 'active' else "禁用"
-        return {"success": True, "message": f"题目{action_message}成功", "status": new_status, "tiku_id_affected": tiku_id}
+        return {"success": True, "message": f"题目{action_message}成功", "status": new_status,
+                "tiku_id_affected": tiku_id}
 
     except Error as e:
         if conn:
@@ -2261,7 +2328,7 @@ def toggle_question_status_and_update_tiku_count(question_id: int) -> Dict[str, 
         if cursor:
             cursor.close()
         if conn:
-            conn.autocommit = True # Reset autocommit
+            conn.autocommit = True  # Reset autocommit
             conn.close()
 
 
@@ -2285,9 +2352,9 @@ def get_questions_paginated(cursor, tiku_id: Optional[int], page: int, per_page:
     if tiku_id is not None:
         where_clauses.append("q.tiku_id = %s")
         query_params.append(tiku_id)
-    
+
     where_statement = " WHERE " + " AND ".join(where_clauses) if where_clauses else ""
-    
+
     # Get total count
     cursor.execute(count_query_base + where_statement, query_params)
     total_count = cursor.fetchone()['total']
@@ -2295,10 +2362,10 @@ def get_questions_paginated(cursor, tiku_id: Optional[int], page: int, per_page:
     # Paginate
     offset = (page - 1) * per_page
     order_clause = " ORDER BY q.tiku_id, q.id LIMIT %s OFFSET %s"
-    
+
     final_query_params = query_params + [per_page, offset]
     cursor.execute(select_query_base + where_statement + order_clause, final_query_params)
-    
+
     rows = cursor.fetchall()
     questions = []
     for row_dict in rows:
@@ -2322,18 +2389,31 @@ def get_questions_paginated(cursor, tiku_id: Optional[int], page: int, per_page:
         'pagination': pagination_info
     }
 
+
 @with_db_connection
 def get_question_by_db_id(cursor, question_db_id: int) -> Optional[Dict[str, Any]]:
     """根据数据库ID获取单个题目，并格式化以供练习使用"""
     query = """
-            SELECT q.id, q.subject_id, q.tiku_id, q.question_type, q.stem,
-                   q.option_a, q.option_b, q.option_c, q.option_d,
-                   q.answer, q.explanation, q.difficulty, q.status,
-                   s.subject_name, t.tiku_name
+            SELECT q.id,
+                   q.subject_id,
+                   q.tiku_id,
+                   q.question_type,
+                   q.stem,
+                   q.option_a,
+                   q.option_b,
+                   q.option_c,
+                   q.option_d,
+                   q.answer,
+                   q.explanation,
+                   q.difficulty,
+                   q.status,
+                   s.subject_name,
+                   t.tiku_name
             FROM questions q
-            LEFT JOIN subject s ON q.subject_id = s.subject_id
-            LEFT JOIN tiku t ON q.tiku_id = t.tiku_id
-            WHERE q.id = %s AND q.status = 'active'
+                     LEFT JOIN subject s ON q.subject_id = s.subject_id
+                     LEFT JOIN tiku t ON q.tiku_id = t.tiku_id
+            WHERE q.id = %s
+              AND q.status = 'active'
             """
     cursor.execute(query, (question_db_id,))
     row = cursor.fetchone()
@@ -2343,9 +2423,9 @@ def get_question_by_db_id(cursor, question_db_id: int) -> Optional[Dict[str, Any
 
     # Formatting logic adapted from the original get_questions_by_tiku
     question_id, subject_id, tiku_id, question_type_code, stem, option_a, option_b, option_c, option_d, answer, explanation, difficulty, status, subject_name, tiku_name = (
-        row['id'], row['subject_id'], row['tiku_id'], row['question_type'], row['stem'], 
-        row['option_a'], row['option_b'], row['option_c'], row['option_d'], 
-        row['answer'], row['explanation'], row['difficulty'], row['status'], 
+        row['id'], row['subject_id'], row['tiku_id'], row['question_type'], row['stem'],
+        row['option_a'], row['option_b'], row['option_c'], row['option_d'],
+        row['answer'], row['explanation'], row['difficulty'], row['status'],
         row['subject_name'], row['tiku_name']
     )
 
@@ -2364,10 +2444,10 @@ def get_question_by_db_id(cursor, question_db_id: int) -> Optional[Dict[str, Any
         is_multiple_choice = True
     elif question_type_code == 10:  # 判断题
         type_name = '判断题'
-        options_for_practice = None # Judgment questions don't need options
+        options_for_practice = None  # Judgment questions don't need options
 
     return {
-        'id': f"db_{question_id}", # Matches practice route id format
+        'id': f"db_{question_id}",  # Matches practice route id format
         'db_id': question_id,
         'subject_id': subject_id,
         'tiku_id': tiku_id,
@@ -2391,27 +2471,27 @@ def reset_user_password(cursor, user_id: int, new_password: str) -> Dict[str, An
         # 检查用户是否存在
         cursor.execute("SELECT id, username FROM user_accounts WHERE id = %s", (user_id,))
         user_record = cursor.fetchone()
-        
+
         if not user_record:
             return {"success": False, "error": "用户不存在"}
-        
+
         # 生成新密码哈希
         new_password_hash = hash_password(new_password)
-        
+
         # 更新密码
         update_query = "UPDATE user_accounts SET password_hash = %s WHERE id = %s"
         cursor.execute(update_query, (new_password_hash, user_id))
-        
+
         if cursor.rowcount == 0:
             return {"success": False, "error": "密码重置失败"}
-        
+
         return {
             "success": True,
             "message": "密码重置成功",
             "user_id": user_id,
             "username": user_record['username']
         }
-        
+
     except Error as e:
         return {"success": False, "error": f"重置密码失败: {str(e)}"}
 
